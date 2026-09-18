@@ -1,177 +1,124 @@
-import { getSupabaseServerClient } from '@/lib/supabase/client'
-import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+interface Session {
+  date: string
+  time: string
+}
 
 interface ReservationRequest {
   trainer_id: string
+  sessions: Session[]
   client_name: string
   client_email: string
-  client_phone?: string | null
-  date: string
-  time: string
-  notes?: string | null
+  client_phone: string
+  client_whatsapp_opt_in: boolean
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body: ReservationRequest = await request.json()
 
-    const {
-      trainer_id,
+    const { trainer_id, sessions, client_name, client_email, client_phone, client_whatsapp_opt_in } = body
+
+    // Validations
+    if (!trainer_id || !sessions || sessions.length === 0) {
+      return Response.json({ success: false, error: 'Datos incompletos' }, { status: 400 })
+    }
+
+    if (!client_name || !client_email || !client_phone) {
+      return Response.json({ success: false, error: 'Información de contacto incompleta' }, { status: 400 })
+    }
+
+    // Convert trainer_id to UUID if it's a slug
+    let trainerId = trainer_id
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+    if (!uuidRegex.test(trainer_id)) {
+      // It's a slug, fetch the UUID
+      const { data: trainerData, error: trainerError } = await supabase
+        .from('trainers')
+        .select('id')
+        .eq('slug', trainer_id)
+        .single()
+
+      if (trainerError || !trainerData) {
+        return Response.json({ success: false, error: 'Entrenador no encontrado' }, { status: 404 })
+      }
+
+      trainerId = trainerData.id
+    }
+
+    // Get availability slots for all sessions
+    const availabilitySlots: any[] = []
+    const slotIds: string[] = []
+
+    for (const session of sessions) {
+      const { data: slots, error: slotsError } = await supabase
+        .from('availability_slots')
+        .select('id')
+        .eq('trainer_id', trainerId)
+        .eq('session_date', session.date)
+        .eq('start_time', session.time)
+        .single()
+
+      if (slotsError || !slots) {
+        console.error(`❌ Slot not found for ${session.date} at ${session.time}`)
+        return Response.json(
+          { success: false, error: `Slot no disponible para ${session.date} ${session.time}` },
+          { status: 404 }
+        )
+      }
+
+      slotIds.push(slots.id)
+    }
+
+    // Create reservations (one per session)
+    const reservationIds: string[] = []
+    const reservationsToInsert = sessions.map((session, index) => ({
+      trainer_id: trainerId,
+      availability_slot_id: slotIds[index],
       client_name,
       client_email,
       client_phone,
-      date,
-      time,
-      notes,
-    } = body
+      client_whatsapp_opt_in,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    }))
 
-    // Validate required fields
-    if (!trainer_id || !client_name || !client_email || !date || !time) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing required fields',
-        },
-        { status: 400 }
-      )
-    }
-
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(client_email)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid email address',
-        },
-        { status: 400 }
-      )
-    }
-
-    const supabase = getSupabaseServerClient()
-
-    // Step 1: Find availability slot to link it
-    const { data: availabilitySlot, error: slotError } = await supabase
-      .from('availability_slots')
-      .select('id')
-      .eq('trainer_id', trainer_id)
-      .eq('session_date', date)
-      .eq('start_time', time)
-      .single()
-
-    if (slotError) {
-      console.error('Error finding availability slot:', slotError)
-    }
-
-    // Step 2: Create reservation directly with client data
-    const { error: reservationError } = await supabase
+    const { data: reservations, error: insertError } = await supabase
       .from('reservations')
-      .insert({
-        availability_slot_id: availabilitySlot?.id || null,
-        trainer_id,
-        client_name,
-        client_email,
-        client_phone: client_phone || null,
-        notes: notes || null,
-        status: 'confirmed',
-      })
-      .select()
-      .single()
+      .insert(reservationsToInsert)
+      .select('id')
 
-    if (reservationError) {
-      console.error('Error creating reservation - Full Supabase Error:', {
-        message: reservationError.message,
-        details: reservationError.details,
-        hint: reservationError.hint,
-        code: reservationError.code,
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Failed to create reservation',
-          details: reservationError.message,
-        },
+    if (insertError || !reservations) {
+      console.error('❌ Error creating reservations:', insertError)
+      return Response.json(
+        { success: false, error: 'Error al crear reservas' },
         { status: 500 }
       )
     }
 
-    // Update availability - increment current_bookings
-    // Note: Implementation of availability update may vary based on Supabase setup
-    // await supabase
-    //   .from('availability_slots')
-    //   .update({ current_bookings: supabase.rpc('increment', { x: 1 }) })
-    //   .eq('trainer_id', trainer_id)
-    //   .eq('date', date)
-    //   .eq('start_time', time)
+    reservations.forEach((res) => {
+      reservationIds.push(res.id)
+    })
 
-    // TODO: Send confirmation email using Supabase Email API or Nodemailer
-    // await sendReservationConfirmation(client_email, {
-    //   trainerName,
-    //   date,
-    //   time,
-    //   clientName: client_name,
-    // })
+    console.log(`✅ Created ${reservationIds.length} reservations:`, reservationIds)
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Reservation created successfully',
-      },
-      { status: 201 }
-    )
-  } catch (error) {
-    console.error('Reservations API error:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Internal server error',
-      },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams
-    const trainerId = searchParams.get('trainer_id')
-    const clientEmail = searchParams.get('client_email')
-
-    const supabase = getSupabaseServerClient()
-
-    let query = supabase.from('reservations').select('*')
-
-    if (trainerId) {
-      query = query.eq('trainer_id', trainerId)
-    }
-
-    if (clientEmail) {
-      query = query.eq('client_email', clientEmail)
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching reservations:', error)
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Failed to fetch reservations',
-        },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({
+    return Response.json({
       success: true,
-      data: data || [],
+      message: `Reserva confirmada con ${sessions.length} sesión${sessions.length !== 1 ? 'es' : ''}`,
+      reservationIds,
+      count: sessions.length,
     })
   } catch (error) {
-    console.error('Reservations API error:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Internal server error',
-      },
+    console.error('❌ Reservations API error:', error)
+    return Response.json(
+      { success: false, error: 'Error interno del servidor' },
       { status: 500 }
     )
   }
