@@ -17,6 +17,16 @@ export type Trainer = {
   updated_at: string
 }
 
+export type TrainerRate = {
+  id: string
+  trainer_id: string
+  duration_minutes: number
+  price_per_class: number
+  currency: string
+  created_at: string
+  updated_at: string
+}
+
 // ============================================================================
 // Client Types
 // ============================================================================
