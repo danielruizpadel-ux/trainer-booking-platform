@@ -13,7 +13,7 @@ echo ""
 echo "📝 Paso 1: Insertar trainer..."
 
 TRAINER=$(curl -s -X POST "$SUPABASE_URL/rest/v1/trainers" \
-  -H "Authorization: Bearer $SUPABASE_KEY" \
+  -H "apikey: $SUPABASE_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "slug": "mauri",
@@ -21,7 +21,6 @@ TRAINER=$(curl -s -X POST "$SUPABASE_URL/rest/v1/trainers" \
     "bio": "The Padel Doctor | Especializado en técnica clínica, estrategia competitiva y mentalidad ganadora",
     "email": "mauri@padeldoctor.com",
     "phone": "+1234567890",
-    "price": 99,
     "rating": 4.9,
     "total_reviews": 156,
     "specializations": ["Técnica Clínica", "Estrategia Competitiva", "Mentalidad Ganadora"],
@@ -36,7 +35,7 @@ if [ -z "$TRAINER_ID" ]; then
   echo "⚠️  Trainer podría existir. Buscando..."
 
   SEARCH=$(curl -s "$SUPABASE_URL/rest/v1/trainers?slug=eq.mauri" \
-    -H "Authorization: Bearer $SUPABASE_KEY")
+    -H "apikey: $SUPABASE_KEY")
 
   TRAINER_ID=$(echo "$SEARCH" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
 fi
@@ -86,7 +85,7 @@ for DAY in {0..13}; do
 
   # Insertar batch
   curl -s -X POST "$SUPABASE_URL/rest/v1/availability_slots" \
-    -H "Authorization: Bearer $SUPABASE_KEY" \
+    -H "apikey: $SUPABASE_KEY" \
     -H "Content-Type: application/json" \
     -d "$SLOTS" > /dev/null
 

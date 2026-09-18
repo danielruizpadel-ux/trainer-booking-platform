@@ -52,7 +52,7 @@ export default async function MauriPage() {
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
-        trainerPrice={trainer.price}
+        trainerPrice={99}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
       />
