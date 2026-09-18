@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 
 interface AvailabilitySlot {
   id: string
-  date: string
+  session_date: string
   start_time: string
   end_time: string
   max_capacity: number
@@ -60,13 +60,28 @@ export default function AvailabilityCalendar({
     loadSlots()
   }, [trainerId])
 
+  // Helper function to safely parse date string (YYYY-MM-DD)
+  const parseDate = (dateString: string): Date => {
+    const [year, month, day] = dateString.split('-').map(Number)
+    // Create date in local timezone to avoid UTC conversion issues
+    return new Date(year, month - 1, day)
+  }
+
+  // Helper function to format date back to YYYY-MM-DD
+  const formatDateToISO = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   // Group slots by date
   const slotsByDate = slots.reduce(
     (acc, slot) => {
-      if (!acc[slot.date]) {
-        acc[slot.date] = []
+      if (!acc[slot.session_date]) {
+        acc[slot.session_date] = []
       }
-      acc[slot.date].push(slot)
+      acc[slot.session_date].push(slot)
       return acc
     },
     {} as Record<string, AvailabilitySlot[]>
@@ -95,8 +110,8 @@ export default function AvailabilityCalendar({
           <div>
             <h3 className="font-semibold text-foreground mb-3">Select Date</h3>
             <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-              {dates.map(date => {
-                const dateObj = new Date(date)
+              {dates.map(dateString => {
+                const dateObj = parseDate(dateString)
                 const label = dateObj.toLocaleDateString('en-US', {
                   weekday: 'short',
                   month: 'short',
@@ -104,14 +119,14 @@ export default function AvailabilityCalendar({
                 })
                 return (
                   <button
-                    key={date}
+                    key={dateString}
                     onClick={() => {
-                      setSelectedDate(date)
+                      setSelectedDate(dateString)
                       setSelectedTime(null)
-                      onDateSelect?.(date, '')
+                      onDateSelect?.(dateString, '')
                     }}
                     className={`p-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                      selectedDate === date
+                      selectedDate === dateString
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border text-foreground hover:border-primary/50'
                     }`}
@@ -168,7 +183,7 @@ export default function AvailabilityCalendar({
             <div className="rounded-lg bg-primary/10 p-4 border border-primary/20">
               <p className="text-sm text-foreground">
                 <span className="font-semibold">Selected: </span>
-                {new Date(selectedDate).toLocaleDateString('en-US', {
+                {parseDate(selectedDate).toLocaleDateString('en-US', {
                   weekday: 'long',
                   month: 'long',
                   day: 'numeric',
