@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainerId)
       .gte('date', startDate)

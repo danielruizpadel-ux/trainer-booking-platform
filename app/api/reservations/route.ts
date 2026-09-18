@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Update availability - increment current_bookings
     // Note: Implementation of availability update may vary based on Supabase setup
     // await supabase
-    //   .from('availability')
+    //   .from('availability_slots')
     //   .update({ current_bookings: supabase.rpc('increment', { x: 1 }) })
     //   .eq('trainer_id', trainer_id)
     //   .eq('date', date)

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
     const supabase = getSupabaseServerClient()
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainer_id)
       .eq('date', date)

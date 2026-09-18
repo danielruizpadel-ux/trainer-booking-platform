@@ -9,7 +9,7 @@ export async function getAvailableSlots(
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainerId)
       .eq('date', date)
@@ -37,7 +37,7 @@ export async function getAvailableSlotsRange(
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainerId)
       .eq('is_available', true)
@@ -65,7 +65,7 @@ export async function createAvailabilitySlot(
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .insert([slot])
       .select()
       .single()
@@ -90,7 +90,7 @@ export async function updateAvailabilitySlot(
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', slotId)
       .select()
@@ -113,7 +113,7 @@ export async function deleteAvailabilitySlot(slotId: string): Promise<boolean> {
     const supabase = getSupabaseServerClient()
 
     const { error } = await supabase
-      .from('availability')
+      .from('availability_slots')
       .delete()
       .eq('id', slotId)
 
