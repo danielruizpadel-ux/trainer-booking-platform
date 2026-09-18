@@ -28,6 +28,9 @@ export default async function MauriPage() {
     notFound()
   }
 
+  // Use the trainer ID from database
+  const trainerId = trainer.id
+
   return (
     <div className="w-full">
       {/* Hero Section */}
@@ -47,7 +50,7 @@ export default async function MauriPage() {
 
       {/* Booking Section */}
       <BookingSection
-        trainerId={trainer.id}
+        trainerId={trainerId}
         trainerName={trainer.name}
         trainerPrice={trainer.price}
         trainerEmail={trainer.email}
