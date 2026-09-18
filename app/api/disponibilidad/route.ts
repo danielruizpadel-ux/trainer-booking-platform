@@ -19,8 +19,7 @@ export async function GET(request: Request) {
       .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainer_id)
-      .eq('date', date)
-      .eq('is_available', true)
+      .eq('session_date', date)
       .order('start_time', { ascending: true })
 
     if (error) {

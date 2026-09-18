@@ -12,8 +12,7 @@ export async function getAvailableSlots(
       .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainerId)
-      .eq('date', date)
-      .eq('is_available', true)
+      .eq('session_date', date)
       .order('start_time', { ascending: true })
 
     if (error) {
@@ -40,10 +39,9 @@ export async function getAvailableSlotsRange(
       .from('availability_slots')
       .select('*')
       .eq('trainer_id', trainerId)
-      .eq('is_available', true)
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true })
+      .gte('session_date', startDate)
+      .lte('session_date', endDate)
+      .order('session_date', { ascending: true })
       .order('start_time', { ascending: true })
 
     if (error) {
