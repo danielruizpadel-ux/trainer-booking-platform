@@ -161,146 +161,151 @@ export default function BookingStep2_ContactForm({
 
   return (
     <section className="py-12 px-4 sm:px-6 lg:px-8 bg-white">
-      <div className="max-w-2xl mx-auto">
-        {/* Back Button */}
-        <button
-          onClick={onBack}
-          className="mb-8 text-blue-600 hover:text-blue-700 font-medium flex items-center gap-2"
-        >
-          ← Volver atrás
-        </button>
-
-        <div className="mb-12">
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-8">
           <h2 className="text-4xl font-bold text-gray-900 mb-3">Completa tus datos</h2>
           <p className="text-lg text-gray-600">
             Necesitamos esta información para confirmar tu reserva
           </p>
         </div>
 
-        {/* Session Summary */}
+        {/* Session Summary - FULL WIDTH, PROMINENT */}
         <motion.div
-          className="bg-gray-50 p-6 rounded-lg mb-8 border border-gray-200"
-          initial={{ opacity: 0, y: -10 }}
+          className="bg-gradient-to-r from-blue-50 to-indigo-50 p-8 rounded-lg mb-12 border-2 border-blue-200"
+          initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Tus sesiones seleccionadas</h3>
-          <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
-            {selectedSessions.map((session) => (
-              <div key={`${session.date}-${session.time}`} className="text-sm text-gray-700">
-                📅 {formatSession(session.date, session.time)}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Tus sesiones seleccionadas</h3>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {selectedSessions.map((session) => (
+                  <div key={`${session.date}-${session.time}`} className="text-sm text-gray-700">
+                    📅 {formatSession(session.date, session.time)}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="border-t border-gray-300 pt-4">
-            <div className="flex justify-between items-center text-lg font-semibold text-gray-900">
-              <span>Total:</span>
-              <span>RM {totalPrice}</span>
             </div>
-            {discountPercent > 0 && (
-              <div className="text-sm text-emerald-600 mt-2">
-                🎁 Incluye {discountPercent}% de descuento
-              </div>
-            )}
+            <div className="text-center sm:text-right">
+              <div className="text-3xl font-bold text-blue-600 mb-2">RM {totalPrice}</div>
+              {discountPercent > 0 && (
+                <div className="text-sm font-semibold text-emerald-600 bg-white px-3 py-1 rounded-full inline-block">
+                  🎁 {discountPercent}% descuento
+                </div>
+              )}
+              <button
+                onClick={onBack}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium mt-4 underline"
+              >
+                Modificar sesiones
+              </button>
+            </div>
           </div>
         </motion.div>
 
-        {/* Form */}
+        {/* FORM - FULL WIDTH BELOW SUMMARY */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Nombre */}
-          <div>
-            <label htmlFor="name" className="block font-semibold text-gray-900 mb-2">
-              Nombre completo *
-            </label>
-            <input
-              id="name"
-              type="text"
-              placeholder="Tu nombre"
-              value={formData.name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
-              className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
-                formErrors.name ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
-            {formErrors.name && <p className="text-red-500 text-sm mt-2">{formErrors.name}</p>}
-          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-8">
+            <h3 className="text-xl font-semibold text-gray-900 mb-6">Información de contacto</h3>
 
-          {/* Email */}
-          <div>
-            <label htmlFor="email" className="block font-semibold text-gray-900 mb-2">
-              Email *
-            </label>
-            <input
-              id="email"
-              type="email"
-              placeholder="tu@email.com"
-              value={formData.email}
-              onChange={(e) => handleFieldChange('email', e.target.value)}
-              className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
-                formErrors.email ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
-            {formErrors.email && <p className="text-red-500 text-sm mt-2">{formErrors.email}</p>}
-          </div>
+            <div className="grid grid-cols-1 gap-6">
+              {/* Nombre */}
+              <div>
+                <label htmlFor="name" className="block font-semibold text-gray-900 mb-2">
+                  Nombre completo *
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  placeholder="Tu nombre"
+                  value={formData.name}
+                  onChange={(e) => handleFieldChange('name', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
+                    formErrors.name ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {formErrors.name && <p className="text-red-500 text-sm mt-2">{formErrors.name}</p>}
+              </div>
 
-          {/* Teléfono */}
-          <div>
-            <label htmlFor="phone" className="block font-semibold text-gray-900 mb-2">
-              Teléfono *
-            </label>
-            <input
-              id="phone"
-              type="tel"
-              placeholder="+1 (555) 123-4567"
-              value={formData.phone}
-              onChange={(e) => handleFieldChange('phone', e.target.value)}
-              className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
-                formErrors.phone ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
-            {formErrors.phone && <p className="text-red-500 text-sm mt-2">{formErrors.phone}</p>}
-          </div>
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="block font-semibold text-gray-900 mb-2">
+                  Email *
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={formData.email}
+                  onChange={(e) => handleFieldChange('email', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
+                    formErrors.email ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {formErrors.email && <p className="text-red-500 text-sm mt-2">{formErrors.email}</p>}
+              </div>
 
-          {/* WhatsApp Opt-in */}
-          <div className="flex items-center">
-            <input
-              id="whatsapp"
-              type="checkbox"
-              checked={formData.whatsapp}
-              onChange={(e) => handleFieldChange('whatsapp', e.target.checked)}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-            />
-            <label htmlFor="whatsapp" className="ml-3 text-gray-700">
-              Deseo recibir tips vía WhatsApp
-            </label>
-          </div>
+              {/* Teléfono */}
+              <div>
+                <label htmlFor="phone" className="block font-semibold text-gray-900 mb-2">
+                  Teléfono *
+                </label>
+                <input
+                  id="phone"
+                  type="tel"
+                  placeholder="+1 (555) 123-4567"
+                  value={formData.phone}
+                  onChange={(e) => handleFieldChange('phone', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-lg focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all ${
+                    formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {formErrors.phone && <p className="text-red-500 text-sm mt-2">{formErrors.phone}</p>}
+              </div>
 
-          {/* Error Message */}
-          {submitError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700 font-medium">Error: {submitError}</p>
+              {/* WhatsApp Opt-in */}
+              <div className="flex items-center pt-2">
+                <input
+                  id="whatsapp"
+                  type="checkbox"
+                  checked={formData.whatsapp}
+                  onChange={(e) => handleFieldChange('whatsapp', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <label htmlFor="whatsapp" className="ml-3 text-gray-700 font-medium">
+                  Deseo recibir tips vía WhatsApp
+                </label>
+              </div>
             </div>
-          )}
 
-          {/* Buttons */}
-          <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-900 font-semibold hover:bg-gray-50 transition-colors"
-            >
-              Volver atrás
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !isFormValid()}
-              className={`flex-1 px-6 py-3 rounded-lg font-semibold text-white transition-all duration-200 ${
-                isSubmitting || !isFormValid()
-                  ? 'bg-gray-400 cursor-not-allowed opacity-50'
-                  : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
-              }`}
-            >
-              {isSubmitting ? 'Confirmando...' : 'CONFIRMAR RESERVA'}
-            </button>
+            {/* Error Message */}
+            {submitError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-6">
+                <p className="text-red-700 font-medium">Error: {submitError}</p>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-900 font-semibold hover:bg-gray-50 transition-colors"
+              >
+                ← Volver atrás
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isFormValid()}
+                className={`flex-1 px-6 py-3 rounded-lg font-semibold text-white transition-all duration-200 ${
+                  isSubmitting || !isFormValid()
+                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                    : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
+                }`}
+              >
+                {isSubmitting ? 'Confirmando...' : 'CONFIRMAR RESERVA'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

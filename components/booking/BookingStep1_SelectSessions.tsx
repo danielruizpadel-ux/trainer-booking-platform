@@ -9,11 +9,17 @@ interface Session {
   time: string
 }
 
+type ViewType = 'month' | 'week' | 'day'
+
 interface BookingStep1Props {
   trainerId: string
   onConfirm: (sessions: Session[]) => void
   selectedSessions: Session[]
   onSessionChange: (sessions: Session[]) => void
+  currentView: ViewType
+  currentDate: Date
+  onViewChange: (view: ViewType) => void
+  onDateChange: (date: Date) => void
 }
 
 export default function BookingStep1_SelectSessions({
@@ -21,6 +27,10 @@ export default function BookingStep1_SelectSessions({
   onConfirm,
   selectedSessions,
   onSessionChange,
+  currentView,
+  currentDate,
+  onViewChange,
+  onDateChange,
 }: BookingStep1Props) {
   const [total, setTotal] = useState(0)
   const [discount, setDiscount] = useState(0)
@@ -64,10 +74,15 @@ export default function BookingStep1_SelectSessions({
             <AvailabilityCalendar
               trainerId={trainerId}
               onDateSelect={(date, time) => {
-                // This callback is for single selection, we ignore it here
-                // as multi-select is handled internally by AvailabilityCalendar
+                // Multi-select handled internally by AvailabilityCalendar
               }}
               pricePerSession={300}
+              currentView={currentView}
+              currentDate={currentDate}
+              onViewChange={onViewChange}
+              onDateChange={onDateChange}
+              selectedSessions={selectedSessions}
+              onSessionChange={onSessionChange}
             />
           </div>
 

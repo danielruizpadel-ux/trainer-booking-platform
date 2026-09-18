@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import CalendarNavbar from './CalendarNavbar'
 import MonthView from './MonthView'
 import WeekView from './WeekView'
 import DayView from './DayView'
-import DiscountSummary from './DiscountSummary'
 import SessionSelector from './SessionSelector'
 import TimePickerDropdown from './TimePickerDropdown'
 
@@ -30,18 +28,34 @@ interface AvailabilityCalendarProps {
   trainerId: string
   onDateSelect: (date: string, time: string) => void
   pricePerSession?: number
+  currentView?: ViewType
+  currentDate?: Date
+  onViewChange?: (view: ViewType) => void
+  onDateChange?: (date: Date) => void
+  selectedSessions?: Session[]
+  onSessionChange?: (sessions: Session[]) => void
 }
 
 export default function AvailabilityCalendar({
   trainerId,
   onDateSelect,
   pricePerSession = 300,
+  currentView: propCurrentView,
+  currentDate: propCurrentDate,
+  onViewChange: propOnViewChange,
+  onDateChange: propOnDateChange,
 }: AvailabilityCalendarProps) {
+  // Use prop values if provided, otherwise use local state
+  const [localView, setLocalView] = useState<ViewType>('month')
+  const [localDate, setLocalDate] = useState(new Date())
+
+  const currentView = propCurrentView || localView
+  const currentDate = propCurrentDate || localDate
+  const handleViewChange = propOnViewChange || setLocalView
+  const handleDateChange = propOnDateChange || setLocalDate
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentView, setCurrentView] = useState<ViewType>('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
@@ -205,16 +219,7 @@ export default function AvailabilityCalendar({
 
   return (
     <div className="space-y-0">
-      {/* Navbar */}
-      <CalendarNavbar
-        currentDate={currentDate}
-        currentView={currentView}
-        onDateChange={setCurrentDate}
-        onViewChange={setCurrentView}
-        availableDates={availableDates}
-      />
-
-      {/* Main Content */}
+      {/* Main Content (Navbar is in parent BookingFlow) */}
       <motion.div
         className="py-8 px-4 sm:px-6 lg:px-8"
         initial={{ opacity: 0 }}
@@ -234,9 +239,9 @@ export default function AvailabilityCalendar({
                     onDateToggle={handleToggleDateSelection}
                     onDateSelect={(dateStr) => {
                       setSelectedDate(dateStr)
-                      setCurrentView('day')
+                      handleViewChange('day')
                     }}
-                    onNavigate={setCurrentDate}
+                    onNavigate={handleDateChange}
                   />
                 )}
 
@@ -249,9 +254,9 @@ export default function AvailabilityCalendar({
                     onDateToggle={handleToggleDateSelection}
                     onDateSelect={(dateStr) => {
                       setSelectedDate(dateStr)
-                      setCurrentView('day')
+                      handleViewChange('day')
                     }}
-                    onNavigate={setCurrentDate}
+                    onNavigate={handleDateChange}
                   />
                 )}
 
@@ -273,15 +278,6 @@ export default function AvailabilityCalendar({
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100/50 p-8">
                 <SessionSelector sessions={selectedSessions} onRemove={handleRemoveSession} />
               </div>
-            </div>
-
-            {/* Discount Summary Sidebar */}
-            <div>
-              <DiscountSummary
-                sessions={selectedSessions}
-                pricePerSession={pricePerSession}
-                onConfirm={handleConfirmReservation}
-              />
             </div>
           </div>
         </div>

@@ -1,10 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import NavToggleButtons from './NavToggleButtons'
-import PeriodDisplay from './PeriodDisplay'
-import NavigationArrows from './NavigationArrows'
-import CalendarViewToggle from './CalendarViewToggle'
 import MiniCalendarOverlay from './MiniCalendarOverlay'
 
 type ViewType = 'month' | 'week' | 'day'
@@ -67,31 +63,70 @@ export default function CalendarNavbar({
     onDateChange(newDate)
   }
 
+  const getMonthYear = () => {
+    return currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+  }
+
   return (
-    <div className="sticky top-0 z-40 bg-white border-b border-gray-200/50 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Row 1: Navigation Arrows + Period + View Toggle + Mini Calendar */}
-        <div className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Left: Navigation Controls */}
+    <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {/* CONSOLIDATED: ONE LINE NAVBAR */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          {/* Left: Navigation */}
           <div className="flex items-center gap-2">
-            <NavigationArrows onPrev={handlePrev} onNext={handleNext} />
+            <button
+              onClick={handlePrev}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-semibold"
+              title="Anterior"
+            >
+              ← Anterior
+            </button>
           </div>
 
-          {/* Center: Period Display */}
-          <div className="flex-1 text-center">
-            <PeriodDisplay currentDate={currentDate} currentView={currentView} />
+          {/* Center: Quick Jump Buttons + Period */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleJumpToToday}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
+            >
+              Hoy
+            </button>
+            <button
+              onClick={handleJumpToThisWeek}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
+            >
+              Esta Semana
+            </button>
+            <button
+              onClick={handleJumpToThisMonth}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
+            >
+              Este Mes
+            </button>
+            <span className="text-gray-400">|</span>
+            <span className="text-sm font-semibold text-gray-900 min-w-32 text-center">{getMonthYear()}</span>
           </div>
 
-          {/* Right: View Toggle + Mini Calendar */}
-          <div className="flex items-center gap-3 justify-end">
-            <div className="hidden sm:block">
-              <CalendarViewToggle currentView={currentView} onViewChange={onViewChange} />
+          {/* Right: View Toggle + Mini Cal */}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {(['month', 'week', 'day'] as const).map((view) => (
+                <button
+                  key={view}
+                  onClick={() => onViewChange(view)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
+                    currentView === view ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {view === 'month' ? 'Mes' : view === 'week' ? 'Semana' : 'Día'}
+                </button>
+              ))}
             </div>
             <div className="relative">
               <button
                 onClick={() => setShowMiniCalendar(!showMiniCalendar)}
-                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors hover:text-gray-900"
-                title="Abrir mini calendario"
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Calendario"
               >
                 📅
               </button>
@@ -103,18 +138,13 @@ export default function CalendarNavbar({
                 availableDates={availableDates}
               />
             </div>
-          </div>
-        </div>
-
-        {/* Row 2: Quick Navigation Buttons (Mobile + Desktop) */}
-        <div className="py-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
-          <NavToggleButtons
-            onJumpToToday={handleJumpToToday}
-            onJumpToThisWeek={handleJumpToThisWeek}
-            onJumpToThisMonth={handleJumpToThisMonth}
-          />
-          <div className="sm:hidden ml-auto">
-            <CalendarViewToggle currentView={currentView} onViewChange={onViewChange} />
+            <button
+              onClick={handleNext}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-semibold"
+              title="Siguiente"
+            >
+              Siguiente →
+            </button>
           </div>
         </div>
       </div>

@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import CalendarNavbar from '@/components/trainer/calendar/CalendarNavbar'
 import BookingStep1_SelectSessions from './BookingStep1_SelectSessions'
 import BookingStep2_ContactForm from './BookingStep2_ContactForm'
+
+type ViewType = 'month' | 'week' | 'day'
 
 interface Session {
   date: string
@@ -26,6 +29,8 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
   const [totalPrice, setTotalPrice] = useState(0)
   const [discountPercent, setDiscountPercent] = useState(0)
+  const [currentView, setCurrentView] = useState<ViewType>('month')
+  const [currentDate, setCurrentDate] = useState(new Date())
 
   const handleConfirmSessions = (sessions: Session[]) => {
     setSelectedSessions(sessions)
@@ -88,12 +93,28 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
 
   return (
     <div className="w-full">
+      {/* CONSOLIDATED NAVBAR - ONLY IN STEP 1 */}
+      {step === 'selection' && (
+        <CalendarNavbar
+          currentDate={currentDate}
+          currentView={currentView}
+          onDateChange={setCurrentDate}
+          onViewChange={setCurrentView}
+          availableDates={new Set()}
+        />
+      )}
+
+      {/* CONTENT */}
       {step === 'selection' && (
         <BookingStep1_SelectSessions
           trainerId={trainerId}
           selectedSessions={selectedSessions}
           onSessionChange={setSelectedSessions}
           onConfirm={handleConfirmSessions}
+          currentView={currentView}
+          currentDate={currentDate}
+          onViewChange={setCurrentView}
+          onDateChange={setCurrentDate}
         />
       )}
 
