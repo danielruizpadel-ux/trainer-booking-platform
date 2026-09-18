@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import CalendlyCalendar from './CalendlyCalendar'
+import AvailabilityCalendar from '@/components/trainer/calendar/AvailabilityCalendar'
 import BookingForm from './BookingForm'
 
 interface BookingSectionProps {
@@ -64,7 +64,7 @@ export default function BookingSection({
               transition={{ duration: 0.5 }}
               viewport={{ once: true }}
             >
-              <CalendlyCalendar
+              <AvailabilityCalendar
                 trainerId={trainerId}
                 onDateSelect={handleDateSelect}
               />

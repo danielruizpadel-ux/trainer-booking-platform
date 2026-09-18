@@ -89,11 +89,6 @@ function PremiumHeroWrapper({
   reviews: number
   imageUrl: string
 }) {
-  const handleBookClick = () => {
-    const bookingSection = document.getElementById('booking-section')
-    bookingSection?.scrollIntoView({ behavior: 'smooth' })
-  }
-
   return (
     <PremiumHero
       name={name}
@@ -101,7 +96,6 @@ function PremiumHeroWrapper({
       rating={rating}
       reviews={reviews}
       imageUrl={imageUrl}
-      onBookClick={handleBookClick}
     />
   )
 }

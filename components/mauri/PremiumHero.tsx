@@ -9,7 +9,6 @@ interface PremiumHeroProps {
   rating: number
   reviews: number
   imageUrl: string
-  onBookClick: () => void
 }
 
 export default function PremiumHero({
@@ -18,8 +17,11 @@ export default function PremiumHero({
   rating,
   reviews,
   imageUrl,
-  onBookClick,
 }: PremiumHeroProps) {
+  const handleBookClick = () => {
+    const bookingSection = document.getElementById('booking-section')
+    bookingSection?.scrollIntoView({ behavior: 'smooth' })
+  }
   return (
     <motion.section
       className="relative h-screen w-full overflow-hidden"
@@ -80,7 +82,7 @@ export default function PremiumHero({
 
           {/* CTA Button */}
           <motion.button
-            onClick={onBookClick}
+            onClick={handleBookClick}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="bg-white text-blue-600 px-12 py-4 rounded-lg font-bold text-xl shadow-2xl hover:shadow-blue-600/50 transition-all duration-300"
