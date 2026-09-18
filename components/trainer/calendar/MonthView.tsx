@@ -67,25 +67,6 @@ export default function MonthView({
 
   return (
     <div>
-      {/* Month Header */}
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={handlePrevMonth}
-          className="px-4 py-2 text-gray-600 hover:text-gray-900 font-bold"
-        >
-          ← Anterior
-        </button>
-        <h2 className="font-bold text-xl text-gray-900">
-          {monthNames[month]} {year}
-        </h2>
-        <button
-          onClick={handleNextMonth}
-          className="px-4 py-2 text-gray-600 hover:text-gray-900 font-bold"
-        >
-          Siguiente →
-        </button>
-      </div>
-
       {/* Day Headers */}
       <div className="grid grid-cols-7 gap-2 mb-4">
         {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(
