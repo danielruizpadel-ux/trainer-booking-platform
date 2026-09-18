@@ -208,7 +208,7 @@ export default function BookingStep2_ContactForm({
           <div className="bg-white border border-gray-200 rounded-lg p-8">
             <h3 className="text-xl font-semibold text-gray-900 mb-6">Información de contacto</h3>
 
-            <div className="grid grid-cols-1 gap-6">
+            <div className="flex flex-col gap-6">
               {/* Nombre */}
               <div>
                 <label htmlFor="name" className="block font-semibold text-gray-900 mb-2">
