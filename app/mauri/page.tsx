@@ -28,8 +28,9 @@ export default async function MauriPage() {
     notFound()
   }
 
-  // Use the trainer ID from database
-  const trainerId = trainer.id
+  // Use the trainer slug (works with updated availability API)
+  // Falls back to trainer.id if available
+  const trainerId = trainer.id || 'mauri'
 
   return (
     <div className="w-full">

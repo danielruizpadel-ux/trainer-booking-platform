@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const trainerId = searchParams.get('trainer_id')
+    let trainerId = searchParams.get('trainer_id')
     const date = searchParams.get('date')
     const startDate = searchParams.get('start_date')
     const endDate = searchParams.get('end_date')
@@ -22,10 +22,35 @@ export async function GET(request: NextRequest) {
 
     const supabase = getSupabaseServerClient()
 
-    let query = supabase
-      .from('availability_slots')
-      .select('*')
-      .eq('trainer_id', trainerId)
+    // Check if trainerId looks like a UUID or a slug
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trainerId)
+
+    let query = supabase.from('availability_slots').select('*')
+
+    if (isUUID) {
+      // Direct UUID lookup
+      query = query.eq('trainer_id', trainerId)
+    } else {
+      // Slug lookup: join with trainers table
+      const { data: trainerData, error: trainerError } = await supabase
+        .from('trainers')
+        .select('id')
+        .eq('slug', trainerId)
+        .single()
+
+      if (trainerError || !trainerData) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Trainer not found',
+          },
+          { status: 404 }
+        )
+      }
+
+      trainerId = trainerData.id
+      query = query.eq('trainer_id', trainerId)
+    }
 
     // Filter by single date or date range
     if (date) {
