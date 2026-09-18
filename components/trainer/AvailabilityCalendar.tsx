@@ -1,11 +1,7 @@
-/**
- * Availability Calendar Component
- * Displays available time slots for booking
- */
-
 'use client'
 
 import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface AvailabilitySlot {
   id: string
@@ -60,22 +56,11 @@ export default function AvailabilityCalendar({
     loadSlots()
   }, [trainerId])
 
-  // Helper function to safely parse date string (YYYY-MM-DD)
   const parseDate = (dateString: string): Date => {
     const [year, month, day] = dateString.split('-').map(Number)
-    // Create date in local timezone to avoid UTC conversion issues
     return new Date(year, month - 1, day)
   }
 
-  // Helper function to format date back to YYYY-MM-DD
-  const formatDateToISO = (date: Date): string => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  // Group slots by date
   const slotsByDate = slots.reduce(
     (acc, slot) => {
       if (!acc[slot.session_date]) {
@@ -90,67 +75,121 @@ export default function AvailabilityCalendar({
   const dates = Object.keys(slotsByDate).sort()
   const selectedDateSlots = selectedDate ? slotsByDate[selectedDate] : []
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05, delayChildren: 0.1 },
+    },
+  }
+
+  const cardVariants = {
+    hidden: { opacity: 0, scale: 0.85, y: 20 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      y: 0,
+      transition: { duration: 0.4, ease: 'easeOut' },
+    },
+  }
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-16">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }} className="inline-block text-5xl mb-4">
+          ⏳
+        </motion.div>
+        <p className="text-lg text-slate-600 font-medium">Loading availability...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <motion.div className="rounded-2xl border-2 border-red-300 bg-red-50 p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <p className="text-red-700 font-semibold text-lg">❌ {error}</p>
+      </motion.div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
-      {isLoading && (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">Loading availability...</p>
-        </div>
-      )}
+    <motion.div className="space-y-12" variants={containerVariants} initial="hidden" animate="visible">
+      {/* Select Date Section */}
+      <div>
+        <h3 className="text-2xl font-bold text-slate-900 mb-6">Select a Date</h3>
+        <motion.div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          <AnimatePresence>
+            {dates.map((dateString, i) => {
+              const dateObj = parseDate(dateString)
+              const label = dateObj.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })
+              const isSelected = selectedDate === dateString
 
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
+              return (
+                <motion.button
+                  key={dateString}
+                  variants={cardVariants}
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    setSelectedDate(dateString)
+                    setSelectedTime(null)
+                    onDateSelect?.(dateString, '')
+                  }}
+                  className={`p-4 rounded-2xl font-bold text-lg transition-all shadow-sm border-2 ${
+                    isSelected
+                      ? 'bg-cyan-600 text-white border-cyan-700 shadow-lg'
+                      : 'bg-white text-slate-900 border-slate-200 hover:border-cyan-400 hover:shadow-md'
+                  }`}
+                >
+                  <div className="text-sm opacity-75">{label.split(' ').slice(0, 1).join(' ')}</div>
+                  <div className="text-xl font-bold">{label.split(' ').slice(1).join(' ')}</div>
+                </motion.button>
+              )
+            })}
+          </AnimatePresence>
+        </motion.div>
+      </div>
 
-      {!isLoading && !error && (
-        <>
-          {/* Date Selection */}
-          <div>
-            <h3 className="font-semibold text-foreground mb-3">Select Date</h3>
-            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-              {dates.map(dateString => {
-                const dateObj = parseDate(dateString)
-                const label = dateObj.toLocaleDateString('en-US', {
-                  weekday: 'short',
+      {/* Select Time Section */}
+      <AnimatePresence>
+        {selectedDate && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <h3 className="text-2xl font-bold text-slate-900 mb-6">
+              Select a Time for{' '}
+              <span className="text-cyan-600">
+                {parseDate(selectedDate).toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',
-                })
-                return (
-                  <button
-                    key={dateString}
-                    onClick={() => {
-                      setSelectedDate(dateString)
-                      setSelectedTime(null)
-                      onDateSelect?.(dateString, '')
-                    }}
-                    className={`p-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                      selectedDate === dateString
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border text-foreground hover:border-primary/50'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+                })}
+              </span>
+            </h3>
 
-          {/* Time Selection */}
-          {selectedDate && (
-            <div>
-              <h3 className="font-semibold text-foreground mb-3">Select Time</h3>
-              {selectedDateSlots.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No available times</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                  {selectedDateSlots.map(slot => {
+            {selectedDateSlots.length === 0 ? (
+              <motion.p className="text-lg text-slate-600 font-medium" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                No available times on this date
+              </motion.p>
+            ) : (
+              <motion.div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                <AnimatePresence>
+                  {selectedDateSlots.map((slot, i) => {
                     const isAvailable = slot.current_bookings < slot.max_capacity
+                    const isSelected = selectedTime === slot.start_time
+
                     return (
-                      <button
+                      <motion.button
                         key={slot.id}
+                        variants={cardVariants}
+                        whileHover={isAvailable ? { scale: 1.08, y: -2 } : {}}
+                        whileTap={isAvailable ? { scale: 0.96 } : {}}
                         onClick={() => {
                           if (isAvailable) {
                             setSelectedTime(slot.start_time)
@@ -158,42 +197,48 @@ export default function AvailabilityCalendar({
                           }
                         }}
                         disabled={!isAvailable}
-                        className={`p-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                          selectedTime === slot.start_time
-                            ? 'border-primary bg-primary/10 text-primary'
+                        className={`p-4 rounded-2xl font-bold text-lg transition-all shadow-sm border-2 ${
+                          isSelected
+                            ? 'bg-cyan-600 text-white border-cyan-700 shadow-lg'
                             : isAvailable
-                            ? 'border-border text-foreground hover:border-primary/50'
-                            : 'border-border/50 text-muted-foreground/50 opacity-50 cursor-not-allowed'
+                            ? 'bg-white text-slate-900 border-cyan-300 hover:bg-cyan-50 hover:shadow-md'
+                            : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
                         }`}
                       >
-                        {slot.start_time}
-                        {!isAvailable && (
-                          <span className="block text-xs mt-1">Full</span>
-                        )}
-                      </button>
+                        <div>{slot.start_time}</div>
+                        {!isAvailable && <div className="text-xs font-semibold mt-1">Full</div>}
+                      </motion.button>
                     )
                   })}
-                </div>
-              )}
-            </div>
-          )}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {/* Selection Summary */}
-          {selectedDate && selectedTime && (
-            <div className="rounded-lg bg-primary/10 p-4 border border-primary/20">
-              <p className="text-sm text-foreground">
-                <span className="font-semibold">Selected: </span>
-                {parseDate(selectedDate).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                })}{' '}
-                at {selectedTime}
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+      {/* Selection Summary */}
+      <AnimatePresence>
+        {selectedDate && selectedTime && (
+          <motion.div
+            className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-3xl p-8 border-2 border-cyan-300 shadow-md"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.3 }}
+          >
+            <p className="text-2xl font-bold text-slate-900">
+              ✅ <span className="text-cyan-600">Selected:</span>{' '}
+              {parseDate(selectedDate).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}{' '}
+              <span className="text-cyan-600">at {selectedTime}</span>
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }

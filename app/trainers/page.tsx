@@ -44,17 +44,17 @@ export default function TrainersPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-gray-200 bg-white">
         <div className="max-w-6xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div>
               <Link href="/web" className="text-sm text-primary hover:underline mb-2 block">
                 ← Back to Home
               </Link>
-              <h1 className="text-3xl font-bold text-foreground">Our Trainers</h1>
-              <p className="text-sm text-muted-foreground mt-1">
+              <h1 className="text-3xl font-bold text-gray-900">Our Trainers</h1>
+              <p className="text-sm text-gray-500 mt-1">
                 {trainers.length} professional trainers available
               </p>
             </div>
@@ -66,7 +66,7 @@ export default function TrainersPage() {
       <main className="max-w-6xl mx-auto px-6 py-12">
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <p className="text-muted-foreground">Loading trainers...</p>
+            <p className="text-gray-500">Loading trainers...</p>
           </div>
         )}
 
@@ -78,7 +78,7 @@ export default function TrainersPage() {
 
         {!isLoading && trainers.length === 0 && !error && (
           <div className="text-center py-12">
-            <p className="text-muted-foreground mb-4">No trainers available at the moment</p>
+            <p className="text-gray-500 mb-4">No trainers available at the moment</p>
             <Link href="/web">
               <Button variant="outline">Back to Home</Button>
             </Link>
@@ -90,7 +90,7 @@ export default function TrainersPage() {
             {trainers.map(trainer => (
               <div
                 key={trainer.id}
-                className="bg-card rounded-lg border border-border overflow-hidden hover:border-primary transition-colors"
+                className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-primary transition-colors"
               >
                 {/* Trainer image placeholder */}
                 <div className="w-full h-48 bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
@@ -102,7 +102,7 @@ export default function TrainersPage() {
                     />
                   ) : (
                     <div className="text-center">
-                      <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <div className="w-16 h-16 bg-cyan-600/20 rounded-full flex items-center justify-center mx-auto mb-2">
                         <span className="text-2xl font-bold text-primary">
                           {trainer.name.charAt(0)}
                         </span>
@@ -113,12 +113,12 @@ export default function TrainersPage() {
 
                 {/* Trainer info */}
                 <div className="p-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
                     {trainer.name}
                   </h3>
 
                   {trainer.bio && (
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                    <p className="text-sm text-gray-500 mb-4 line-clamp-2">
                       {trainer.bio}
                     </p>
                   )}
@@ -128,12 +128,12 @@ export default function TrainersPage() {
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center">
                         <span className="text-sm text-yellow-500">★</span>
-                        <span className="text-sm font-medium text-foreground ml-1">
+                        <span className="text-sm font-medium text-gray-900 ml-1">
                           {trainer.rating.toFixed(1)}
                         </span>
                       </div>
                       {trainer.total_reviews !== undefined && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-gray-500">
                           ({trainer.total_reviews} reviews)
                         </span>
                       )}
@@ -143,12 +143,12 @@ export default function TrainersPage() {
                   {/* Contact info */}
                   <div className="space-y-1 mb-4">
                     {trainer.email && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-gray-500">
                         📧 {trainer.email}
                       </p>
                     )}
                     {trainer.phone && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-gray-500">
                         📱 {trainer.phone}
                       </p>
                     )}

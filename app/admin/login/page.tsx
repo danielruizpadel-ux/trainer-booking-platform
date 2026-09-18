@@ -26,9 +26,9 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="w-full max-w-md">
-        <div className="rounded-lg border border-border bg-card p-8">
+        <div className="rounded-lg border border-gray-200 bg-white p-8">
           <h1 className="text-3xl font-bold text-center mb-8">Admin Login</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -69,7 +69,7 @@ export default function AdminLogin() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="text-center text-sm text-gray-500 mt-6">
             Demo credentials: admin@example.com / password
           </p>
         </div>

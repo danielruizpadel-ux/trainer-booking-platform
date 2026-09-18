@@ -39,7 +39,7 @@ export default async function TrainerPage(props: TrainerPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white">
       {/* Trainer Hero Section */}
       <TrainerHero trainer={trainer} />
 

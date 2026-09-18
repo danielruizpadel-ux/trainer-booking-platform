@@ -49,28 +49,46 @@ export async function POST(request: NextRequest) {
 
     const supabase = getSupabaseServerClient()
 
-    // Create reservation
-    const { error } = await supabase
+    // Step 1: Find availability slot to link it
+    const { data: availabilitySlot, error: slotError } = await supabase
+      .from('availability_slots')
+      .select('id')
+      .eq('trainer_id', trainer_id)
+      .eq('session_date', date)
+      .eq('start_time', time)
+      .single()
+
+    if (slotError) {
+      console.error('Error finding availability slot:', slotError)
+    }
+
+    // Step 2: Create reservation directly with client data
+    const { error: reservationError } = await supabase
       .from('reservations')
       .insert({
+        availability_slot_id: availabilitySlot?.id || null,
         trainer_id,
         client_name,
         client_email,
         client_phone: client_phone || null,
-        date,
-        time,
         notes: notes || null,
-        status: 'pending',
+        status: 'confirmed',
       })
       .select()
       .single()
 
-    if (error) {
-      console.error('Error creating reservation:', error)
+    if (reservationError) {
+      console.error('Error creating reservation - Full Supabase Error:', {
+        message: reservationError.message,
+        details: reservationError.details,
+        hint: reservationError.hint,
+        code: reservationError.code,
+      })
       return NextResponse.json(
         {
           success: false,
           error: 'Failed to create reservation',
+          details: reservationError.message,
         },
         { status: 500 }
       )
@@ -130,7 +148,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('client_email', clientEmail)
     }
 
-    const { data, error } = await query.order('date', { ascending: false })
+    const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) {
       console.error('Error fetching reservations:', error)

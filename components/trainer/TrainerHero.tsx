@@ -1,10 +1,6 @@
-/**
- * Trainer Hero Section Component
- * Displays trainer photo, name, bio, and key info
- */
+'use client'
 
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { motion } from 'framer-motion'
 
 interface TrainerHeroProps {
   trainer: {
@@ -19,92 +15,157 @@ interface TrainerHeroProps {
 }
 
 export default function TrainerHero({ trainer }: TrainerHeroProps) {
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.15, delayChildren: 0.1 },
+    },
+  }
+
+  const imageVariants = {
+    hidden: { opacity: 0, scale: 0.9 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 0.8, ease: 'easeOut' },
+    },
+  }
+
+  const contentVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.6, ease: 'easeOut' },
+    },
+  }
+
   return (
-    <div className="relative bg-gradient-to-br from-primary/10 to-accent/10 border-b border-border">
-      <div className="max-w-6xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-          {/* Photo */}
-          <div className="md:col-span-1">
-            <div className="w-full aspect-square rounded-lg overflow-hidden bg-card border border-border">
+    <motion.div
+      className="relative bg-gradient-to-b from-white via-white to-slate-50/50"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.6 }}
+    >
+      {/* Hero Section */}
+      <div className="max-w-7xl mx-auto px-6 py-16 lg:py-20">
+        <motion.div
+          className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {/* Foto GRANDE y prominente */}
+          <motion.div className="order-2 lg:order-1" variants={imageVariants}>
+            <div className="relative">
               {trainer.image_url ? (
-                <img
+                <motion.img
                   src={trainer.image_url}
                   alt={trainer.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-auto rounded-3xl shadow-2xl object-cover aspect-square"
+                  whileHover={{ scale: 1.02 }}
+                  transition={{ duration: 0.3 }}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20">
+                <div className="w-full aspect-square rounded-3xl bg-gradient-to-br from-cyan-50 to-blue-50 flex items-center justify-center shadow-lg border-4 border-cyan-200">
                   <div className="text-center">
-                    <div className="w-24 h-24 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <span className="text-5xl font-bold text-primary">
-                        {trainer.name.charAt(0)}
-                      </span>
+                    <div className="text-9xl font-bold text-cyan-600 opacity-20">
+                      {trainer.name.charAt(0)}
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
 
-          {/* Info */}
-          <div className="md:col-span-2">
-            <h1 className="text-4xl font-bold text-foreground mb-2">
-              {trainer.name}
-            </h1>
+          {/* Contenido - ENORME y claro */}
+          <motion.div className="order-1 lg:order-2 space-y-8" variants={containerVariants}>
+            {/* Nombre ENORME */}
+            <motion.div variants={contentVariants}>
+              <h1 className="text-6xl lg:text-7xl font-bold text-slate-900 leading-tight">
+                {trainer.name}
+              </h1>
+              <motion.p
+                className="text-2xl font-semibold text-cyan-600 mt-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                Professional Trainer
+              </motion.p>
+            </motion.div>
 
-            {/* Rating */}
+            {/* Rating - GRANDE y visible */}
             {trainer.rating !== undefined && (
-              <div className="flex items-center gap-2 mb-4">
-                <div className="flex items-center">
-                  <span className="text-lg text-yellow-500">★</span>
-                  <span className="text-lg font-semibold text-foreground ml-1">
-                    {trainer.rating.toFixed(1)}
-                  </span>
-                </div>
-                {trainer.total_reviews !== undefined && (
-                  <span className="text-sm text-muted-foreground">
-                    ({trainer.total_reviews} {trainer.total_reviews === 1 ? 'review' : 'reviews'})
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Bio */}
-            {trainer.bio && (
-              <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
-                {trainer.bio}
-              </p>
-            )}
-
-            {/* Specializations */}
-            {trainer.specializations && trainer.specializations.length > 0 && (
-              <div className="mb-6">
-                <p className="text-sm font-semibold text-foreground mb-2">Specializations</p>
-                <div className="flex flex-wrap gap-2">
-                  {trainer.specializations.map(spec => (
-                    <span
-                      key={spec}
-                      className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full"
-                    >
-                      {spec}
+              <motion.div className="flex items-center gap-4" variants={contentVariants}>
+                <div className="flex items-center gap-1 text-4xl">
+                  {[...Array(5)].map((_, i) => (
+                    <span key={i} className="drop-shadow-sm">
+                      {i < Math.floor(trainer.rating || 0) ? '⭐' : '☆'}
                     </span>
                   ))}
                 </div>
-              </div>
+                <div>
+                  <span className="text-4xl font-bold text-slate-900">
+                    {trainer.rating?.toFixed(1)}
+                  </span>
+                  {trainer.total_reviews !== undefined && (
+                    <p className="text-lg text-slate-600 mt-1">
+                      {trainer.total_reviews} {trainer.total_reviews === 1 ? 'review' : 'reviews'}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
             )}
 
-            {/* CTA Buttons */}
-            <div className="flex flex-wrap gap-3">
-              <Button className="px-6">Book Now</Button>
-              <Link href="/trainers">
-                <Button variant="outline" className="px-6">
-                  Back to Trainers
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
+            {/* Bio - Limpio y legible */}
+            {trainer.bio && (
+              <motion.p
+                className="text-xl text-slate-700 leading-relaxed max-w-xl"
+                variants={contentVariants}
+              >
+                {trainer.bio}
+              </motion.p>
+            )}
+
+            {/* Especialidades - BADGES SEPARADOS */}
+            {trainer.specializations && trainer.specializations.length > 0 && (
+              <motion.div className="space-y-4" variants={contentVariants}>
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">
+                  Specializations
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {trainer.specializations.map((spec, i) => (
+                    <motion.div
+                      key={spec}
+                      className="px-5 py-3 rounded-full bg-cyan-100 text-cyan-700 text-lg font-semibold border-2 border-cyan-300 shadow-sm"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.5 + i * 0.1 }}
+                      whileHover={{
+                        scale: 1.08,
+                        backgroundColor: 'rgb(34 211 238)',
+                        color: 'rgb(255 255 255)',
+                        borderColor: 'rgb(6 182 212)',
+                      }}
+                    >
+                      {spec}
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* CTA */}
+            <motion.div className="pt-4" variants={contentVariants}>
+              <p className="text-lg text-slate-600 flex items-center gap-2">
+                ⬇️ Scroll down to book your session
+              </p>
+            </motion.div>
+          </motion.div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   )
 }

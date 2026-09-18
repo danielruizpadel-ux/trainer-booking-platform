@@ -98,7 +98,7 @@ const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(
     return (
       <div
         ref={ref}
-        className={cn('w-full rounded-lg border border-input bg-background p-4', className)}
+        className={cn('w-full rounded-lg border border-input bg-white p-4', className)}
       >
         {/* Month and year header */}
         <div className="mb-4 flex items-center justify-between">
@@ -126,7 +126,7 @@ const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(
           {['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'].map((day) => (
             <div
               key={day}
-              className="text-center text-xs font-medium text-muted-foreground"
+              className="text-center text-xs font-medium text-gray-500"
             >
               {day}
             </div>
@@ -161,7 +161,7 @@ const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(
                 className={cn(
                   'flex h-8 w-8 items-center justify-center rounded text-sm',
                   selected
-                    ? 'bg-primary text-primary-foreground font-semibold'
+                    ? 'bg-cyan-600 text-white font-semibold'
                     : 'hover:bg-accent',
                   disabled && 'cursor-not-allowed opacity-50'
                 )}

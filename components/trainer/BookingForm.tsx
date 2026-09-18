@@ -1,11 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface BookingFormProps {
   trainerId: string
   trainerName: string
+  selectedDate: string
+  selectedTime: string
+  onBookingSuccess?: () => void
 }
 
 interface FormData {
@@ -24,6 +27,9 @@ interface FormErrors {
 export default function BookingForm({
   trainerId,
   trainerName,
+  selectedDate: propsSelectedDate,
+  selectedTime: propsSelectedTime,
+  onBookingSuccess,
 }: BookingFormProps) {
   const [formData, setFormData] = useState<FormData>({
     client_name: '',
@@ -40,8 +46,6 @@ export default function BookingForm({
     type: 'success' | 'error'
     message: string
   } | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>('')
-  const [selectedTime, setSelectedTime] = useState<string>('')
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
@@ -56,11 +60,11 @@ export default function BookingForm({
       newErrors.client_email = 'Invalid email address'
     }
 
-    if (!selectedDate) {
+    if (!propsSelectedDate) {
       newErrors.date = 'Please select a date'
     }
 
-    if (!selectedTime) {
+    if (!propsSelectedTime) {
       newErrors.time = 'Please select a time'
     }
 
@@ -68,19 +72,14 @@ export default function BookingForm({
     return Object.keys(newErrors).length === 0
   }
 
-
-  const handleInputChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement
-    >
-  ) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [name]: value,
     }))
     if (errors[name]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
         [name]: '',
       }))
@@ -108,8 +107,8 @@ export default function BookingForm({
           client_name: formData.client_name,
           client_email: formData.client_email,
           client_phone: formData.client_phone || null,
-          date: selectedDate,
-          time: selectedTime,
+          date: propsSelectedDate,
+          time: propsSelectedTime,
           notes: formData.notes || null,
         }),
       })
@@ -123,7 +122,7 @@ export default function BookingForm({
 
       setSubmitStatus({
         type: 'success',
-        message: `Booking confirmed! A confirmation email has been sent to ${formData.client_email}. Your session with ${trainerName} is scheduled for ${new Date(selectedDate).toLocaleDateString()} at ${selectedTime}.`,
+        message: `Booking confirmed! A confirmation email has been sent to ${formData.client_email}. Your session with ${trainerName} is scheduled for ${new Date(propsSelectedDate).toLocaleDateString()} at ${propsSelectedTime}.`,
       })
 
       setFormData({
@@ -134,153 +133,213 @@ export default function BookingForm({
         time: '',
         notes: '',
       })
-      setSelectedDate('')
-      setSelectedTime('')
+
+      onBookingSuccess?.()
     } catch (error) {
       setSubmitStatus({
         type: 'error',
-        message:
-          error instanceof Error ? error.message : 'An error occurred. Please try again.',
+        message: error instanceof Error ? error.message : 'An error occurred. Please try again.',
       })
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const formVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.08, delayChildren: 0.05 },
+    },
+  }
+
+  const inputVariants = {
+    hidden: { opacity: 0, y: 15 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <motion.form onSubmit={handleSubmit} className="space-y-6" variants={formVariants} initial="hidden" animate="visible">
       {/* Name */}
-      <div>
-        <label htmlFor="client_name" className="block text-sm font-medium text-foreground mb-1">
+      <motion.div variants={inputVariants}>
+        <label htmlFor="client_name" className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
           Your Name *
         </label>
-        <input
+        <motion.input
           type="text"
           id="client_name"
           name="client_name"
           value={formData.client_name}
           onChange={handleInputChange}
-          className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors ${
+          whileFocus={{ scale: 1.01, boxShadow: '0 0 0 3px rgba(6, 182, 212, 0.1)' }}
+          className={`w-full px-5 py-4 rounded-xl border-2 text-base transition-all font-medium ${
             errors.client_name
-              ? 'border-destructive focus:outline-none focus:ring-2 focus:ring-destructive'
-              : 'border-border focus:outline-none focus:ring-2 focus:ring-primary'
-          } bg-background text-foreground`}
+              ? 'border-red-400 bg-red-50 text-slate-900'
+              : 'border-cyan-300 bg-white text-slate-900 focus:border-cyan-600'
+          }`}
           placeholder="John Doe"
           disabled={isSubmitting}
         />
-        {errors.client_name && (
-          <p className="text-xs text-destructive mt-1">{errors.client_name}</p>
-        )}
-      </div>
+        <AnimatePresence>
+          {errors.client_name && (
+            <motion.p className="text-red-600 text-sm mt-2 font-semibold flex items-center gap-2" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+              ⚠️ {errors.client_name}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Email */}
-      <div>
-        <label htmlFor="client_email" className="block text-sm font-medium text-foreground mb-1">
+      <motion.div variants={inputVariants}>
+        <label htmlFor="client_email" className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
           Email *
         </label>
-        <input
+        <motion.input
           type="email"
           id="client_email"
           name="client_email"
           value={formData.client_email}
           onChange={handleInputChange}
-          className={`w-full px-3 py-2 rounded-lg border text-sm transition-colors ${
+          whileFocus={{ scale: 1.01, boxShadow: '0 0 0 3px rgba(6, 182, 212, 0.1)' }}
+          className={`w-full px-5 py-4 rounded-xl border-2 text-base transition-all font-medium ${
             errors.client_email
-              ? 'border-destructive focus:outline-none focus:ring-2 focus:ring-destructive'
-              : 'border-border focus:outline-none focus:ring-2 focus:ring-primary'
-          } bg-background text-foreground`}
+              ? 'border-red-400 bg-red-50 text-slate-900'
+              : 'border-cyan-300 bg-white text-slate-900 focus:border-cyan-600'
+          }`}
           placeholder="john@example.com"
           disabled={isSubmitting}
         />
-        {errors.client_email && (
-          <p className="text-xs text-destructive mt-1">{errors.client_email}</p>
-        )}
-      </div>
+        <AnimatePresence>
+          {errors.client_email && (
+            <motion.p className="text-red-600 text-sm mt-2 font-semibold flex items-center gap-2" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+              ⚠️ {errors.client_email}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       {/* Phone */}
-      <div>
-        <label htmlFor="client_phone" className="block text-sm font-medium text-foreground mb-1">
+      <motion.div variants={inputVariants}>
+        <label htmlFor="client_phone" className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
           Phone (Optional)
         </label>
-        <input
+        <motion.input
           type="tel"
           id="client_phone"
           name="client_phone"
           value={formData.client_phone}
           onChange={handleInputChange}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground transition-colors"
+          whileFocus={{ scale: 1.01, boxShadow: '0 0 0 3px rgba(6, 182, 212, 0.1)' }}
+          className="w-full px-5 py-4 rounded-xl border-2 border-cyan-300 bg-white text-slate-900 text-base focus:border-cyan-600 transition-all font-medium"
           placeholder="+1 (555) 123-4567"
           disabled={isSubmitting}
         />
-      </div>
+      </motion.div>
 
-      {/* Selected Date/Time Display */}
-      {selectedDate && selectedTime && (
-        <div className="rounded-lg bg-primary/10 p-3 border border-primary/20">
-          <p className="text-xs text-muted-foreground mb-1">Selected Session</p>
-          <p className="text-sm font-semibold text-foreground">
-            {new Date(selectedDate).toLocaleDateString('en-US', {
-              weekday: 'short',
-              month: 'short',
-              day: 'numeric',
-            })}{' '}
-            at {selectedTime}
-          </p>
-        </div>
-      )}
+      {/* Selected Date/Time */}
+      <AnimatePresence>
+        {propsSelectedDate && propsSelectedTime && (
+          <motion.div
+            className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl p-5 border-2 border-cyan-300 shadow-md"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+          >
+            <p className="text-sm text-slate-600 font-bold uppercase tracking-wide mb-2">✅ Selected Session</p>
+            <p className="text-lg font-bold text-slate-900">
+              {new Date(propsSelectedDate).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}{' '}
+              <span className="text-cyan-600">at {propsSelectedTime}</span>
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Date/Time Error */}
-      {(errors.date || errors.time) && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-          <p className="text-xs text-destructive">
-            {errors.date || errors.time}
-          </p>
-        </div>
-      )}
+      <AnimatePresence>
+        {(errors.date || errors.time) && (
+          <motion.div
+            className="rounded-xl border-2 border-red-400 bg-red-50 p-5 flex gap-3"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+          >
+            <span className="text-2xl flex-shrink-0">⚠️</span>
+            <p className="text-red-700 font-semibold">{errors.date || errors.time}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Notes */}
-      <div>
-        <label htmlFor="notes" className="block text-sm font-medium text-foreground mb-1">
+      <motion.div variants={inputVariants}>
+        <label htmlFor="notes" className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
           Notes (Optional)
         </label>
-        <textarea
+        <motion.textarea
           id="notes"
           name="notes"
           value={formData.notes}
           onChange={handleInputChange}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background text-foreground transition-colors resize-none"
+          whileFocus={{ scale: 1.01, boxShadow: '0 0 0 3px rgba(6, 182, 212, 0.1)' }}
+          className="w-full px-5 py-4 rounded-xl border-2 border-cyan-300 bg-white text-slate-900 text-base focus:border-cyan-600 transition-all font-medium resize-none"
           placeholder="Any special requests or notes for your trainer?"
-          rows={3}
+          rows={4}
           disabled={isSubmitting}
         />
-      </div>
+      </motion.div>
 
-      {/* Submit Status Messages */}
-      {submitStatus && (
-        <div
-          className={`rounded-lg p-3 border text-sm ${
-            submitStatus.type === 'success'
-              ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
-              : 'border-destructive/50 bg-destructive/5 text-destructive'
-          }`}
-        >
-          <p>{submitStatus.message}</p>
-        </div>
-      )}
+      {/* Submit Status */}
+      <AnimatePresence>
+        {submitStatus && (
+          <motion.div
+            className={`rounded-2xl p-6 border-2 flex gap-3 ${
+              submitStatus.type === 'success'
+                ? 'bg-green-50 border-green-400'
+                : 'bg-red-50 border-red-400'
+            }`}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+          >
+            <span className="text-3xl flex-shrink-0">
+              {submitStatus.type === 'success' ? '✅' : '⚠️'}
+            </span>
+            <p className={`text-base font-semibold leading-relaxed ${submitStatus.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+              {submitStatus.message}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Submit Button */}
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isSubmitting || !selectedDate || !selectedTime}
-      >
-        {isSubmitting ? 'Booking...' : `Book with ${trainerName}`}
-      </Button>
+      <motion.div variants={inputVariants} className="pt-4">
+        <motion.button
+          type="submit"
+          disabled={isSubmitting || !propsSelectedDate || !propsSelectedTime}
+          whileHover={!isSubmitting && propsSelectedDate && propsSelectedTime ? { scale: 1.02, y: -2 } : {}}
+          whileTap={!isSubmitting && propsSelectedDate && propsSelectedTime ? { scale: 0.98 } : {}}
+          className={`w-full py-5 px-6 rounded-xl font-bold text-xl transition-all flex items-center justify-center gap-2 shadow-md ${
+            isSubmitting || !propsSelectedDate || !propsSelectedTime
+              ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+              : 'bg-cyan-600 text-white hover:bg-cyan-700 hover:shadow-lg'
+          }`}
+        >
+          {isSubmitting && (
+            <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity }}>
+              ⏳
+            </motion.span>
+          )}
+          {isSubmitting ? 'Booking...' : `Book with ${trainerName}`}
+        </motion.button>
+      </motion.div>
 
       {/* Help Text */}
-      <p className="text-xs text-muted-foreground text-center">
-        Select your preferred date and time from the calendar above, then complete this form to confirm.
-      </p>
-    </form>
+      <motion.p className="text-center text-slate-600 text-sm font-medium" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>
+        Select your preferred date and time above, then complete this form to confirm.
+      </motion.p>
+    </motion.form>
   )
 }

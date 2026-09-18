@@ -147,12 +147,12 @@ export function ReservationWidget({
       <div className="space-y-6 p-6">
         <div className="text-center">
           <h2 className="text-2xl font-bold">Select Your Trainer</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Choose a trainer to book a session</p>
+          <p className="mt-2 text-sm text-gray-500">Choose a trainer to book a session</p>
         </div>
 
         {isLoadingTrainers ? (
           <div className="flex items-center justify-center py-8">
-            <p className="text-muted-foreground">Loading trainers...</p>
+            <p className="text-gray-500">Loading trainers...</p>
           </div>
         ) : (
           <div className="grid gap-4">
@@ -163,7 +163,7 @@ export function ReservationWidget({
                   setSelectedTrainer(trainer)
                   setCurrentStep('class-type')
                 }}
-                className="flex items-center gap-4 rounded-lg border border-border p-4 text-left transition-all hover:border-primary hover:bg-accent/5"
+                className="flex items-center gap-4 rounded-lg border border-gray-200 p-4 text-left transition-all hover:border-primary hover:bg-accent/5"
               >
                 {trainer.image_url && (
                   <img
@@ -174,7 +174,7 @@ export function ReservationWidget({
                 )}
                 <div className="flex-1">
                   <p className="font-semibold">{trainer.name}</p>
-                  {trainer.bio && <p className="text-sm text-muted-foreground">{trainer.bio}</p>}
+                  {trainer.bio && <p className="text-sm text-gray-500">{trainer.bio}</p>}
                 </div>
               </button>
             ))}
@@ -198,7 +198,7 @@ export function ReservationWidget({
             ← Back
           </button>
           <h2 className="mt-4 text-2xl font-bold">Select Class Type</h2>
-          <p className="mt-2 text-sm text-muted-foreground">What type of session would you like?</p>
+          <p className="mt-2 text-sm text-gray-500">What type of session would you like?</p>
         </div>
 
         <div className="grid gap-4">
@@ -211,12 +211,12 @@ export function ReservationWidget({
               }}
               className={`rounded-lg border-2 p-4 text-left transition-all ${
                 selectedClassType === type
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50'
+                  ? 'border-primary bg-cyan-600/5'
+                  : 'border-gray-200 hover:border-primary/50'
               }`}
             >
               <p className="font-semibold capitalize">{type}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-1 text-sm text-gray-500">
                 {type === 'individual' && 'One-on-one training session'}
                 {type === 'group' && 'Group training session'}
                 {type === 'semi-private' && 'Semi-private session (2-4 people)'}
@@ -240,7 +240,7 @@ export function ReservationWidget({
             ← Back
           </button>
           <h2 className="mt-4 text-2xl font-bold">Select Date</h2>
-          <p className="mt-2 text-sm text-muted-foreground">When would you like your session?</p>
+          <p className="mt-2 text-sm text-gray-500">When would you like your session?</p>
         </div>
 
         <div className="grid gap-2 max-h-80 overflow-y-auto">
@@ -256,12 +256,12 @@ export function ReservationWidget({
                 }}
                 className={`rounded-lg border-2 p-3 text-left transition-all ${
                   selectedDate === dateStr
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50'
+                    ? 'border-primary bg-cyan-600/5'
+                    : 'border-gray-200 hover:border-primary/50'
                 }`}
               >
                 <p className="font-semibold">{date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-                <p className="text-xs text-muted-foreground">{dateStr}</p>
+                <p className="text-xs text-gray-500">{dateStr}</p>
               </button>
             )
           })}
@@ -281,14 +281,14 @@ export function ReservationWidget({
             ← Back
           </button>
           <h2 className="mt-4 text-2xl font-bold">Select Time</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm text-gray-500">
             {selectedDate && new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
 
         {isLoadingSlots ? (
           <div className="flex items-center justify-center py-8">
-            <p className="text-muted-foreground">Loading available times...</p>
+            <p className="text-gray-500">Loading available times...</p>
           </div>
         ) : availableSlots.length === 0 ? (
           <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-center">
@@ -311,12 +311,12 @@ export function ReservationWidget({
                 }}
                 className={`rounded-lg border-2 p-3 text-left transition-all ${
                   selectedTime === slot.start_time
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50'
+                    ? 'border-primary bg-cyan-600/5'
+                    : 'border-gray-200 hover:border-primary/50'
                 }`}
               >
                 <p className="font-semibold">{slot.start_time}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500">
                   {slot.current_bookings}/{slot.max_capacity} spots taken
                 </p>
               </button>
@@ -338,7 +338,7 @@ export function ReservationWidget({
             ← Back
           </button>
           <h2 className="mt-4 text-2xl font-bold">Your Information</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Complete your booking details</p>
+          <p className="mt-2 text-sm text-gray-500">Complete your booking details</p>
         </div>
 
         <div className="space-y-4">
@@ -402,20 +402,20 @@ export function ReservationWidget({
         </div>
         <div>
           <h2 className="text-2xl font-bold">Booking Confirmed!</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Your session has been successfully reserved</p>
+          <p className="mt-2 text-sm text-gray-500">Your session has been successfully reserved</p>
         </div>
 
-        <div className="space-y-2 rounded-lg bg-muted p-4 text-left">
+        <div className="space-y-2 rounded-lg bg-gray-100 p-4 text-left">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Trainer</p>
+            <p className="text-xs font-medium text-gray-500">Trainer</p>
             <p className="font-semibold">{selectedTrainer?.name}</p>
           </div>
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Date & Time</p>
+            <p className="text-xs font-medium text-gray-500">Date & Time</p>
             <p className="font-semibold">{selectedDate} at {selectedTime}</p>
           </div>
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Class Type</p>
+            <p className="text-xs font-medium text-gray-500">Class Type</p>
             <p className="font-semibold capitalize">{selectedClassType}</p>
           </div>
         </div>
