@@ -23,33 +23,75 @@ export default function CalendlyCalendar({
 }: CalendlyCalendarProps) {
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedTime, setSelectedTime] = useState<string | null>(null)
 
   useEffect(() => {
     const loadSlots = async () => {
       try {
+        if (!trainerId) {
+          setError('Trainer ID not available')
+          setIsLoading(false)
+          return
+        }
+
+        console.log('📅 Loading availability for trainer:', trainerId)
         const today = new Date()
         const twoWeeksLater = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
 
         const startDate = today.toISOString().split('T')[0]
         const endDate = twoWeeksLater.toISOString().split('T')[0]
 
-        const response = await fetch(
-          `/api/availability?trainer_id=${trainerId}&start_date=${startDate}&end_date=${endDate}`
-        )
+        const url = `/api/availability?trainer_id=${trainerId}&start_date=${startDate}&end_date=${endDate}`
+        console.log('📡 Fetching:', url)
+
+        const response = await fetch(url)
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('❌ API Error:', errorData)
+          setError(`API Error: ${errorData.error || response.statusText}`)
+          setIsLoading(false)
+          return
+        }
 
         const data = await response.json()
-        if (data.success && Array.isArray(data.data)) {
-          setSlots(data.data)
-          // Select first available date by default
-          const firstDate = data.data[0]?.session_date
-          if (firstDate) {
-            setSelectedDate(firstDate)
-          }
+        console.log('📦 Response:', data)
+
+        if (!data.success) {
+          console.error('❌ Request failed:', data.error)
+          setError(data.error || 'Failed to load availability')
+          setIsLoading(false)
+          return
+        }
+
+        if (!Array.isArray(data.data)) {
+          console.error('❌ Invalid data format:', data.data)
+          setError('Invalid data format from server')
+          setIsLoading(false)
+          return
+        }
+
+        if (data.data.length === 0) {
+          console.warn('⚠️ No slots available')
+          setError('No disponibilidad para estas fechas')
+          setIsLoading(false)
+          return
+        }
+
+        console.log(`✅ Loaded ${data.data.length} availability slots`)
+        setSlots(data.data)
+        setError(null)
+
+        // Select first available date by default
+        const firstDate = data.data[0]?.session_date
+        if (firstDate) {
+          setSelectedDate(firstDate)
         }
       } catch (error) {
-        console.error('Error loading availability:', error)
+        console.error('❌ Error loading availability:', error)
+        setError(error instanceof Error ? error.message : 'Failed to load availability')
       } finally {
         setIsLoading(false)
       }
@@ -89,6 +131,34 @@ export default function CalendlyCalendar({
           ⏳
         </motion.div>
         <p className="text-gray-600 font-medium">Cargando disponibilidad...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <motion.div
+        className="text-center py-12 bg-red-50 rounded-lg border-2 border-red-300 p-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <p className="text-red-700 font-semibold text-lg mb-2">❌ Error</p>
+        <p className="text-red-600 mb-4">{error}</p>
+        <p className="text-sm text-red-600 mb-4">Trainer ID: {trainerId}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+        >
+          Reintentar
+        </button>
+      </motion.div>
+    )
+  }
+
+  if (slots.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600 font-medium">No hay disponibilidad para estas fechas</p>
       </div>
     )
   }
