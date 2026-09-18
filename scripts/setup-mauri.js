@@ -25,7 +25,7 @@ async function setupMauri() {
       .from('trainers')
       .insert([
         {
-          slug: 'mauricio-martin',
+          slug: 'mauri',
           name: 'Mauricio Martin',
           bio: 'The Padel Doctor | Especializado en técnica clínica, estrategia competitiva y mentalidad ganadora. Llevo más de 10 años transformando jugadores en competidores.',
           email: 'mauri@padeldoctor.com',
@@ -53,13 +53,16 @@ async function setupMauri() {
     const today = new Date();
     const slots = [];
 
+    // Horarios específicos: 9-12, 14-20 (sin 13:00)
+    const hours = [9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20];
+
     for (let day = 0; day < 14; day++) {
       const date = new Date(today);
       date.setDate(date.getDate() + day);
       const dateStr = date.toISOString().split('T')[0];
 
-      // Generar slots de 1 hora desde 9:00 a 20:00
-      for (let hour = 9; hour < 20; hour++) {
+      // Generar slots para cada hora disponible
+      for (const hour of hours) {
         const startTime = `${String(hour).padStart(2, '0')}:00`;
         const endTime = `${String(hour + 1).padStart(2, '0')}:00`;
 
