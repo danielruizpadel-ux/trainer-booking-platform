@@ -782,3 +782,19 @@ Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
   con el resumen que muestra "Guardar cambios". `DateOverridesPanel` se deja
   igual (guardado inmediato), a propósito. `type-check`: 20, sin cambios
   respecto al baseline.
+- **Prompt 13 — 20/09/2026.** Daniel reporta en pantalla el error real al
+  guardar: `duplicate key value violates unique constraint
+  availability_slots_trainer_id_session_date_start_time_end_t_key`. Confirma
+  de paso que la **migración 005 sí está aplicada** (el horario semanal ya
+  carga datos reales). Causa: ese unique constraint es
+  `(trainer_id, session_date, start_time, end_time)` — no distingue
+  `class_type` — y el generador ignoraba del todo los huecos manuales
+  (`generated_by_pattern = false`) sin registrar su horario, así que si ya
+  había un hueco (manual o de otro `class_type`) exactamente a esa hora ese
+  día, intentaba insertar otro y chocaba. Fix en
+  `lib/availability/generate.ts`: además de la clave por
+  `(start_time, class_type)`, ahora también se registra el horario exacto
+  `(start_time, end_time)` de cualquier hueco existente esa fecha (manual,
+  generado u ocupado) y nunca se inserta uno nuevo si ese horario ya está
+  cubierto. `type-check`: 20, sin cambios. Sin poder verificar en el
+  navegador si esto resuelve el guardado que falló en su pantalla.
