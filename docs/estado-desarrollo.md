@@ -1,6 +1,6 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D rediseñada (20/09) a horario semanal + excepciones (estilo Cal.com), migración 005 escrita, sin aplicar todavía. Nada de esto verificado en el navegador.**
+Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D rediseñada (20/09) a horario semanal + excepciones (estilo Cal.com): sin vista de calendario en Disponibilidad (se ve en Reservas), horario semanal con edición local y botón "Guardar cambios" (prompt 12). Migración 005 escrita, sin aplicar todavía. Nada de esto verificado en el navegador.**
 
 ## Decisión de alcance
 
@@ -26,7 +26,7 @@ Daniel a mano en Supabase hasta que exista un flujo de invitación.
 | **B** | Shell del dashboard: layout + nav (Resumen / Reservas / Disponibilidad / Perfil) | **hecha** (19/09) |
 | **C** | Reservas: confirmación manual (pista física), listado, `price` en el servidor, stub de notificaciones | **hecha** (19/09) |
 | **C+** | Calendario semanal, propuesta de nueva fecha con enlace público, edición total, reserva manual | **hecha y verificada** (20/09) |
-| D | Disponibilidad: CRUD de `availability_slots` respetando `class_type` real (`private`) y `lib/availability/slot-status.ts` | **implementada** (20/09), sin verificar en el navegador |
+| D | Disponibilidad: horario semanal recurrente + excepciones (estilo Cal.com), edición local con Guardar/Cancelar | **implementada** (20/09), sin verificar en el navegador |
 | E | Perfil: foto, colores de tema, precios base | — |
 | F | Resumen/stats: reservas de hoy, próximas, ingresos estimados | — |
 
@@ -661,14 +661,39 @@ Todas por `requireTrainer()`.
 
 ### Dashboard → Disponibilidad
 
-`AvailabilityView` ahora tiene dos pestañas:
+Sin pestañas ni vista de calendario propia (se quitó a petición de Daniel,
+prompt 10): la vista de calendario de la Fase D original (huecos sueltos,
+"Añadir hueco") se borró entera, junto con sus rutas
+(`POST`/`DELETE /api/dashboard/availability/[id]`). Los huecos ya generados
+se ven, si hace falta, desde **Reservas → Calendario**
+(`ReservationsCalendar`), que ya distinguía "Libre" (azul discontinuo) de
+"Sin abrir" (rayado) — prompt 10 solo añadió `cache: 'no-store'` a su fetch
+y `export const dynamic = 'force-dynamic'` a `GET /api/dashboard/calendar`,
+como refuerzo tras el aviso de Daniel de que un cambio de horario no se veía
+reflejado ahí (prompt 11; no se ha podido confirmar en el navegador si era
+justo eso o solo caché).
 
-- **Horario semanal** (por defecto): `WeeklySchedule` (un interruptor por
-  día + sus rangos, editables con `<input type="time">`, cada cambio se
-  guarda al momento, sin botón "Guardar" aparte) + `DateOverridesPanel` a la
-  derecha (lista de excepciones + diálogo para añadir una).
-- **Calendario**: lo que ya había en la Fase D original — los huecos ya
-  generados, con "Añadir hueco" para algo puntual.
+`AvailabilityView` es ahora, sin pestañas: `WeeklySchedule` (horario semanal)
++ `DateOverridesPanel` a la derecha (excepciones puntuales).
+
+- **`WeeklySchedule` — edición local con Guardar/Cancelar (prompt 12,
+  estilo Cal.com: captura de Daniel con la barra Cancel/Save abajo).**
+  Togglear un día, añadir/quitar franjas o cambiar una hora ya no dispara
+  red: todo queda en un borrador (`draft`) en el propio componente hasta
+  pulsar **"Guardar cambios"**. "Cancelar" descarta el borrador y vuelve al
+  último guardado. Al guardar, se reconcilia el borrador contra el servidor
+  en orden seguro (borra lo quitado → crea lo nuevo, solo si sigue activado
+  → actualiza horas cambiadas → PATCH del `enabled` de un día solo si ese
+  día ya tenía franjas en servidor, para que `setDayEnabled` no duplique una
+  franja por defecto en un día que arrancó vacío) y al final dispara un
+  regenerate y muestra el resumen ("Guardado — N huecos nuevos · M
+  cerrados"). Se quitó `RegenerateBar` (el botón aparte de "Regenerar huecos
+  ahora" de prompt 11): con "Guardar cambios" mostrando ya su propio
+  resumen, era redundante y rompía el patrón edit-then-save.
+- **`DateOverridesPanel` sigue siendo de guardado inmediato** (añadir/borrar
+  una excepción pega al servidor al momento) — la captura de Daniel solo
+  mostraba Cancel/Save bajo la lista de horario semanal, no bajo excepciones,
+  así que se dejó fuera de este cambio a propósito.
 
 Limitación a propósito: no hay selector de `class_type` en el horario
 semanal (siempre `private`, que es lo único que hay en datos reales hoy); si
@@ -676,14 +701,20 @@ hace falta `group`/`academy` recurrente, hay que añadirlo.
 
 ### Sin aplicar / sin verificar
 
-- **Migración 005 sin aplicar.** Nada de esto funciona hasta que Daniel la
-  ejecute en Supabase → SQL Editor (`migrations/005_weekly_availability.sql`,
-  idempotente). Sin ella, `GET /api/dashboard/availability/schedule` fallará
-  con la tabla inexistente.
-- Sin verificar en el navegador (mismo motivo que la Fase D original: este
-  entorno no puede levantar `npm run dev`, sin red para el binario de SWC).
-- `npm run type-check`: 20 (los preexistentes), nada nuevo en los archivos de
-  esta fase.
+- **Migración 005 sin aplicar (a confirmar con Daniel).** Nada de esto
+  funciona hasta que se ejecute en Supabase → SQL Editor
+  (`migrations/005_weekly_availability.sql`, idempotente). Sin ella,
+  `GET /api/dashboard/availability/schedule` fallará con la tabla
+  inexistente. No se ha recibido confirmación de que ya esté aplicada.
+- Sin verificar en el navegador — ni el rediseño original, ni el quitar la
+  pestaña Calendario, ni el fix de caché, ni el edit-then-save de prompt 12
+  (mismo motivo en todos: este entorno no puede levantar `npm run dev`, sin
+  red para el binario de SWC). Sigue sin confirmarse si el aviso de Daniel
+  de "la disponibilidad no se refleja en el calendario" quedó resuelto con
+  el fix de caché de prompt 11.
+- `npm run type-check`: 20 (los preexistentes, en `TrainerHero.tsx`,
+  `TimePickerDropdown.tsx` y `AvailabilityCalendar.tsx` — widget público, no
+  tocado), nada nuevo en los archivos de esta fase, incluido prompt 12.
 
 **Pendiente para Daniel (o Claude Code en el Mac)**: aplicar la migración
 005, y luego probar: encender/apagar un día, añadir y quitar rangos, añadir
@@ -737,3 +768,17 @@ Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
   excepciones por fecha, estilo Cal.com (migración 005, sin aplicar). Generador
   automático de huecos (`lib/availability/generate.ts`). Implementado y con
   `type-check` limpio; sin aplicar la migración ni verificar en el navegador.
+- **Prompt 10 — 20/09/2026.** Quitar del todo la vista de Calendario dentro
+  de Disponibilidad (Daniel no la quería ahí); mostrar en su lugar abierto/
+  cerrado en el calendario de Reservas, que ya lo hacía.
+- **Prompt 11 — 20/09/2026.** Aviso de Daniel: un cambio de horario no se
+  veía reflejado en el calendario. Fix defensivo (sin poder confirmar la
+  causa exacta sin navegador): botón `RegenerateBar` para regenerar a mano
+  y ver el resumen, `cache: 'no-store'` en los dos fetches relevantes,
+  `export const dynamic = 'force-dynamic'` en las dos rutas GET relevantes.
+- **Prompt 12 — 20/09/2026.** Daniel prefiere edit-then-save: `WeeklySchedule`
+  reescrito con borrador local + botones "Cancelar"/"Guardar cambios" (antes
+  guardaba cada click al momento). Se quita `RegenerateBar`, ya redundante
+  con el resumen que muestra "Guardar cambios". `DateOverridesPanel` se deja
+  igual (guardado inmediato), a propósito. `type-check`: 20, sin cambios
+  respecto al baseline.
