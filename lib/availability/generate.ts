@@ -147,15 +147,27 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     const desiredByKey = new Map(desired.map((d) => [rangeKey(d.start_time, d.class_type), d]))
     const existingForDate = existingByDate.get(date) ?? []
     const existingKeysSeen = new Set<string>()
+    // El unique constraint real de `availability_slots` es
+    // (trainer_id, session_date, start_time, end_time) — NO distingue
+    // class_type. Cualquier fila que ya ocupe ese horario ese día (sea del
+    // generador, manual, u ocupada) bloquea un INSERT ahí, así que hay que
+    // registrar también por start_time+end_time para no violar el unique
+    // constraint al insertar (antes se ignoraban aquí las filas manuales,
+    // lo que producía "duplicate key value violates unique constraint
+    // availability_slots_trainer_id_session_date_start_time_end_t_key").
+    const existingTimeRangesSeen = new Set<string>()
 
     for (const slot of existingForDate) {
       const key = rangeKey(slot.start_time, slot.class_type)
+      const timeRangeKey = `${slot.start_time}__${slot.end_time}`
+      existingTimeRangesSeen.add(timeRangeKey)
       const holder = (slot.reservations ?? []).find((r) => reservationHoldsSlot(r.status))
       const occupied = Boolean(holder) || !isSlotOpen(slot)
       const wanted = desiredByKey.get(key)
 
       if (!slot.generated_by_pattern) {
         // Añadido a mano: el generador no lo toca, esté o no en el patrón.
+        existingKeysSeen.add(key)
         continue
       }
 
@@ -177,15 +189,21 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     }
 
     for (const [key, range] of desiredByKey) {
-      if (!existingKeysSeen.has(key)) {
-        toInsert.push({
-          trainer_id: trainerId,
-          session_date: date,
-          start_time: range.start_time,
-          end_time: range.end_time,
-          class_type: range.class_type,
-        })
+      if (existingKeysSeen.has(key)) continue
+      const timeRangeKey = `${range.start_time}__${range.end_time}`
+      if (existingTimeRangesSeen.has(timeRangeKey)) {
+        // Ya hay un hueco (manual, o de otro class_type) exactamente a esa
+        // hora ese día — insertar otro violaría el unique constraint de la
+        // base. Se deja como está: ese hueco ya cubre la disponibilidad.
+        continue
       }
+      toInsert.push({
+        trainer_id: trainerId,
+        session_date: date,
+        start_time: range.start_time,
+        end_time: range.end_time,
+        class_type: range.class_type,
+      })
     }
 
     cursor = addDays(cursor, 1)
