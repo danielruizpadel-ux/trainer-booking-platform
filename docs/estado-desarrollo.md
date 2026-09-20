@@ -1,6 +1,6 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Siguiente: Fase D (Disponibilidad)**
+Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D implementada (20/09), pendiente de verificación en el navegador.**
 
 ## Decisión de alcance
 
@@ -26,7 +26,7 @@ Daniel a mano en Supabase hasta que exista un flujo de invitación.
 | **B** | Shell del dashboard: layout + nav (Resumen / Reservas / Disponibilidad / Perfil) | **hecha** (19/09) |
 | **C** | Reservas: confirmación manual (pista física), listado, `price` en el servidor, stub de notificaciones | **hecha** (19/09) |
 | **C+** | Calendario semanal, propuesta de nueva fecha con enlace público, edición total, reserva manual | **hecha y verificada** (20/09) |
-| D | Disponibilidad: CRUD de `availability_slots` respetando `class_type` real (`private`) y `lib/availability/slot-status.ts` | — |
+| D | Disponibilidad: CRUD de `availability_slots` respetando `class_type` real (`private`) y `lib/availability/slot-status.ts` | **implementada** (20/09), sin verificar en el navegador |
 | E | Perfil: foto, colores de tema, precios base | — |
 | F | Resumen/stats: reservas de hoy, próximas, ingresos estimados | — |
 
@@ -529,6 +529,74 @@ Retoque: la cabecera de Reservas cuenta como "requieren tu confirmación" solo
 las `pending_confirmation`; una propuesta enviada espera al cliente, no al
 entrenador.
 
+## Fase D — Disponibilidad (20/09/2026)
+
+### Alcance
+
+CRUD de `availability_slots` del entrenador de la sesión: crear huecos nuevos
+y cerrar los que están libres. No se implementa edición de un hueco existente
+(mover hora/tipo): para eso, cerrar y volver a abrir.
+
+### Lectura
+
+Reutiliza `GET /api/dashboard/calendar` (ya existía para la Fase C+, sin
+tocar). No hace falta un `GET` nuevo: esa ruta ya devuelve, por rango de
+fechas, cada hueco del entrenador con su `kind` (`pending` / `proposed` /
+`confirmed` / `available` / `closed`) y "sin abrir" cuando no hay hueco.
+
+### Escritura — `lib/availability/manage.ts`
+
+- `createSlot`: valida fecha (no pasada), horas `HH:MM` con fin > inicio, y
+  `class_type` contra los tres valores reales (`private`, `group`, `academy`,
+  `docs/DATABASE.md`). Rechaza un duplicado exacto (mismo entrenador, fecha,
+  hora de inicio y tipo) con 409. Inserta `status: 'available'`,
+  `current_bookings: 0`, `max_capacity: 1`.
+- `deleteSlot`: carga el hueco con sus reservas embebidas, comprueba dueño
+  (403 si no) y que está abierto y sin reserva viva encima
+  (`isSlotOpen` + `reservationHoldsSlot`, las mismas funciones de
+  `lib/availability/slot-status.ts` que usa todo lo demás) — 409 si no, con el
+  mensaje "Gestiónala primero desde Reservas". Solo entonces borra la fila.
+
+### Rutas
+
+- `POST /api/dashboard/availability` `{ session_date, start_time, end_time, class_type }`
+- `DELETE /api/dashboard/availability/[id]`
+
+Ambas por `requireTrainer()`: 401 sin sesión, 403 si el hueco (al borrar) es
+de otro entrenador.
+
+### Dashboard → Disponibilidad (`/dashboard/disponibilidad`)
+
+- `components/dashboard/availability/AvailabilityView.tsx`: cabecera con el
+  botón "Añadir hueco" + `AvailabilityCalendar`.
+- `AvailabilityCalendar.tsx`: **no** es `ReservationsCalendar` reutilizado — es
+  una copia adaptada, a propósito, para no tocar el componente ya verificado
+  de la Fase C+ (CLAUDE.md pide preguntar antes de tocar la referencia
+  visual). Misma rejilla semana/día y los mismos datos
+  (`GET /api/dashboard/calendar`); la diferencia es que un hueco `available`
+  es un botón que lo cierra (con `window.confirm` y `DELETE`), mientras que
+  `pending`/`proposed`/`confirmed` quedan de solo lectura con un `title`
+  apuntando a Reservas.
+- `NewSlotDialog.tsx` (vía `DialogShell`, igual que el resto del dashboard):
+  fecha (mínimo hoy), hora de inicio/fin, tipo de clase.
+
+### Sin verificar
+
+No se ha podido levantar `npm run dev` desde este entorno (la VM de acceso al
+Mac no tiene red para descargar el binario nativo de SWC de Turbopack) para
+probar en el navegador. Sí se ha comprobado:
+
+- `npm run type-check`: sigue en 20 errores, los mismos preexistentes; nada
+  nuevo en los archivos de la Fase D.
+- Revisión de código contra los patrones ya verificados de la Fase C+
+  (`requireTrainer()`, `isSlotOpen`/`reservationHoldsSlot`,
+  `getSupabaseServerClient()`, mismo `DialogShell`).
+
+**Pendiente para Daniel (o la sesión de Claude Code en el Mac)**: probar en el
+navegador — crear un hueco, comprobar que aparece en `GET /api/availability`
+y en el widget público, cerrar un hueco libre, y confirmar que intentar
+cerrar uno con una reserva encima devuelve el 409 y no lo borra.
+
 ## Pendiente (manual, Daniel)
 
 1. Configuración de Auth pendiente de la Fase A (redirect URL de Supabase y
@@ -538,12 +606,14 @@ entrenador.
    web (ambos cruzan con `reservations`), pero si se quiere coherencia total:
    `update availability_slots set status='full', current_bookings=1 where id in (…)`.
 
-## Siguiente prompt (Fase D)
+## Siguiente prompt (Fase E)
 
-Disponibilidad: CRUD de `availability_slots` del entrenador de la sesión,
-respetando `class_type` real (`private`) y la regla de
-`lib/availability/slot-status.ts`. Un hueco `pending` o `full` no se puede
-borrar sin decidir antes sobre su reserva.
+Perfil: foto, colores de tema, precios base. Antes de tocar `trainers`,
+comprobar contra `docs/DATABASE.md` qué columnas existen de verdad (no hay
+`price` en la tabla hoy).
+
+Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
+— este entorno no puede levantar `npm run dev`.
 
 ## Log de prompts
 
@@ -565,3 +635,7 @@ borrar sin decidir antes sobre su reserva.
   cancelación `cancelled`, reserva manual.
 - **Prompt 7 — 20/09/2026.** Migraciones 003/004 aplicadas por Daniel;
   verificación de punta a punta de la propuesta (aceptar y rechazar).
+- **Prompt 8 (Fase D) — 20/09/2026.** CRUD de disponibilidad: crear y cerrar
+  huecos (`lib/availability/manage.ts`), reutilizando `GET /api/dashboard/calendar`
+  para la lectura. Implementado y con `type-check` limpio; sin verificar en el
+  navegador (sin `npm run dev` disponible en este entorno).
