@@ -1,6 +1,6 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D implementada (20/09), pendiente de verificación en el navegador.**
+Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D rediseñada (20/09) a horario semanal + excepciones (estilo Cal.com), migración 005 escrita, sin aplicar todavía. Nada de esto verificado en el navegador.**
 
 ## Decisión de alcance
 
@@ -597,6 +597,100 @@ navegador — crear un hueco, comprobar que aparece en `GET /api/availability`
 y en el widget público, cerrar un hueco libre, y confirmar que intentar
 cerrar uno con una reserva encima devuelve el 409 y no lo borra.
 
+## Fase D — rediseño a horario semanal + excepciones (20/09/2026, prompt 9)
+
+### Por qué el cambio
+
+La Fase D original (huecos sueltos, uno a uno) funcionaba pero Daniel pidió
+que se pareciera a Cal.com: un horario semanal recurrente (día de la semana,
+on/off, uno o varios rangos que se repiten cada semana) más una lista de
+excepciones puntuales por fecha. Se mantiene todo lo de la Fase D original
+(`lib/availability/manage.ts`, el calendario de "Añadir hueco" puntual) para
+lo que se sale de la plantilla; se añade la plantilla encima.
+
+### Decisión de diseño
+
+`availability_slots` sigue siendo, sin ningún cambio, lo que ve el cliente:
+el widget público, `isSlotOpen` y `POST /api/reservations` no saben que la
+plantilla existe. La plantilla vive en dos tablas nuevas
+(**migración 005, sin aplicar todavía**) y un generador
+(`lib/availability/generate.ts`) las traduce a filas reales de
+`availability_slots` de las próximas 8 semanas, cada vez que la plantilla
+cambia.
+
+- `trainer_weekly_hours`: `day_of_week` (0 lunes … 6 domingo, mismo criterio
+  que ya usaba el calendario), `start_time`, `end_time`, `class_type`,
+  `enabled`. Puede haber varios rangos por día. El toggle de un día cambia
+  `enabled` en todos sus rangos a la vez (no los borra: si se vuelve a
+  encender, aparecen con las mismas horas de antes).
+- `trainer_availability_overrides`: por fecha, `is_blocked = true` (cierra el
+  día entero) o un rango `start_time`/`end_time` que sustituye al patrón ese
+  día (puede haber varias filas = varios rangos).
+- `availability_slots.generated_by_pattern`: columna nueva. `true` en lo que
+  crea el generador; `false` en lo añadido a mano. El generador **solo** borra
+  huecos suyos, `available` y sin ninguna reserva viva encima
+  (`isSlotOpen` + `reservationHoldsSlot`, igual que en todo el proyecto). Un
+  hueco con una reserva encima no se toca nunca, aunque el patrón cambie; uno
+  añadido a mano tampoco, esté o no en el patrón.
+
+### `lib/availability/generate.ts`
+
+`generateSlotsForTrainer(supabase, trainerId, weeksAhead = 8)`: por cada
+fecha de hoy a hoy+8 semanas, calcula el rango deseado (excepción bloqueada →
+nada; excepción con horas → esas horas; si no, la plantilla semanal del día
+que le toca) y lo compara con lo que ya hay en `availability_slots` esa
+fecha: inserta lo que falta, borra lo suyo que ya no toca (si está libre),
+actualiza la hora de fin si cambió, y dejar intacto todo lo que tiene una
+reserva viva o no es suyo. Se llama automáticamente al final de cada mutación
+(encender/apagar un día, añadir/editar/borrar un rango, añadir/borrar una
+excepción); también hay `POST /api/dashboard/availability/generate` como
+botón de refresco manual.
+
+### Rutas nuevas
+
+- `GET /api/dashboard/availability/schedule` — plantilla + excepciones
+  futuras del entrenador de la sesión.
+- `PATCH /api/dashboard/availability/schedule/day/[day]` `{ enabled }`
+- `POST /api/dashboard/availability/schedule/range` `{ day_of_week, start_time, end_time, class_type }`
+- `PUT`/`DELETE /api/dashboard/availability/schedule/range/[id]`
+- `POST /api/dashboard/availability/overrides` `{ override_date, is_blocked }` o `{ override_date, start_time, end_time, class_type }`
+- `DELETE /api/dashboard/availability/overrides/[id]`
+- `POST /api/dashboard/availability/generate`
+
+Todas por `requireTrainer()`.
+
+### Dashboard → Disponibilidad
+
+`AvailabilityView` ahora tiene dos pestañas:
+
+- **Horario semanal** (por defecto): `WeeklySchedule` (un interruptor por
+  día + sus rangos, editables con `<input type="time">`, cada cambio se
+  guarda al momento, sin botón "Guardar" aparte) + `DateOverridesPanel` a la
+  derecha (lista de excepciones + diálogo para añadir una).
+- **Calendario**: lo que ya había en la Fase D original — los huecos ya
+  generados, con "Añadir hueco" para algo puntual.
+
+Limitación a propósito: no hay selector de `class_type` en el horario
+semanal (siempre `private`, que es lo único que hay en datos reales hoy); si
+hace falta `group`/`academy` recurrente, hay que añadirlo.
+
+### Sin aplicar / sin verificar
+
+- **Migración 005 sin aplicar.** Nada de esto funciona hasta que Daniel la
+  ejecute en Supabase → SQL Editor (`migrations/005_weekly_availability.sql`,
+  idempotente). Sin ella, `GET /api/dashboard/availability/schedule` fallará
+  con la tabla inexistente.
+- Sin verificar en el navegador (mismo motivo que la Fase D original: este
+  entorno no puede levantar `npm run dev`, sin red para el binario de SWC).
+- `npm run type-check`: 20 (los preexistentes), nada nuevo en los archivos de
+  esta fase.
+
+**Pendiente para Daniel (o Claude Code en el Mac)**: aplicar la migración
+005, y luego probar: encender/apagar un día, añadir y quitar rangos, añadir
+una excepción bloqueada y una con horario distinto, comprobar que los huecos
+aparecen/desaparecen en `GET /api/availability` según toca, y que una reserva
+existente sobre un hueco generado no desaparece al cambiar el patrón.
+
 ## Pendiente (manual, Daniel)
 
 1. Configuración de Auth pendiente de la Fase A (redirect URL de Supabase y
@@ -639,3 +733,7 @@ Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
   huecos (`lib/availability/manage.ts`), reutilizando `GET /api/dashboard/calendar`
   para la lectura. Implementado y con `type-check` limpio; sin verificar en el
   navegador (sin `npm run dev` disponible en este entorno).
+- **Prompt 9 (Fase D, rediseño) — 20/09/2026.** Horario semanal recurrente +
+  excepciones por fecha, estilo Cal.com (migración 005, sin aplicar). Generador
+  automático de huecos (`lib/availability/generate.ts`). Implementado y con
+  `type-check` limpio; sin aplicar la migración ni verificar en el navegador.
