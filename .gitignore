@@ -31,3 +31,6 @@ dist/
 # OS
 Thumbs.db
 .DS_Store
+
+# Claude Code (settings.local.json puede contener claves de comandos ejecutados)
+.claude/settings.local.json

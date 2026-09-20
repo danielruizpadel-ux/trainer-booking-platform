@@ -1,6 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import { formatSessionLabel } from '@/lib/dateUtils'
 
 interface Session {
   date: string
@@ -13,47 +14,41 @@ interface SessionSelectorProps {
 }
 
 export default function SessionSelector({ sessions, onRemove }: SessionSelectorProps) {
-  const parseDate = (dateString: string): Date => {
-    const [year, month, day] = dateString.split('-').map(Number)
-    return new Date(year, month - 1, day)
-  }
+  if (sessions.length === 0) return null
 
-  const formatSession = (date: string, time: string) => {
-    const dateObj = parseDate(date)
-    const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'long' })
-    const day = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
-    return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${day}, ${time}`
-  }
-
-  if (sessions.length === 0) {
-    return (
-      <div className="text-center py-8 text-gray-500">
-        <p className="text-sm">Selecciona fechas y horas para agregar sesiones</p>
-      </div>
-    )
-  }
+  const sorted = [...sessions].sort((a, b) =>
+    a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)
+  )
 
   return (
-    <div className="space-y-3">
-      <h4 className="font-semibold text-gray-900 text-sm">Sesiones Seleccionadas ({sessions.length})</h4>
-      <div className="space-y-2 max-h-64 overflow-y-auto">
-        <AnimatePresence>
-          {sessions.map((session, index) => (
+    <div>
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+        Sesiones seleccionadas ({sessions.length})
+      </h4>
+      <div className="space-y-1.5 max-h-56 overflow-y-auto -mr-1 pr-1">
+        <AnimatePresence initial={false}>
+          {sorted.map((session) => (
             <motion.div
               key={`${session.date}-${session.time}`}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 hover:bg-blue-100 transition-colors"
+              layout
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="group flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2"
             >
-              <span className="text-sm text-gray-900 font-medium">
-                {formatSession(session.date, session.time)}
+              <span className="text-sm text-gray-700 truncate">
+                {formatSessionLabel(session.date, session.time)}
               </span>
               <button
                 onClick={() => onRemove(session.date, session.time)}
-                className="text-gray-400 hover:text-red-600 transition-colors"
+                aria-label="Quitar sesión"
+                className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
               >
-                ✕
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </motion.div>
           ))}

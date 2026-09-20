@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import MonthView from './MonthView'
 import WeekView from './WeekView'
 import DayView from './DayView'
-import SessionSelector from './SessionSelector'
+import CalendarNavbar from './CalendarNavbar'
 import TimePickerDropdown from './TimePickerDropdown'
+import { toDateStr, getMonday } from '@/lib/dateUtils'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -26,272 +27,200 @@ interface Session {
 
 interface AvailabilityCalendarProps {
   trainerId: string
-  onDateSelect: (date: string, time: string) => void
-  pricePerSession?: number
-  currentView?: ViewType
-  currentDate?: Date
-  onViewChange?: (view: ViewType) => void
-  onDateChange?: (date: Date) => void
-  selectedSessions?: Session[]
-  onSessionChange?: (sessions: Session[]) => void
+  currentView: ViewType
+  currentDate: Date
+  onViewChange: (view: ViewType) => void
+  onDateChange: (date: Date) => void
+  /** Estado controlado por el padre: única fuente de verdad de las sesiones. */
+  selectedSessions: Session[]
+  onSessionChange: (sessions: Session[]) => void
 }
 
 export default function AvailabilityCalendar({
   trainerId,
-  onDateSelect,
-  pricePerSession = 300,
-  currentView: propCurrentView,
-  currentDate: propCurrentDate,
-  onViewChange: propOnViewChange,
-  onDateChange: propOnDateChange,
+  currentView,
+  currentDate,
+  onViewChange,
+  onDateChange,
+  selectedSessions,
+  onSessionChange,
 }: AvailabilityCalendarProps) {
-  // Use prop values if provided, otherwise use local state
-  const [localView, setLocalView] = useState<ViewType>('month')
-  const [localDate, setLocalDate] = useState(new Date())
-
-  const currentView = propCurrentView || localView
-  const currentDate = propCurrentDate || localDate
-  const handleViewChange = propOnViewChange || setLocalView
-  const handleDateChange = propOnDateChange || setLocalDate
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
-  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
-  const [showTimePickerForDate, setShowTimePickerForDate] = useState<string | null>(null)
+  const [pickerDate, setPickerDate] = useState<string | null>(null)
+
+  // Rango visible: mes/semana actual con margen, para que al navegar haya datos.
+  const range = useMemo(() => {
+    let from: Date
+    let to: Date
+    if (currentView === 'week') {
+      from = getMonday(currentDate)
+      to = new Date(from)
+      to.setDate(to.getDate() + 6)
+    } else if (currentView === 'day') {
+      from = new Date(currentDate)
+      to = new Date(currentDate)
+    } else {
+      from = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+      to = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+    }
+    from.setDate(from.getDate() - 7)
+    to.setDate(to.getDate() + 7)
+    return { start: toDateStr(from), end: toDateStr(to) }
+  }, [currentDate, currentView])
 
   useEffect(() => {
+    let cancelled = false
+
     const loadSlots = async () => {
+      if (!trainerId) {
+        setError('No se ha indicado el entrenador')
+        setIsLoading(false)
+        return
+      }
+
+      setIsLoading(true)
       try {
-        if (!trainerId) {
-          setError('Trainer ID not available')
-          setIsLoading(false)
-          return
-        }
-
-        console.log('📅 Loading availability for trainer:', trainerId)
-        const today = new Date()
-        const twoWeeksLater = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
-
-        const startDate = today.toISOString().split('T')[0]
-        const endDate = twoWeeksLater.toISOString().split('T')[0]
-
-        const url = `/api/availability?trainer_id=${trainerId}&start_date=${startDate}&end_date=${endDate}`
-        console.log('📡 Fetching:', url)
-
+        const url = `/api/availability?trainer_id=${trainerId}&start_date=${range.start}&end_date=${range.end}`
         const response = await fetch(url)
+        const data = await response.json().catch(() => null)
 
-        if (!response.ok) {
-          const errorData = await response.json()
-          console.error('❌ API Error:', errorData)
-          setError(`API Error: ${errorData.error || response.statusText}`)
-          setIsLoading(false)
+        if (cancelled) return
+
+        if (!response.ok || !data?.success || !Array.isArray(data.data)) {
+          setSlots([])
+          setError(data?.error || 'No se pudo cargar la disponibilidad')
           return
         }
 
-        const data = await response.json()
-        console.log('📦 Response:', data)
-
-        if (!data.success) {
-          console.error('❌ Request failed:', data.error)
-          setError(data.error || 'Failed to load availability')
-          setIsLoading(false)
-          return
-        }
-
-        if (!Array.isArray(data.data)) {
-          console.error('❌ Invalid data format:', data.data)
-          setError('Invalid data format from server')
-          setIsLoading(false)
-          return
-        }
-
-        if (data.data.length === 0) {
-          console.warn('⚠️ No slots available')
-          setError('No disponibilidad para estas fechas')
-          setIsLoading(false)
-          return
-        }
-
-        console.log(`✅ Loaded ${data.data.length} availability slots`)
         setSlots(data.data)
         setError(null)
-      } catch (error) {
-        console.error('❌ Error loading availability:', error)
-        setError(error instanceof Error ? error.message : 'Failed to load availability')
+      } catch (err) {
+        if (!cancelled) {
+          setSlots([])
+          setError(err instanceof Error ? err.message : 'No se pudo cargar la disponibilidad')
+        }
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     loadSlots()
-  }, [trainerId])
-
-  const availableDates = new Set(slots.map((slot) => slot.session_date))
-
-  const handleToggleDateSelection = (dateStr: string) => {
-    const newDates = new Set(selectedDates)
-    if (newDates.has(dateStr)) {
-      newDates.delete(dateStr)
-      // Remove all sessions for this date
-      setSelectedSessions((prev) => prev.filter((s) => s.date !== dateStr))
-    } else {
-      newDates.add(dateStr)
-      // Open time picker for this date
-      setShowTimePickerForDate(dateStr)
+    return () => {
+      cancelled = true
     }
-    setSelectedDates(newDates)
-  }
+  }, [trainerId, range.start, range.end])
+
+  const availableDates = useMemo(() => new Set(slots.map((s) => s.session_date)), [slots])
+
+  const selectedDates = useMemo(
+    () => new Set(selectedSessions.map((s) => s.date)),
+    [selectedSessions]
+  )
+
+  const sessionCountByDate = useMemo(
+    () =>
+      selectedSessions.reduce<Record<string, number>>((acc, s) => {
+        acc[s.date] = (acc[s.date] || 0) + 1
+        return acc
+      }, {}),
+    [selectedSessions]
+  )
 
   const handleToggleTime = (date: string, time: string) => {
-    setSelectedSessions((prev) => {
-      const exists = prev.some((s) => s.date === date && s.time === time)
-      if (exists) {
-        return prev.filter((s) => !(s.date === date && s.time === time))
-      } else {
-        return [...prev, { date, time }]
-      }
-    })
-  }
-
-  const handleRemoveSession = (date: string, time: string) => {
-    setSelectedSessions((prev) => prev.filter((s) => !(s.date === date && s.time === time)))
-    // If no sessions left for this date, remove from selected dates
-    const remainingForDate = selectedSessions.filter((s) => s.date === date && !(s.date === date && s.time === time))
-    if (remainingForDate.length === 0) {
-      const newDates = new Set(selectedDates)
-      newDates.delete(date)
-      setSelectedDates(newDates)
+    const exists = selectedSessions.some((s) => s.date === date && s.time === time)
+    if (exists) {
+      onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
+    } else {
+      onSessionChange([...selectedSessions, { date, time }])
     }
   }
 
-  const handleConfirmReservation = () => {
-    if (selectedSessions.length > 0) {
-      console.log('Confirmar reserva de', selectedSessions.length, 'sesiones')
-      const firstSession = selectedSessions[0]
-      onDateSelect(firstSession.date, firstSession.time)
-    }
-  }
+  const openPickerFor = (dateStr: string) => setPickerDate(dateStr)
 
-  const getSelectedTimesForDate = (date: string): Set<string> => {
-    return new Set(selectedSessions.filter((s) => s.date === date).map((s) => s.time))
-  }
+  const selectedTimesFor = (date: string) =>
+    new Set(selectedSessions.filter((s) => s.date === date).map((s) => s.time))
 
-  const getSlotsForDate = (date: string): AvailabilitySlot[] => {
-    return slots.filter((slot) => slot.session_date === date)
-  }
-
-  if (isLoading) {
-    return (
-      <div className="text-center py-12">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, linear: true }}
-          className="inline-block text-4xl mb-4"
-        >
-          ⏳
-        </motion.div>
-        <p className="text-gray-600 font-medium">Cargando disponibilidad...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <motion.div
-        className="text-center py-12 bg-red-50 rounded-lg border-2 border-red-300 p-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <p className="text-red-700 font-semibold text-lg mb-2">❌ Error</p>
-        <p className="text-red-600 mb-4">{error}</p>
-        <p className="text-sm text-red-600 mb-4">Trainer ID: {trainerId}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-        >
-          Reintentar
-        </button>
-      </motion.div>
-    )
-  }
+  const currentDateStr = toDateStr(currentDate)
 
   return (
-    <div className="space-y-0">
-      {/* Main Content (Navbar is in parent BookingFlow) */}
-      <motion.div
-        className="py-8 px-4 sm:px-6 lg:px-8"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Calendar View */}
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100/50 p-8 hover:shadow-md transition-shadow">
-                {currentView === 'month' && (
-                  <MonthView
-                    currentDate={currentDate}
-                    slots={slots}
-                    selectedDates={selectedDates}
-                    onDateToggle={handleToggleDateSelection}
-                    onDateSelect={(dateStr) => {
-                      setSelectedDate(dateStr)
-                      handleViewChange('day')
-                    }}
-                    onNavigate={handleDateChange}
-                  />
-                )}
+    <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-5 sm:p-6">
+      {/* ÚNICA navbar del calendario — vive dentro de la tarjeta */}
+      <CalendarNavbar
+        currentDate={currentDate}
+        currentView={currentView}
+        onDateChange={onDateChange}
+        onViewChange={onViewChange}
+        availableDates={availableDates}
+      />
 
-                {currentView === 'week' && (
-                  <WeekView
-                    currentDate={currentDate}
-                    slots={slots}
-                    selectedDate={selectedDate || undefined}
-                    selectedDates={selectedDates}
-                    onDateToggle={handleToggleDateSelection}
-                    onDateSelect={(dateStr) => {
-                      setSelectedDate(dateStr)
-                      handleViewChange('day')
-                    }}
-                    onNavigate={handleDateChange}
-                  />
-                )}
-
-                {currentView === 'day' && (
-                  <DayView
-                    selectedDate={selectedDate}
-                    slots={slots}
-                    selectedTime={undefined}
-                    onTimeSelect={(time) => {
-                      if (selectedDate) {
-                        handleToggleTime(selectedDate, time)
-                      }
-                    }}
-                  />
-                )}
-              </div>
-
-              {/* Session Selector */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100/50 p-8">
-                <SessionSelector sessions={selectedSessions} onRemove={handleRemoveSession} />
-              </div>
-            </div>
-          </div>
+      {isLoading ? (
+        <div className="py-16 text-center">
+          <div className="inline-block h-8 w-8 rounded-full border-2 border-gray-200 border-t-blue-600 animate-spin" />
+          <p className="mt-3 text-sm text-gray-500">Cargando disponibilidad…</p>
         </div>
-      </motion.div>
+      ) : error ? (
+        <div className="py-12 text-center">
+          <p className="text-gray-900 font-medium">No hay disponibilidad para este periodo</p>
+          <p className="mt-1 text-sm text-gray-500">{error}</p>
+          <button
+            onClick={() => onDateChange(new Date())}
+            className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            Volver a hoy
+          </button>
+        </div>
+      ) : (
+        <>
+          {currentView === 'month' && (
+            <MonthView
+              currentDate={currentDate}
+              slots={slots}
+              selectedDates={selectedDates}
+              sessionCountByDate={sessionCountByDate}
+              onDateToggle={openPickerFor}
+              onDateSelect={openPickerFor}
+            />
+          )}
 
-      {/* Time Picker Dropdown Modal */}
+          {currentView === 'week' && (
+            <WeekView
+              currentDate={currentDate}
+              slots={slots}
+              selectedDates={selectedDates}
+              sessionCountByDate={sessionCountByDate}
+              onDateToggle={openPickerFor}
+              onDateSelect={openPickerFor}
+            />
+          )}
+
+          {currentView === 'day' && (
+            <DayView
+              selectedDate={currentDateStr}
+              slots={slots}
+              selectedTimes={selectedTimesFor(currentDateStr)}
+              onTimeSelect={(time) => handleToggleTime(currentDateStr, time)}
+            />
+          )}
+
+          {currentView !== 'day' && (
+            <p className="mt-5 text-xs text-gray-400 text-center">
+              Toca un día disponible para elegir las horas
+            </p>
+          )}
+        </>
+      )}
+
+      {/* Modal de horas */}
       <AnimatePresence>
-        {showTimePickerForDate && (
+        {pickerDate && (
           <TimePickerDropdown
-            date={showTimePickerForDate}
-            slots={getSlotsForDate(showTimePickerForDate)}
-            selectedTimes={getSelectedTimesForDate(showTimePickerForDate)}
+            date={pickerDate}
+            slots={slots.filter((s) => s.session_date === pickerDate)}
+            selectedTimes={selectedTimesFor(pickerDate)}
             onToggleTime={handleToggleTime}
-            onClose={() => setShowTimePickerForDate(null)}
+            onClose={() => setPickerDate(null)}
           />
         )}
       </AnimatePresence>

@@ -1,6 +1,6 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import SessionSelector from '@/components/trainer/calendar/SessionSelector'
 
 interface Session {
   date: string
@@ -12,6 +12,8 @@ interface BookingSummaryCardProps {
   total: number
   discount: number
   pricePerSession?: number
+  onRemove?: (date: string, time: string) => void
+  onConfirm?: () => void
 }
 
 export default function BookingSummaryCard({
@@ -19,93 +21,83 @@ export default function BookingSummaryCard({
   total,
   discount,
   pricePerSession = 300,
+  onRemove,
+  onConfirm,
 }: BookingSummaryCardProps) {
-  const subtotal = sessions.length * pricePerSession
+  const count = sessions.length
+  const subtotal = count * pricePerSession
   const discountAmount = Math.round((subtotal * discount) / 100)
 
-  const parseDate = (dateString: string): Date => {
-    const [year, month, day] = dateString.split('-').map(Number)
-    return new Date(year, month - 1, day)
-  }
-
-  const formatSession = (date: string, time: string) => {
-    const dateObj = parseDate(date)
-    const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'short' })
-    const dayNum = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
-    return `${dayName} ${dayNum}, ${time}`
-  }
+  const nextTier = count < 5 ? { need: 5 - count, pct: 10 } : count < 10 ? { need: 10 - count, pct: 15 } : null
 
   return (
-    <motion.div
-      className="bg-white rounded-2xl shadow-sm border border-gray-100/50 p-8 sticky top-32"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      <h3 className="text-2xl font-bold text-gray-900 mb-6">Resumen</h3>
+    <div className="lg:sticky lg:top-6 bg-white rounded-2xl ring-1 ring-gray-200/70 p-6">
+      <h3 className="text-lg font-semibold text-gray-900">Tu reserva</h3>
 
-      {/* Sessions List */}
-      <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
-        {sessions.length === 0 ? (
-          <p className="text-gray-500 text-sm text-center py-4">
-            Selecciona sesiones para comenzar
-          </p>
-        ) : (
-          sessions.map((session) => (
-            <div key={`${session.date}-${session.time}`} className="text-sm text-gray-700 flex justify-between">
-              <span>{formatSession(session.date, session.time)}</span>
-              <span className="font-medium">RM {pricePerSession}</span>
-            </div>
-          ))
-        )}
-      </div>
-
-      {sessions.length > 0 && (
+      {count === 0 ? (
+        <div className="py-10 text-center">
+          <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-300">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </div>
+          <p className="text-sm text-gray-500">Aún no has elegido ninguna clase</p>
+          <p className="mt-1 text-xs text-gray-400">Selecciona un día en el calendario</p>
+        </div>
+      ) : (
         <>
-          {/* Divider */}
-          <div className="border-t border-gray-200 my-4" />
+          <div className="mt-5">
+            <SessionSelector sessions={sessions} onRemove={onRemove || (() => {})} />
+          </div>
 
-          {/* Pricing */}
-          <div className="space-y-3 mb-6">
-            <div className="flex justify-between text-sm text-gray-700">
-              <span>Subtotal ({sessions.length} sesiones)</span>
-              <span>RM {subtotal}</span>
+          <div className="mt-5 pt-5 border-t border-gray-100 space-y-2.5">
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>
+                {count} {count === 1 ? 'clase' : 'clases'} × RM {pricePerSession}
+              </span>
+              <span className="tabular-nums">RM {subtotal}</span>
             </div>
 
             {discount > 0 && (
-              <div className="flex justify-between text-sm text-emerald-600 font-semibold">
-                <span>🎁 Descuento {discount}%</span>
-                <span>-RM {discountAmount}</span>
+              <div className="flex justify-between text-sm font-medium text-emerald-600">
+                <span>Descuento {discount}%</span>
+                <span className="tabular-nums">−RM {discountAmount}</span>
               </div>
             )}
-          </div>
 
-          {/* Total */}
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-900 font-semibold">Total Final</span>
-              <span className="text-3xl font-bold text-blue-600">RM {total}</span>
+            <div className="flex justify-between items-baseline pt-2.5 border-t border-gray-100">
+              <span className="text-sm font-medium text-gray-900">Total</span>
+              <span className="text-2xl font-bold text-gray-900 tabular-nums">RM {total}</span>
             </div>
           </div>
 
-          {/* Discount Info */}
-          {sessions.length < 5 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+          {nextTier && (
+            <div className="mt-4 rounded-lg bg-blue-50 px-3 py-2.5">
               <p className="text-xs text-blue-700">
-                Selecciona {5 - sessions.length} más para obtener 10% de descuento
-              </p>
-            </div>
-          )}
-
-          {sessions.length >= 5 && sessions.length < 10 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
-              <p className="text-xs text-blue-700">
-                Selecciona {10 - sessions.length} más para obtener 15% de descuento
+                Añade <strong>{nextTier.need}</strong> {nextTier.need === 1 ? 'clase' : 'clases'} más y
+                consigue un <strong>{nextTier.pct}%</strong> de descuento
               </p>
             </div>
           )}
         </>
       )}
-    </motion.div>
+
+      {onConfirm && (
+        <button
+          onClick={onConfirm}
+          disabled={count === 0}
+          className={`mt-6 w-full h-12 rounded-xl font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+            count === 0
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-sm shadow-blue-600/25'
+          }`}
+        >
+          {count === 0 ? 'Continuar' : `Continuar · ${count} ${count === 1 ? 'clase' : 'clases'}`}
+        </button>
+      )}
+    </div>
   )
 }

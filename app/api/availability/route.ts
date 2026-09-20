@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -76,9 +77,38 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Esta ruta corre con la service role key, que se salta RLS: sin filtrar,
+    // devolvía tambien los huecos llenos o cancelados y el calendario los
+    // pintaba como reservables. Se filtran aquí, con el mismo predicado que
+    // usa POST /api/reservations.
+    let slots = (data || []).filter(isSlotOpen)
+
+    // Un hueco con una reserva viva tampoco se ofrece, aunque su contador
+    // `current_bookings` no se haya actualizado.
+    if (slots.length > 0) {
+      const slotIds = slots.map((slot) => slot.id).filter(Boolean)
+
+      const { data: reservations, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('availability_slot_id, status')
+        .in('availability_slot_id', slotIds)
+
+      if (reservationsError) {
+        // No es fatal: mejor devolver los huecos que romper el calendario.
+        console.warn('No se pudieron cruzar las reservas existentes:', reservationsError.message)
+      } else {
+        const takenSlotIds = new Set(
+          (reservations || [])
+            .filter((reservation) => reservationHoldsSlot(reservation.status))
+            .map((reservation) => reservation.availability_slot_id)
+        )
+        slots = slots.filter((slot) => !takenSlotIds.has(slot.id))
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: data || [],
+      data: slots,
     })
   } catch (error) {
     console.error('Availability API error:', error)

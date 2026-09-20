@@ -1,6 +1,6 @@
 /**
- * Alias route for Mauricio Martin
- * Redirects to the full landing page
+ * Mauricio Martin — The Padel Doctor
+ * Landing page + booking flow
  */
 
 import { notFound } from 'next/navigation'
@@ -9,7 +9,6 @@ import PremiumHero from '@/components/mauri/PremiumHero'
 import SpecialtiesSection from '@/components/mauri/SpecialtiesSection'
 import CoursesSection from '@/components/mauri/CoursesSection'
 import BookingSection from '@/components/mauri/BookingSection'
-import ReviewsSection from '@/components/mauri/ReviewsSection'
 import CtaSection from '@/components/mauri/CtaSection'
 import FooterSection from '@/components/mauri/FooterSection'
 
@@ -34,8 +33,7 @@ export default async function MauriPage() {
 
   return (
     <div className="w-full">
-      {/* Hero Section */}
-      <PremiumHeroWrapper
+      <PremiumHero
         name={trainer.name}
         tagline="The Padel Doctor - Técnica Clínica & Mentalidad Ganadora"
         rating={trainer.rating || 4.9}
@@ -43,28 +41,22 @@ export default async function MauriPage() {
         imageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
       />
 
-      {/* Specialties */}
-      <SpecialtiesSection />
-
-      {/* Courses */}
-      <CoursesSection />
-
-      {/* Booking Section */}
+      {/* La reserva va lo primero al bajar del hero: es la accion principal. */}
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
-        trainerPrice={99}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
       />
 
-      {/* Reviews */}
-      <ReviewsSection />
+      <SpecialtiesSection />
 
-      {/* CTA */}
+      <CoursesSection />
+
+      {/* Reseñas: opción A del sistema de diseño — sección retirada. Para la opción B, importa y añade <ReviewsSection /> aquí. */}
+
       <CtaSection />
 
-      {/* Footer */}
       <FooterSection
         email={trainer.email || 'mauri@padeldoctor.com'}
         phone={trainer.phone || '+1234567890'}
@@ -72,30 +64,5 @@ export default async function MauriPage() {
         instagram="@mauridoctor"
       />
     </div>
-  )
-}
-
-// Client component wrapper for PremiumHero
-function PremiumHeroWrapper({
-  name,
-  tagline,
-  rating,
-  reviews,
-  imageUrl,
-}: {
-  name: string
-  tagline: string
-  rating: number
-  reviews: number
-  imageUrl: string
-}) {
-  return (
-    <PremiumHero
-      name={name}
-      tagline={tagline}
-      rating={rating}
-      reviews={reviews}
-      imageUrl={imageUrl}
-    />
   )
 }

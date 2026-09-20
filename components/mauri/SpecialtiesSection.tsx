@@ -1,48 +1,82 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import type { ReactNode } from 'react'
 
-interface SpecialtiesCardProps {
-  icon: string
+interface SpecialtyCardProps {
+  icon: ReactNode
   title: string
   description: string
   example: string
 }
 
-const SpecialtiesCard = ({ icon, title, description, example }: SpecialtiesCardProps) => (
-  <motion.div
-    className="bg-white rounded-xl p-8 shadow-md hover:shadow-xl transition-shadow border-l-4 border-blue-600"
-    initial={{ opacity: 0, y: 20 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5 }}
-    viewport={{ once: true }}
-    whileHover={{ y: -5 }}
-  >
-    <div className="text-4xl mb-4">{icon}</div>
-    <h3 className="text-2xl font-bold text-gray-900 mb-2">{title}</h3>
-    <p className="text-gray-600 mb-4">{description}</p>
-    <p className="text-sm text-blue-600 font-semibold italic">Ejemplo: {example}</p>
-  </motion.div>
+const iconProps = {
+  width: 18,
+  height: 18,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+}
+
+const CrosshairIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="3" />
+    <line x1="12" y1="1.5" x2="12" y2="5" />
+    <line x1="12" y1="19" x2="12" y2="22.5" />
+    <line x1="1.5" y1="12" x2="5" y2="12" />
+    <line x1="19" y1="12" x2="22.5" y2="12" />
+  </svg>
+)
+
+const CompassIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="12" cy="12" r="9" />
+    <polygon points="16.2 7.8 14.1 14.1 7.8 16.2 9.9 9.9 16.2 7.8" />
+  </svg>
+)
+
+const SparkIcon = () => (
+  <svg {...iconProps}>
+    <path d="M12 2.5l2.1 5.4 5.4 2.1-5.4 2.1-2.1 5.4-2.1-5.4L4.5 10l5.4-2.1L12 2.5z" />
+    <path d="M18.5 16.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z" />
+  </svg>
+)
+
+const SpecialtyCard = ({ icon, title, description, example }: SpecialtyCardProps) => (
+  <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-6 hover:ring-gray-300 transition-all duration-150">
+    <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+      {icon}
+    </div>
+    <h3 className="mt-4 text-base font-semibold text-gray-900">{title}</h3>
+    <p className="mt-2 text-sm text-gray-600">{description}</p>
+    <p className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
+      Ejemplo: {example}
+    </p>
+  </div>
 )
 
 export default function SpecialtiesSection() {
-  const specialties: SpecialtiesCardProps[] = [
+  const specialties: SpecialtyCardProps[] = [
     {
-      icon: '🎯',
+      icon: <CrosshairIcon />,
       title: 'Técnica Clínica',
       description:
         'Analizo cada movimiento con precisión para optimizar tu golpe y mejorar tu consistencia.',
       example: 'Corrección de grip, postura y seguimiento',
     },
     {
-      icon: '♟️',
+      icon: <CompassIcon />,
       title: 'Estrategia Competitiva',
       description:
         'Aprende a leer el juego, posicionarte correctamente y ganar mentalmente.',
       example: 'Gestión de puntos clave y adaptación táctica',
     },
     {
-      icon: '🧠',
+      icon: <SparkIcon />,
       title: 'Mentalidad Ganadora',
       description:
         'Desarrollo psicológico para mantener la calma bajo presión y ganar partidos cerrados.',
@@ -51,28 +85,32 @@ export default function SpecialtiesSection() {
   ]
 
   return (
-    <section className="py-20 px-6 bg-white">
+    <section className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8 bg-gray-50">
       <div className="max-w-6xl mx-auto">
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
+        <motion.header
+          className="mb-10"
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          viewport={{ once: true, margin: '-80px' }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Mi Enfoque
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
+            Mi enfoque
           </h2>
-          <p className="text-xl text-gray-600">
-            Tres pilares para transformar tu juego
-          </p>
-        </motion.div>
+          <p className="mt-1.5 text-gray-500">Tres pilares para transformar tu juego</p>
+        </motion.header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <motion.div
+          className="grid grid-cols-1 md:grid-cols-3 gap-6"
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          viewport={{ once: true, margin: '-80px' }}
+        >
           {specialties.map((specialty) => (
-            <SpecialtiesCard key={specialty.title} {...specialty} />
+            <SpecialtyCard key={specialty.title} {...specialty} />
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   )

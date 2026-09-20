@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import BookingFlow from '@/components/booking/BookingFlow'
 
 interface BookingSectionProps {
@@ -11,36 +10,22 @@ interface BookingSectionProps {
   trainerPhone?: string
 }
 
-export default function BookingSection({
-  trainerId,
-  trainerName,
-  trainerPrice = 99,
-  trainerEmail,
-  trainerPhone,
-}: BookingSectionProps) {
+export default function BookingSection({ trainerId, trainerName }: BookingSectionProps) {
+  // El encabezado y el fondo interiores los aporta BookingStep1 / BookingStep2,
+  // así evitamos títulos y paddings duplicados. Aquí solo ponemos la banda de
+  // contraste que destaca la reserva frente al resto de la página.
+  //
+  // BookingStep1 pinta su propio `bg-gray-50/50` semitransparente encima, así
+  // que las franjas de aire llevan ese mismo velo para que la banda quede de
+  // un solo tono y no se vea una costura arriba y abajo.
   return (
-    <section id="booking-section" className="py-20 px-6 bg-gray-50">
-      <div className="max-w-full">
-        <motion.div
-          className="text-center mb-16 max-w-6xl mx-auto"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
-        >
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Reserva tu sesión</h2>
-          <p className="text-xl text-gray-600">Selecciona múltiples fechas y horas para aprovechar nuestros descuentos</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          viewport={{ once: true }}
-        >
-          <BookingFlow trainerId={trainerId} trainerName={trainerName} />
-        </motion.div>
-      </div>
+    <section
+      id="booking-section"
+      className="scroll-mt-20 bg-blue-100 border-y border-blue-200"
+    >
+      <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
+      <BookingFlow trainerId={trainerId} trainerName={trainerName} />
+      <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
     </section>
   )
 }

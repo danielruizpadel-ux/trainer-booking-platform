@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import MiniCalendarOverlay from './MiniCalendarOverlay'
+import { getMonday } from '@/lib/dateUtils'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -13,6 +14,12 @@ interface CalendarNavbarProps {
   availableDates?: Set<string>
 }
 
+const VIEWS: { key: ViewType; label: string }[] = [
+  { key: 'month', label: 'Mes' },
+  { key: 'week', label: 'Semana' },
+  { key: 'day', label: 'Día' },
+]
+
 export default function CalendarNavbar({
   currentDate,
   currentView,
@@ -22,131 +29,94 @@ export default function CalendarNavbar({
 }: CalendarNavbarProps) {
   const [showMiniCalendar, setShowMiniCalendar] = useState(false)
 
-  const handleJumpToToday = () => {
-    onDateChange(new Date())
+  const shift = (direction: -1 | 1) => {
+    const d = new Date(currentDate)
+    if (currentView === 'month') d.setMonth(d.getMonth() + direction)
+    else if (currentView === 'week') d.setDate(d.getDate() + 7 * direction)
+    else d.setDate(d.getDate() + direction)
+    onDateChange(d)
   }
 
-  const handleJumpToThisWeek = () => {
-    const today = new Date()
-    const day = today.getDay()
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1)
-    onDateChange(new Date(today.setDate(diff)))
-    if (currentView !== 'week') onViewChange('week')
-  }
+  const goToday = () => onDateChange(new Date())
 
-  const handleJumpToThisMonth = () => {
-    onDateChange(new Date())
-    if (currentView !== 'month') onViewChange('month')
-  }
-
-  const handlePrev = () => {
-    const newDate = new Date(currentDate)
+  const periodLabel = () => {
     if (currentView === 'month') {
-      newDate.setMonth(newDate.getMonth() - 1)
-    } else if (currentView === 'week') {
-      newDate.setDate(newDate.getDate() - 7)
-    } else if (currentView === 'day') {
-      newDate.setDate(newDate.getDate() - 1)
+      return currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
     }
-    onDateChange(newDate)
+    if (currentView === 'week') {
+      const monday = getMonday(currentDate)
+      const sunday = new Date(monday)
+      sunday.setDate(sunday.getDate() + 6)
+      const sameMonth = monday.getMonth() === sunday.getMonth()
+      const left = monday.toLocaleDateString('es-ES', sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' })
+      const right = sunday.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+      return `${left} – ${right}`
+    }
+    return currentDate.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
   }
 
-  const handleNext = () => {
-    const newDate = new Date(currentDate)
-    if (currentView === 'month') {
-      newDate.setMonth(newDate.getMonth() + 1)
-    } else if (currentView === 'week') {
-      newDate.setDate(newDate.getDate() + 7)
-    } else if (currentView === 'day') {
-      newDate.setDate(newDate.getDate() + 1)
-    }
-    onDateChange(newDate)
-  }
-
-  const getMonthYear = () => {
-    return currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
-  }
+  const arrowBtn =
+    'h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
 
   return (
-    <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {/* CONSOLIDATED: ONE LINE NAVBAR */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          {/* Left: Navigation */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrev}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-semibold"
-              title="Anterior"
-            >
-              ← Anterior
-            </button>
-          </div>
+    <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-gray-100">
+      {/* Izquierda: navegación de periodo */}
+      <div className="flex items-center gap-1">
+        <button onClick={() => shift(-1)} className={arrowBtn} aria-label="Periodo anterior">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
 
-          {/* Center: Quick Jump Buttons + Period */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleJumpToToday}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
-            >
-              Hoy
-            </button>
-            <button
-              onClick={handleJumpToThisWeek}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
-            >
-              Esta Semana
-            </button>
-            <button
-              onClick={handleJumpToThisMonth}
-              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-all bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
-            >
-              Este Mes
-            </button>
-            <span className="text-gray-400">|</span>
-            <span className="text-sm font-semibold text-gray-900 min-w-32 text-center">{getMonthYear()}</span>
-          </div>
-
-          {/* Right: View Toggle + Mini Cal */}
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              {(['month', 'week', 'day'] as const).map((view) => (
-                <button
-                  key={view}
-                  onClick={() => onViewChange(view)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${
-                    currentView === view ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {view === 'month' ? 'Mes' : view === 'week' ? 'Semana' : 'Día'}
-                </button>
-              ))}
-            </div>
-            <div className="relative">
-              <button
-                onClick={() => setShowMiniCalendar(!showMiniCalendar)}
-                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Calendario"
-              >
-                📅
-              </button>
-              <MiniCalendarOverlay
-                isOpen={showMiniCalendar}
-                onClose={() => setShowMiniCalendar(false)}
-                currentDate={currentDate}
-                onDateSelect={onDateChange}
-                availableDates={availableDates}
-              />
-            </div>
-            <button
-              onClick={handleNext}
-              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-semibold"
-              title="Siguiente"
-            >
-              Siguiente →
-            </button>
-          </div>
+        <div className="relative">
+          <button
+            onClick={() => setShowMiniCalendar((v) => !v)}
+            className="px-2 py-1.5 rounded-lg text-base font-semibold text-gray-900 capitalize hover:bg-gray-100 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            title="Ir a una fecha"
+          >
+            {periodLabel()}
+          </button>
+          <MiniCalendarOverlay
+            isOpen={showMiniCalendar}
+            onClose={() => setShowMiniCalendar(false)}
+            currentDate={currentDate}
+            onDateSelect={(d) => {
+              onDateChange(d)
+              setShowMiniCalendar(false)
+            }}
+            availableDates={availableDates}
+          />
         </div>
+
+        <button onClick={() => shift(1)} className={arrowBtn} aria-label="Periodo siguiente">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+
+        <button
+          onClick={goToday}
+          className="ml-1 px-3 h-9 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          Hoy
+        </button>
+      </div>
+
+      {/* Derecha: selector de vista (segmented control) */}
+      <div className="inline-flex items-center gap-0.5 p-1 bg-gray-100 rounded-lg">
+        {VIEWS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => onViewChange(key)}
+            className={`px-3 h-7 rounded-md text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              currentView === key
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   )

@@ -12,8 +12,6 @@ interface Trainer {
   id: string
   name: string
   bio?: string
-  email?: string
-  phone?: string
   image_url?: string
   rating?: number
   total_reviews?: number
@@ -139,20 +137,6 @@ export default function TrainersPage() {
                       )}
                     </div>
                   )}
-
-                  {/* Contact info */}
-                  <div className="space-y-1 mb-4">
-                    {trainer.email && (
-                      <p className="text-xs text-gray-500">
-                        📧 {trainer.email}
-                      </p>
-                    )}
-                    {trainer.phone && (
-                      <p className="text-xs text-gray-500">
-                        📱 {trainer.phone}
-                      </p>
-                    )}
-                  </div>
 
                   {/* Action button */}
                   <Button className="w-full">

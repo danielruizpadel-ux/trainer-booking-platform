@@ -9,27 +9,27 @@ interface ReviewProps {
   improvement: string
 }
 
+function StarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.31l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.94L12 2.5z" />
+    </svg>
+  )
+}
+
 const ReviewCard = ({ rating, name, text, improvement }: ReviewProps) => (
-  <motion.div
-    className="bg-white rounded-lg p-8 shadow-md border-l-4 border-blue-600"
-    initial={{ opacity: 0, y: 20 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5 }}
-    viewport={{ once: true }}
-  >
-    <div className="flex gap-1 mb-4">
+  <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-6 hover:ring-gray-300 transition-all duration-150">
+    <div className="flex items-center gap-0.5 text-amber-400">
       {[...Array(rating)].map((_, i) => (
-        <span key={i} className="text-lg">
-          ⭐
-        </span>
+        <StarIcon key={i} />
       ))}
     </div>
-    <p className="text-gray-700 mb-4 leading-relaxed italic">"{text}"</p>
-    <div className="border-t pt-4">
-      <p className="font-semibold text-gray-900 mb-1">{name}</p>
-      <p className="text-sm text-blue-600 font-medium">{improvement}</p>
+    <p className="mt-4 text-sm text-gray-600">{text}</p>
+    <div className="mt-4 pt-4 border-t border-gray-100">
+      <p className="text-sm font-medium text-gray-900">{name}</p>
+      <p className="mt-0.5 text-xs text-gray-500">{improvement}</p>
     </div>
-  </motion.div>
+  </div>
 )
 
 export default function ReviewsSection() {
@@ -49,53 +49,41 @@ export default function ReviewsSection() {
     {
       rating: 5,
       name: 'Carlos López',
-      text: 'La estrategia competitiva que aprendí con Mauri es la diferencia entre ser bueno y ser ganador. Altamente recomendado.',
+      text: 'La estrategia competitiva que aprendí con Mauri es la diferencia entre ser bueno y ser ganador.',
       improvement: 'Campeón regional 2024',
-    },
-    {
-      rating: 5,
-      name: 'María González',
-      text: 'Cada sesión con Mauri es una clase magistral. Su paciencia y conocimiento hacen que todo sea posible.',
-      improvement: 'Mejoró consistencia 40%',
-    },
-    {
-      rating: 5,
-      name: 'Roberto Díaz',
-      text: 'No puedo creer la diferencia en mi juego en solo 2 meses. Mauri es realmente "The Padel Doctor".',
-      improvement: 'Ranking top 10 nacional',
-    },
-    {
-      rating: 5,
-      name: 'Andrea Sánchez',
-      text: 'La combinación de técnica, estrategia y mentalidad que Mauri ofrece es única. Es una inversión que siempre vale la pena.',
-      improvement: 'Profesional full-time',
     },
   ]
 
   return (
-    <section className="py-20 px-6 bg-blue-50">
+    <section className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8 bg-gray-100 border-t border-gray-200/70">
       <div className="max-w-6xl mx-auto">
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ duration: 0.6 }}
-          viewport={{ once: true }}
+        <motion.header
+          className="mb-10"
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          viewport={{ once: true, margin: '-80px' }}
         >
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
             Lo que dicen mis alumnos
           </h2>
-          <p className="text-xl text-gray-600">
-            Historias de transformación y éxito
-          </p>
-        </motion.div>
+          <p className="mt-1.5 text-gray-500">Historias de transformación y éxito</p>
+        </motion.header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <motion.div
+          className="grid grid-cols-1 md:grid-cols-3 gap-6"
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          viewport={{ once: true, margin: '-80px' }}
+        >
           {reviews.map((review) => (
             <ReviewCard key={review.name} {...review} />
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   )
 }
+
+// Opción B del sistema de diseño: esta sección está rediseñada pero NO se renderiza (opción A). Para activarla, importa y añade <ReviewsSection /> en app/mauri/page.tsx.

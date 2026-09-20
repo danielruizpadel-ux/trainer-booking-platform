@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+/* ###################################################################
+ *  AVISO: este script lleva la SERVICE ROLE KEY escrita en claro.
+ *  Esa clave se salta el RLS: acceso total a la base de datos.
+ *  NO subir este archivo a GitHub sin rotar la clave y limpiar el
+ *  historial de git. Ver docs/ANTES_DE_PUBLICAR.md (bloqueante 1).
+ * ################################################################### */
 
 /**
  * Setup Mauricio Martin en Supabase

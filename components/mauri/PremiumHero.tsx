@@ -11,6 +11,14 @@ interface PremiumHeroProps {
   imageUrl: string
 }
 
+function StarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.31l-5.8 3.05 1.1-6.46-4.69-4.58 6.49-.94L12 2.5z" />
+    </svg>
+  )
+}
+
 export default function PremiumHero({
   name,
   tagline,
@@ -19,90 +27,65 @@ export default function PremiumHero({
   imageUrl,
 }: PremiumHeroProps) {
   const handleBookClick = () => {
-    const bookingSection = document.getElementById('booking-section')
-    bookingSection?.scrollIntoView({ behavior: 'smooth' })
+    document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth' })
   }
-  return (
-    <motion.section
-      className="relative h-screen w-full overflow-hidden"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.8 }}
-    >
-      {/* Background Image */}
-      <Image
-        src={imageUrl}
-        alt={name}
-        fill
-        className="object-cover"
-        priority
-        quality={85}
-      />
 
-      {/* Gradient Overlay - Blue to Transparent */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-blue-600/50 to-transparent"></div>
+  const handleProgramsClick = () => {
+    document.getElementById('programas')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  return (
+    <section className="relative min-h-dvh w-full overflow-hidden">
+      {/* Background image */}
+      <Image src={imageUrl} alt={name} fill className="object-cover" priority quality={85} />
+
+      {/* Neutral overlay — lets the photo through */}
+      <div className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-gray-950/40 to-gray-950/10" />
 
       {/* Content */}
-      <div className="absolute inset-0 flex items-center justify-center px-6">
+      <div className="relative min-h-dvh flex items-center">
         <motion.div
-          className="text-center max-w-2xl"
-          initial={{ opacity: 0, y: 20 }}
+          className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-left"
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.8 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          {/* Name */}
-          <h1 className="text-6xl md:text-7xl font-bold text-white mb-4 leading-tight">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white">
             {name}
           </h1>
 
-          {/* Tagline */}
-          <p className="text-xl md:text-2xl text-white/90 mb-8 font-medium">
-            {tagline}
-          </p>
+          <p className="mt-3 text-lg text-white/70 max-w-xl">{tagline}</p>
 
           {/* Rating */}
-          <motion.div
-            className="flex items-center justify-center gap-3 mb-12"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <div className="flex gap-1">
+          <div className="mt-5 flex items-center gap-2">
+            <div className="flex items-center gap-0.5 text-amber-400">
               {[...Array(5)].map((_, i) => (
-                <span key={i} className="text-2xl">
-                  ⭐
-                </span>
+                <StarIcon key={i} />
               ))}
             </div>
-            <div className="text-white">
-              <span className="text-2xl font-bold">{rating}</span>
-              <span className="text-lg ml-2">({reviews} reviews)</span>
-            </div>
-          </motion.div>
+            <span className="text-white font-semibold tabular-nums">{rating}</span>
+            <span className="text-white/60 text-sm">({reviews} reseñas)</span>
+          </div>
 
-          {/* CTA Button */}
-          <motion.button
-            onClick={handleBookClick}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-white text-blue-600 px-12 py-4 rounded-lg font-bold text-xl shadow-2xl hover:shadow-blue-600/50 transition-all duration-300"
-          >
-            Reservar Sesión
-          </motion.button>
+          {/* CTAs */}
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleBookClick}
+              className="h-12 px-7 rounded-xl bg-white text-gray-900 font-semibold hover:bg-gray-100 active:scale-[0.98] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+            >
+              Reservar sesión
+            </button>
+            <button
+              type="button"
+              onClick={handleProgramsClick}
+              className="h-12 px-6 rounded-xl font-semibold text-white ring-1 ring-inset ring-white/30 hover:bg-white/10 active:scale-[0.98] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+            >
+              Ver programas
+            </button>
+          </div>
         </motion.div>
       </div>
-
-      {/* Scroll Indicator */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-        animate={{ y: [0, 10, 0] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      >
-        <div className="text-white text-center">
-          <p className="text-sm mb-2">Scroll para más</p>
-          <div className="text-2xl">↓</div>
-        </div>
-      </motion.div>
-    </motion.section>
+    </section>
   )
 }

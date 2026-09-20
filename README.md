@@ -1,261 +1,76 @@
 # Trainer Booking Platform
 
-A professional multi-trainer booking SaaS platform with embeddable reservation widget. Trainers can manage their availability, and clients can book sessions through an easy-to-use interface.
+> ## ⛔ ¿Vas a publicarlo?
+> **Lee [`docs/ANTES_DE_PUBLICAR.md`](docs/ANTES_DE_PUBLICAR.md) antes de hacer deploy.**
+> Tal cual está, publicarlo expone la base de datos entera: hay una clave de
+> servicio escrita en claro en `scripts/` y versionada en git, y endpoints de
+> administración sin ninguna autenticación.
 
-## Features
+Plataforma de reservas para entrenadores: landing por entrenador + calendario de
+reserva con descuento por volumen. En producción hoy: `/mauri`
+(Mauricio Martin — The Padel Doctor).
 
-- **Multi-Trainer Support**: Multiple trainers with individual accounts and subscriptions
-- **Embeddable Widget**: Drop-in reservation widget for trainer websites
-- **Real-time Availability**: Manage class schedules and availability slots
-- **Client Management**: Phone-based client identification and history
-- **Admin Dashboard**: Manage trainers, availability, and reservations
-- **Subscription Tiers**: Free, Starter, and Professional plans
-- **Responsive Design**: Mobile-friendly interface with dark mode support
+## Arrancar
 
-## Tech Stack
+Node 20 (ver `.nvmrc`).
 
-- **Frontend**: Next.js 16 with React 19
-- **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL)
-- **Styling**: Tailwind CSS 4
-- **UI Components**: Custom shadcn-style components
-- **Type Safety**: TypeScript
-- **Deployment**: Vercel + Supabase
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Supabase account (free tier available)
-- Vercel account (for deployment)
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd trainer-booking-platform
-```
-
-2. Install dependencies:
 ```bash
 npm install
+cp .env.example .env.local   # y rellenar las claves de Supabase
+npm run dev                  # http://localhost:3001
 ```
 
-3. Set up Supabase:
-   - Follow the [Supabase Setup Guide](./SUPABASE_SETUP.md)
-   - Copy `.env.example` to `.env.local`
-   - Add your Supabase credentials
+Variables necesarias en `.env.local`:
 
-4. Run the development server:
-```bash
-npm run dev
-```
+| Variable | Para qué |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | proyecto de Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | clave pública (navegador) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **obligatoria**: sin ella las rutas de servidor no ven los huecos (RLS) |
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+## Scripts
 
-## Project Structure
+| Comando | |
+|---|---|
+| `npm run dev` | desarrollo en el puerto 3001 |
+| `npm run build` / `npm start` | producción |
+| `npm run type-check` | `tsc --noEmit` |
+| `npm run lint` | |
+| `npm run format` | prettier |
 
-```
-trainer-booking-platform/
-├── app/
-│   ├── api/                 # API routes
-│   │   ├── coaches/        # List all trainers
-│   │   ├── disponibilidad/ # Availability slots
-│   │   └── reservas/       # Reservations
-│   ├── layout.tsx          # Root layout
-│   └── page.tsx            # Home page
-├── components/
-│   ├── ui/                 # Reusable UI components
-│   │   ├── button.tsx
-│   │   ├── input.tsx
-│   │   ├── calendar.tsx
-│   │   └── ...
-│   └── widgets/
-│       └── ReservationWidget.tsx  # Main booking widget
-├── lib/
-│   ├── domain/
-│   │   └── types.ts        # TypeScript types
-│   ├── services/           # Database service layer
-│   │   ├── trainers.service.ts
-│   │   ├── clients.service.ts
-│   │   ├── reservations.service.ts
-│   │   └── availability.service.ts
-│   ├── supabase/
-│   │   └── client.ts       # Supabase client
-│   └── utils/
-│       └── use-reservations.ts  # Custom hooks
-├── migrations/
-│   └── 001_initial_schema.sql   # Database schema
-├── public/                 # Static assets
-└── README.md
+## Dónde está cada cosa
 
 ```
-
-## API Routes
-
-### GET `/api/coaches`
-List all active trainers.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "uuid",
-      "name": "John Doe",
-      "bio": "Professional padel coach",
-      "image_url": "https://...",
-      "email": "john@example.com"
-    }
-  ]
-}
+app/mauri/page.tsx            landing + reserva de Mauri
+app/[trainerSlug]/page.tsx    landing genérica por slug
+app/api/availability/         huecos que pinta el calendario
+app/api/reservations/         alta de reservas
+app/api/coaches/              listado público de entrenadores (sin datos de contacto)
+app/api/trainers/[id]/        perfil propio del entrenador (requiere sesión)
+app/dashboard/                dashboard del entrenador (login, auth, área privada)
+proxy.ts                      protege /dashboard/** (Next 16: antes middleware.ts)
+lib/auth/                     entrenador a partir de la sesión
+components/mauri/             secciones de la landing
+components/booking/           flujo de reserva (2 pasos)
+components/trainer/calendar/  calendario — referencia visual del proyecto
+lib/availability/             regla única de disponibilidad
+lib/supabase/client.ts        clientes de Supabase (anon y service role)
+migrations/                   histórico; NO refleja lo desplegado
+scripts/                      alta de entrenador y datos de prueba
 ```
 
-### GET `/api/disponibilidad`
-Get available time slots for a trainer.
+## Documentación
 
-**Query Parameters:**
-- `trainer_id` (required): Trainer UUID
-- `date` (required): Date in YYYY-MM-DD format
-- `class_type` (optional): 'individual', 'group', 'semi-private'
+| Documento | Para qué |
+|---|---|
+| [`docs/ANTES_DE_PUBLICAR.md`](docs/ANTES_DE_PUBLICAR.md) | ⛔ **checklist obligatoria antes de cualquier deploy** |
+| [`CLAUDE.md`](CLAUDE.md) | **empieza aquí**: las reglas del proyecto y las trampas conocidas |
+| [`docs/DATABASE.md`](docs/DATABASE.md) | esquema real de Supabase — manda sobre `migrations/` |
+| [`docs/BOOKING_FLOW.md`](docs/BOOKING_FLOW.md) | cómo funciona la reserva, de la página a la base de datos |
+| [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) | tokens y reglas visuales |
+| [`docs/estado-desarrollo.md`](docs/estado-desarrollo.md) | dashboard del entrenador: fases, qué hay hecho, pasos manuales pendientes |
+| [`docs/SETUP_TRAINER.md`](docs/SETUP_TRAINER.md) | alta de entrenador y huecos — **incluye un aviso de seguridad sobre `scripts/`** |
 
-### POST `/api/reservas`
-Create a new reservation.
+## Stack
 
-**Request Body:**
-```json
-{
-  "trainer_id": "uuid",
-  "session_date": "2024-09-20",
-  "session_time": "10:00",
-  "class_type": "individual",
-  "client_name": "María García",
-  "client_phone": "+34621234567",
-  "client_email": "maria@example.com"
-}
-```
-
-### GET `/api/reservas`
-Get reservations (with optional filters).
-
-**Query Parameters:**
-- `trainer_id` (optional)
-- `client_id` (optional)
-- `status` (optional): 'pending', 'confirmed', 'cancelled', 'completed'
-- `date_from` (optional): YYYY-MM-DD
-- `date_to` (optional): YYYY-MM-DD
-
-## Usage: ReservationWidget
-
-Embed the booking widget in any website:
-
-```tsx
-import { ReservationWidget } from '@/components/widgets/ReservationWidget'
-
-export default function Page() {
-  return (
-    <div>
-      <ReservationWidget 
-        trainerId="optional-trainer-id"
-        daysAhead={30}
-        classTypes={['individual', 'group']}
-      />
-    </div>
-  )
-}
-```
-
-## Database Schema
-
-See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for detailed schema documentation.
-
-Key tables:
-- `trainers` - Trainer profiles and subscription info
-- `clients` - Client information (phone-based)
-- `availability_slots` - Available time slots
-- `reservations` - Booking records
-
-## Development
-
-### Type Checking
-```bash
-npm run type-check
-```
-
-### Linting
-```bash
-npm run lint
-```
-
-### Format Code
-```bash
-npm run format
-```
-
-### Build
-```bash
-npm run build
-npm start
-```
-
-## Environment Variables
-
-See `.env.example` for all available options. Key variables:
-
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role (server only)
-
-## Deployment
-
-### Deploy to Vercel
-
-1. Push code to GitHub
-2. Connect repository to Vercel
-3. Add environment variables in Vercel dashboard
-4. Deploy
-
-```bash
-vercel --prod
-```
-
-### Production Checklist
-
-- [ ] Set up authentication (Clerk, Auth0, or Supabase Auth)
-- [ ] Configure RLS policies for data isolation
-- [ ] Set up payment processing (Stripe, etc.)
-- [ ] Enable HTTPS (automatic with Vercel)
-- [ ] Set up monitoring and error tracking
-- [ ] Configure custom domain
-- [ ] Set up email notifications
-
-## Contributing
-
-This is a personal project. Contributions welcome but please discuss major changes first.
-
-## License
-
-MIT
-
-## Support
-
-For issues and questions:
-1. Check [DEVELOPMENT.md](./DEVELOPMENT.md) for architecture details
-2. Check [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for database help
-3. Review code comments and type definitions
-
-## Roadmap
-
-- [ ] Phase 1: Core booking system ✅
-- [ ] Phase 2: UI components ✅
-- [ ] Phase 3: Supabase integration 🔄
-- [ ] Phase 4: Web portal
-- [ ] Phase 5: Admin dashboard
-- [ ] Phase 6: Authentication
-- [ ] Phase 7: Payments & subscriptions
-- [ ] Phase 8: Email notifications
-- [ ] Phase 9: Analytics
-- [ ] Phase 10: Production deployment
+Next.js 16 · React 19 · TypeScript · Tailwind 3 · framer-motion · Supabase

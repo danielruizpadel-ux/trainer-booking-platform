@@ -144,13 +144,14 @@ export default function BookingStep2_ContactForm({
           transition={{ duration: 0.5 }}
         >
           <div className="text-6xl mb-4">✨</div>
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">¡Reserva confirmada!</h2>
+          <h2 className="text-4xl font-bold text-gray-900 mb-4">Solicitud recibida</h2>
           <p className="text-xl text-gray-600 mb-8">
-            Te enviaremos un email con los detalles de tu reserva y los próximos pasos
+            Te confirmamos por email en cuanto reservemos la pista. Si no la conseguimos,
+            te avisamos para elegir otra hora.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
             <p className="text-gray-700 font-medium">
-              {selectedSessions.length} {selectedSessions.length === 1 ? 'sesión' : 'sesiones'} confirmadas
+              {selectedSessions.length} {selectedSessions.length === 1 ? 'sesión solicitada' : 'sesiones solicitadas'} · pendiente de confirmar
             </p>
             <p className="text-2xl font-bold text-blue-600 mt-2">RM {totalPrice}</p>
           </div>

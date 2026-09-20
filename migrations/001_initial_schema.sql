@@ -1,3 +1,17 @@
+-- =====================================================================
+--  ATENCION: ESTA MIGRACION NO REFLEJA LO QUE HAY DESPLEGADO.
+--
+--  Nunca se aplico tal cual. El proyecto real NO tiene tabla `clients`,
+--  y `reservations` NO tiene `client_id`, `session_date`, `session_time`,
+--  `class_type` ni `client_whatsapp_opt_in`. Los datos de contacto viven
+--  en la propia fila de `reservations`.
+--
+--  Programar contra este archivo ya rompio la reserva una vez.
+--  El esquema de referencia es docs/DATABASE.md.
+--
+--  Se conserva solo como historico.
+-- =====================================================================
+
 -- Create trainers table
 CREATE TABLE IF NOT EXISTS trainers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

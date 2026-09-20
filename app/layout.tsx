@@ -19,7 +19,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      {/* Extensiones del navegador (gestores de contraseñas, temas...) inyectan
+          atributos en <body> antes de hidratar y React lo reporta como
+          "hydration mismatch". No es nuestro: se silencia solo en este nodo. */}
+      <body suppressHydrationWarning>
         {children}
       </body>
     </html>

@@ -2,49 +2,37 @@
 
 import { motion } from 'framer-motion'
 
-interface CtaSectionProps {
-  onBookClick: () => void
-}
+export default function CtaSection() {
+  const handleBookClick = () => {
+    document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth' })
+  }
 
-export default function CtaSection({ onBookClick }: CtaSectionProps) {
   return (
-    <motion.section
-      className="py-20 px-6 bg-gradient-to-r from-blue-600 to-blue-700"
-      initial={{ opacity: 0 }}
-      whileInView={{ opacity: 1 }}
-      transition={{ duration: 0.8 }}
-      viewport={{ once: true }}
-    >
-      <div className="max-w-2xl mx-auto text-center">
-        <motion.h2
-          className="text-4xl md:text-5xl font-bold text-white mb-6"
-          initial={{ opacity: 0, y: 20 }}
+    <section className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8 bg-gray-50 border-t border-gray-200/70">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          className="bg-gray-950 rounded-3xl px-8 py-14 text-center"
+          initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          viewport={{ once: true }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          viewport={{ once: true, margin: '-80px' }}
         >
-          ¿Listo para mejorar tu juego?
-        </motion.h2>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            ¿Listo para mejorar tu juego?
+          </h2>
+          <p className="mt-2 text-gray-400">
+            No esperes más. Reserva tu sesión hoy y comienza tu transformación.
+          </p>
 
-        <motion.p
-          className="text-lg text-blue-100 mb-10"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          viewport={{ once: true }}
-        >
-          No esperes más. Reserva tu sesión hoy y comienza tu transformación.
-        </motion.p>
-
-        <motion.button
-          onClick={onBookClick}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="bg-white text-blue-600 px-10 py-4 rounded-lg font-bold text-lg shadow-2xl hover:shadow-blue-300/50 transition-all"
-        >
-          Reservar ahora
-        </motion.button>
+          <button
+            type="button"
+            onClick={handleBookClick}
+            className="mt-8 h-12 px-6 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 active:scale-[0.98] shadow-sm shadow-blue-600/25 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+          >
+            Reservar ahora
+          </button>
+        </motion.div>
       </div>
-    </motion.section>
+    </section>
   )
 }

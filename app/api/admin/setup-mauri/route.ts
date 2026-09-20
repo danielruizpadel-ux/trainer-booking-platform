@@ -9,6 +9,12 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
+  // Escribe en `trainers` y `availability_slots` sin ninguna autenticación.
+  // Solo tiene sentido en local: en producción no existe.
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(null, { status: 404 })
+  }
+
   try {
     const supabase = getSupabaseServerClient()
 

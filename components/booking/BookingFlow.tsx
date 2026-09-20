@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import CalendarNavbar from '@/components/trainer/calendar/CalendarNavbar'
 import BookingStep1_SelectSessions from './BookingStep1_SelectSessions'
 import BookingStep2_ContactForm from './BookingStep2_ContactForm'
 
@@ -83,7 +82,7 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
         throw new Error(data.error || 'Error al crear reserva')
       }
 
-      console.log('✅ Reserva confirmada:', data.reservationIds)
+      console.log('Solicitud de reserva registrada (pendiente de confirmar):', data.reservationIds)
       // Success - component will handle showing confirmation
     } catch (error) {
       console.error('❌ Error:', error)
@@ -93,18 +92,7 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
 
   return (
     <div className="w-full">
-      {/* CONSOLIDATED NAVBAR - ONLY IN STEP 1 */}
-      {step === 'selection' && (
-        <CalendarNavbar
-          currentDate={currentDate}
-          currentView={currentView}
-          onDateChange={setCurrentDate}
-          onViewChange={setCurrentView}
-          availableDates={new Set()}
-        />
-      )}
-
-      {/* CONTENT */}
+      {/* La navbar del calendario vive dentro de AvailabilityCalendar (una sola) */}
       {step === 'selection' && (
         <BookingStep1_SelectSessions
           trainerId={trainerId}
