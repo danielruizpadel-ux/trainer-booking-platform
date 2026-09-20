@@ -5,6 +5,9 @@ import { listWeeklyHours } from '@/lib/availability/weekly'
 import { listOverrides } from '@/lib/availability/overrides'
 import { toDateStr } from '@/lib/dateUtils'
 
+// Siempre fresco: el cliente lo pide justo despues de guardar un cambio.
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/dashboard/availability/schedule
  * Plantilla semanal + excepciones futuras del entrenador de la sesión.

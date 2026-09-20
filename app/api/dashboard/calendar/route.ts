@@ -5,6 +5,9 @@ import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status
 import { isAwaitingConfirmation, isRescheduleProposed } from '@/lib/reservations/status'
 import type { CalendarSlot, CalendarSlotKind } from '@/lib/reservations/calendar'
 
+// Siempre fresco: el cliente lo pide justo despues de guardar un cambio.
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/dashboard/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD
  *

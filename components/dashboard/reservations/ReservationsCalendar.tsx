@@ -77,7 +77,7 @@ export function ReservationsCalendar({
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch(`/api/dashboard/calendar?start=${rangeStart}&end=${rangeEnd}`)
+    fetch(`/api/dashboard/calendar?start=${rangeStart}&end=${rangeEnd}`, { cache: 'no-store' })
       .then(async (r) => {
         const data = await r.json()
         if (!r.ok || !data.success) throw new Error(data.error || 'No se pudo cargar el calendario')
