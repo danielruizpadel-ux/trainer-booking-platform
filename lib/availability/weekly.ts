@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CLASS_TYPES, type ClassType } from './manage'
+import { CLASS_TYPES, type ClassType } from './class-types'
 
 /**
  * Plantilla de horario semanal recurrente (migración 005). Un día (0=lunes

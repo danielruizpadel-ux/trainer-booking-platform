@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CLASS_TYPES, type ClassType } from './manage'
+import { CLASS_TYPES, type ClassType } from './class-types'
 
 /** Excepción puntual sobre el horario semanal para una fecha (migración 005). */
 export interface AvailabilityOverride {
