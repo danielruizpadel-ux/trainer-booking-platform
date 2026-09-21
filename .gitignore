@@ -34,3 +34,4 @@ Thumbs.db
 
 # Claude Code (settings.local.json puede contener claves de comandos ejecutados)
 .claude/settings.local.json
+tsconfig.tsbuildinfo
