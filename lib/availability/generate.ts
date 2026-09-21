@@ -11,13 +11,29 @@ import { isSlotOpen, reservationHoldsSlot } from './slot-status'
  * por eso el unique constraint (trainer, fecha, inicio, fin) no molesta.
  *
  * Regla de seguridad, la misma que en todo el proyecto: un hueco con una
- * reserva viva encima (`reservationHoldsSlot`) NUNCA se borra ni se toca,
- * aunque el patrón haya cambiado. Solo se borran huecos que:
+ * reserva viva encima (`reservationHoldsSlot`) NUNCA se borra ni se le
+ * cambia el rango, aunque el patrón haya cambiado. Solo se borran huecos
+ * que:
  *   - los creó este generador (`generated_by_pattern = true`), y
- *   - siguen `available` y sin reserva viva, y
+ *   - no tienen ninguna reserva viva, y
  *   - ya no forman parte del patrón para esa fecha.
  * Un hueco añadido a mano (botón "Añadir hueco") tiene `generated_by_pattern
  * = false` y el generador no lo toca nunca, esté o no ocupado.
+ *
+ * 21/09/2026 (prompt 23, día apagado con reserva dentro): antes, un hueco
+ * con reserva que dejaba de estar en el patrón se quedaba `available` tal
+ * cual — y el tiempo libre que le sobrara alrededor de la reserva seguía
+ * ofreciéndose a clientes nuevos ese día, aunque el entrenador hubiera
+ * apagado el día entero. Ahora, cuando un hueco con reserva deja de estar
+ * en el patrón, se le pone `status = 'blocked'`: dejan de calcularse horas
+ * libres ahí (`isSlotOpen` ya trataba `blocked` como cerrado) pero la fila y
+ * la reserva siguen intactas — cancelar la reserva sigue funcionando igual,
+ * lo único que cambia es que ya no se ofrece el resto del hueco. Si el
+ * patrón vuelve a querer ese hueco más adelante (se reactiva el día), se le
+ * quita el `blocked` (`toReopen`) y el `refreshAllWindows` de después
+ * recalcula si queda `available` o `full`. Un hueco que quedó `blocked` y ya
+ * no tiene ninguna reserva viva (se canceló) se trata como libre de verdad:
+ * se borra si el patrón no lo quiere, igual que cualquier otro.
  *
  * 21/09/2026 (prompt 20, fix de regenerar): `rangeKey` solo mira
  * start_time + class_type, no end_time. Si dos filas `generated_by_pattern`
@@ -70,6 +86,8 @@ export interface GenerateSummary {
   created: number
   removed: number
   keptOccupied: number
+  closed: number
+  reopened: number
 }
 
 function rangeKey(startTime: string, classType: string): string {
@@ -136,6 +154,12 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
   const toInsert: Array<{ trainer_id: string; session_date: string; start_time: string; end_time: string; class_type: string }> = []
   const toDelete: string[] = []
   const toUpdateEndTime: Array<{ id: string; end_time: string }> = []
+  // Hueco con reserva viva que el patrón ya no quiere: se cierra (no se
+  // borra ni se toca la reserva) para dejar de ofrecer su tiempo libre.
+  const toClose: string[] = []
+  // Hueco que estaba `blocked` de un ciclo anterior y el patrón vuelve a
+  // querer: se reabre (el refreshAllWindows de después decide available/full).
+  const toReopen: string[] = []
   let keptOccupied = 0
 
   let cursor = parseDateStr(today)
@@ -195,6 +219,12 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
         const holder = (s.reservations ?? []).find((r) => reservationHoldsSlot(r.status))
         return Boolean(holder) || !isSlotOpen(s)
       }
+      // Distinto de `occupiedOf`: si tiene una reserva viva de verdad, no
+      // solo si su `status` ya está cerrado por otro motivo (p. ej. un
+      // `blocked` de un ciclo anterior sin reserva ya no cuenta como
+      // reservado). Decide si hay que CERRAR (con reserva) o se puede
+      // borrar sin más (sin reserva) cuando el patrón ya no lo quiere.
+      const hasLiveReservation = (s: ExistingSlotRow) => Boolean((s.reservations ?? []).find((r) => reservationHoldsSlot(r.status)))
 
       const occupied = pattern.filter(occupiedOf)
       const free = pattern.filter((s) => !occupiedOf(s))
@@ -207,7 +237,26 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
       if (!wanted) {
         // Nada del patrón quiere esta clave hoy: toda fila libre sobra.
         for (const s of free) toDelete.push(s.id)
+        // Las "ocupadas": si de verdad tienen una reserva viva, se cierran
+        // (status 'blocked') para dejar de ofrecer el resto del hueco, sin
+        // tocar la reserva. Si solo estaban cerradas por un `blocked`
+        // anterior y ya no tienen ninguna reserva viva, no hay nada que
+        // conservar: se borran igual que cualquier hueco libre.
+        for (const s of occupied) {
+          if (hasLiveReservation(s)) {
+            if (s.status !== 'blocked') toClose.push(s.id)
+          } else {
+            toDelete.push(s.id)
+          }
+        }
         continue
+      }
+
+      // El patrón vuelve a querer esta clave: si alguna ocupada se había
+      // cerrado en un ciclo anterior (`blocked`), se reabre — el patrón la
+      // reclama otra vez, con o sin reserva viva dentro.
+      for (const s of occupied) {
+        if (s.status === 'blocked') toReopen.push(s.id)
       }
 
       // ¿Ya hay una fila EXACTA en el grupo entero (ocupada, manual o
@@ -285,7 +334,25 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     if (error) throw new Error(`UPDATE failed id=${update.id} end_time=${update.end_time}: ${error.message}`)
   }
 
-  return { created: toInsert.length, removed: toDelete.length, keptOccupied }
+  if (toClose.length > 0) {
+    const { error } = await supabase
+      .from('availability_slots')
+      .update({ status: 'blocked', updated_at: new Date().toISOString() })
+      .in('id', toClose)
+    if (error) throw new Error(`UPDATE (blocked) failed (${toClose.length} rows): ${error.message}`)
+  }
+
+  if (toReopen.length > 0) {
+    // 'available' de partida; refreshAllWindows (llamado justo después en
+    // la ruta) recalcula si de verdad queda `available` o `full`.
+    const { error } = await supabase
+      .from('availability_slots')
+      .update({ status: 'available', updated_at: new Date().toISOString() })
+      .in('id', toReopen)
+    if (error) throw new Error(`UPDATE (reopen) failed (${toReopen.length} rows): ${error.message}`)
+  }
+
+  return { created: toInsert.length, removed: toDelete.length, keptOccupied, closed: toClose.length, reopened: toReopen.length }
 }
 
 function addDays(date: Date, days: number): Date {

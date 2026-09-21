@@ -166,11 +166,15 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
 
       // 5) un regenerado final para tener el resumen de qué cambió de verdad
       const generateResult = await call('/api/dashboard/availability/generate', { method: 'POST' })
-      const { created, removed, keptOccupied } = generateResult.summary ?? { created: 0, removed: 0, keptOccupied: 0 }
+      const { created, removed, keptOccupied, closed, reopened } =
+        generateResult.summary ?? { created: 0, removed: 0, keptOccupied: 0, closed: 0, reopened: 0 }
       const parts: string[] = []
       if (created > 0) parts.push(`${created} hueco${created === 1 ? '' : 's'} nuevo${created === 1 ? '' : 's'}`)
-      if (removed > 0) parts.push(`${removed} cerrado${removed === 1 ? '' : 's'}`)
-      if (keptOccupied > 0) parts.push(`${keptOccupied} con reserva, sin tocar`)
+      if (removed > 0) parts.push(`${removed} retirado${removed === 1 ? '' : 's'}`)
+      if (closed > 0) parts.push(`${closed} con reserva, cerrado${closed === 1 ? '' : 's'} a nuevas reservas`)
+      if (reopened > 0) parts.push(`${reopened} reabierto${reopened === 1 ? '' : 's'}`)
+      const stillHeld = keptOccupied - closed - reopened
+      if (stillHeld > 0) parts.push(`${stillHeld} con reserva, sin tocar`)
       setSavedMessage(parts.length > 0 ? `Guardado — ${parts.join(' · ')}` : 'Guardado — sin cambios en los huecos')
 
       setDirty(false)

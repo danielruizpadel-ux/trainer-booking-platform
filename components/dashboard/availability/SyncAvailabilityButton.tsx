@@ -6,6 +6,8 @@ interface SyncResult {
   created: number
   removed: number
   legacyRemoved: number
+  closed: number
+  reopened: number
 }
 
 /**
@@ -36,6 +38,8 @@ export function SyncAvailabilityButton() {
         created: genRes.summary?.created ?? 0,
         removed: genRes.summary?.removed ?? 0,
         legacyRemoved: purgeRes.removed ?? 0,
+        closed: genRes.summary?.closed ?? 0,
+        reopened: genRes.summary?.reopened ?? 0,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al sincronizar')
@@ -56,7 +60,9 @@ export function SyncAvailabilityButton() {
       </button>
       {result && !error && (
         <p className="text-xs text-gray-500">
-          {result.created} creados, {result.removed + result.legacyRemoved} eliminados.
+          {result.created} creados, {result.removed + result.legacyRemoved} eliminados
+          {result.closed > 0 ? `, ${result.closed} cerrados por reserva` : ''}
+          {result.reopened > 0 ? `, ${result.reopened} reabiertos` : ''}.
         </p>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}

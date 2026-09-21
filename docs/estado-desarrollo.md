@@ -1150,3 +1150,50 @@ cualquier hueco sin ocupar.
 
 `type-check` sigue en 20 (baseline sin cambios). Commits:
 `0fc0d14` (calendario legible) y `8afd312` (fix de solapamiento).
+
+## Día apagado con reserva dentro — cierra el tiempo libre que sobra (21/09/2026, prompt 23, Claude Cowork)
+
+Daniel confirmó que quiere resolver la limitación anotada al final del
+prompt 22: si apaga la disponibilidad de un día que ya tiene reservas
+dentro, no quiere que nadie más pueda reservar el tiempo libre que quede
+alrededor de esas reservas ese día — aunque las reservas en sí, claro, no se
+deben tocar ni borrar.
+
+**Cambio en `lib/availability/generate.ts`.** Antes, cuando una clave
+(start_time + class_type) dejaba de estar en el patrón para una fecha, el
+código distinguía "ocupada" (con reserva viva, o ya cerrada por su propio
+`status`) de "libre", y simplemente no tocaba las ocupadas — se quedaban
+`available` tal cual, ofreciendo su tiempo libre normalmente. Ahora:
+
+- Si una ventana ya no está en el patrón y tiene una reserva viva de verdad
+  (`reservationHoldsSlot`), se le pone `status = 'blocked'` (nunca se borra,
+  nunca se toca la reserva ni el rango). `isSlotOpen` ya trataba `blocked`
+  como cerrado, así que deja de ofrecer huecos libres ahí; `refreshWindowStatus`
+  ya saltaba el recálculo para `blocked`, así que no se revierte solo.
+- Si una ventana ya no está en el patrón y NO tiene ninguna reserva viva
+  (por ejemplo, quedó `blocked` en un ciclo anterior y esa reserva se acabó
+  cancelando), se borra sin más — ya no hay nada que conservar.
+- Si el patrón vuelve a querer esa clave (se reactiva el día) y la ventana
+  estaba `blocked`, se reabre (`status = 'available'`); el `refreshAllWindows`
+  que corre justo después recalcula si de verdad queda `available` o `full`.
+
+`GenerateSummary` gana `closed`/`reopened`; el resumen de "Guardar cambios"
+(`WeeklySchedule.tsx`) y de "Sincronizar huecos" (`SyncAvailabilityButton.tsx`)
+los muestran («N con reserva, cerrado a nuevas reservas» / «N reabiertos»).
+Se renombró "cerrado" → "retirado" para lo que antes significaba (huecos
+libres borrados), para no confundirlo con el "cerrado" nuevo (con reserva).
+
+`npm run type-check`: 20 (baseline, sin cambios; nada nuevo en los archivos
+tocados).
+
+**PENDIENTE — sin verificar en el navegador.** No se pudo levantar
+`npm run dev` desde este entorno de Cowork para probarlo contra Supabase
+real (ni por `device_bash`, que no tiene salida a internet — confirmado con
+un `fetch` directo, `getaddrinfo EAI_AGAIN` — ni por el navegador integrado,
+que dio un error transitorio de la clasificación de seguridad en el momento
+de escribir esto). Antes de dar esto por cerrado, falta repetir en el
+navegador, con el servidor corriendo en el Mac de Daniel: apagar un día con
+una ventana ancha y una reserva real dentro, comprobar que
+`GET /api/availability` dejar de ofrecer el resto de esa ventana ese día
+(la reserva se sigue viendo y se puede cancelar con normalidad), y luego
+reactivar el día y comprobar que se reabre.
