@@ -7,6 +7,7 @@ import type { AvailabilityOverride } from '@/lib/availability/overrides'
 import { WeeklySchedule } from './WeeklySchedule'
 import { DateOverridesPanel } from './DateOverridesPanel'
 import { DurationsCard } from './DurationsCard'
+import { SyncAvailabilityButton } from './SyncAvailabilityButton'
 
 /**
  * Composición de /dashboard/disponibilidad: horario semanal recurrente +
@@ -48,6 +49,7 @@ export function AvailabilityView() {
         eyebrow="Disponibilidad"
         title="Disponibilidad"
         description="Tu horario habitual, cada semana. Los huecos reales se generan solos para las próximas 8 semanas."
+        actions={<SyncAvailabilityButton />}
       />
 
       {error && (
