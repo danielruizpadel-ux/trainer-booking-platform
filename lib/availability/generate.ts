@@ -18,6 +18,18 @@ import { isSlotOpen, reservationHoldsSlot } from './slot-status'
  *   - ya no forman parte del patrón para esa fecha.
  * Un hueco añadido a mano (botón "Añadir hueco") tiene `generated_by_pattern
  * = false` y el generador no lo toca nunca, esté o no ocupado.
+ *
+ * 21/09/2026 (prompt 20, fix de regenerar): `rangeKey` solo mira
+ * start_time + class_type, no end_time. Si dos filas `generated_by_pattern`
+ * comparten esa clave (p. ej. una fila vieja 09:00–10:00 de antes del
+ * horario semanal, y la fila correcta 09:00–17:00 del patrón actual), el
+ * código de antes procesaba cada una por su cuenta e intentaba actualizar
+ * la que no encajaba al `end_time` deseado — chocando con la otra fila que
+ * ya tenía exactamente ese rango (`duplicate key value violates unique
+ * constraint ..._start_time_end_t_key`), y abortaba el regenerado entero a
+ * mitad de las 8 semanas. Ahora se agrupa por clave: como mucho UNA fila no
+ * ocupada por grupo se actualiza (o se deja si ya es exacta); el resto de
+ * filas del mismo grupo, si sobran, se borran como duplicados obsoletos.
  */
 
 interface WeeklyRow {
@@ -153,40 +165,76 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     // class_type. Cualquier fila que ya ocupe ese horario ese día (sea del
     // generador, manual, u ocupada) bloquea un INSERT ahí, así que hay que
     // registrar también por start_time+end_time para no violar el unique
-    // constraint al insertar (antes se ignoraban aquí las filas manuales,
-    // lo que producía "duplicate key value violates unique constraint
-    // availability_slots_trainer_id_session_date_start_time_end_t_key").
+    // constraint al insertar.
     const existingTimeRangesSeen = new Set<string>()
+    for (const slot of existingForDate) {
+      existingTimeRangesSeen.add(`${slot.start_time}__${slot.end_time}`)
+    }
 
+    // Agrupar por clave (start_time + class_type): puede haber varias filas
+    // `generated_by_pattern` con la misma clave y distinto end_time (restos
+    // de un patrón anterior). Como mucho una se conserva/actualiza por
+    // grupo; el resto, si no están ocupadas, se borran.
+    const groups = new Map<string, ExistingSlotRow[]>()
     for (const slot of existingForDate) {
       const key = rangeKey(slot.start_time, slot.class_type)
-      const timeRangeKey = `${slot.start_time}__${slot.end_time}`
-      existingTimeRangesSeen.add(timeRangeKey)
-      const holder = (slot.reservations ?? []).find((r) => reservationHoldsSlot(r.status))
-      const occupied = Boolean(holder) || !isSlotOpen(slot)
-      const wanted = desiredByKey.get(key)
+      const list = groups.get(key) ?? []
+      list.push(slot)
+      groups.set(key, list)
+    }
 
-      if (!slot.generated_by_pattern) {
-        // Añadido a mano: el generador no lo toca, esté o no en el patrón.
-        existingKeysSeen.add(key)
-        continue
+    for (const [key, group] of groups) {
+      const wanted = desiredByKey.get(key)
+      const manual = group.filter((s) => !s.generated_by_pattern)
+      const pattern = group.filter((s) => s.generated_by_pattern)
+
+      // Manual: el generador nunca las toca, estén o no en el patrón.
+      if (manual.length > 0) existingKeysSeen.add(key)
+
+      const occupiedOf = (s: ExistingSlotRow) => {
+        const holder = (s.reservations ?? []).find((r) => reservationHoldsSlot(r.status))
+        return Boolean(holder) || !isSlotOpen(s)
       }
 
-      if (occupied) {
-        keptOccupied += 1
-        existingKeysSeen.add(key) // no crear un duplicado encima de una reserva
-        continue
+      const occupied = pattern.filter(occupiedOf)
+      const free = pattern.filter((s) => !occupiedOf(s))
+
+      if (occupied.length > 0) {
+        keptOccupied += occupied.length
+        existingKeysSeen.add(key) // no crear/actualizar otra encima de una reserva
       }
 
       if (!wanted) {
-        toDelete.push(slot.id)
+        // Nada del patrón quiere esta clave hoy: toda fila libre sobra.
+        for (const s of free) toDelete.push(s.id)
         continue
       }
 
-      existingKeysSeen.add(key)
-      if (wanted.end_time !== slot.end_time) {
-        toUpdateEndTime.push({ id: slot.id, end_time: wanted.end_time })
+      // ¿Ya hay una fila EXACTA en el grupo entero (ocupada, manual o
+      // libre)? Si la hay, nunca se actualiza nada — actualizar otra fila
+      // libre a ese mismo end_time chocaría con ella (unique constraint).
+      // Solo sobran las libres que no sean esa exacta.
+      const exactExists = group.some((s) => s.end_time === wanted.end_time)
+      if (exactExists) {
+        existingKeysSeen.add(key)
+        for (const s of free) {
+          if (s.end_time !== wanted.end_time) toDelete.push(s.id)
+        }
+        continue
       }
+
+      // Sin exacta en todo el grupo: es seguro actualizar una libre (no
+      // puede chocar con nada, nada más en el grupo tiene ese end_time).
+      const representative = free[0]
+      if (representative) {
+        existingKeysSeen.add(key)
+        toUpdateEndTime.push({ id: representative.id, end_time: wanted.end_time })
+        for (const s of free) {
+          if (s.id !== representative.id) toDelete.push(s.id)
+        }
+      }
+      // Si no hay ninguna libre (solo ocupadas o ninguna), se deja que el
+      // paso de inserción de abajo cree la que falta.
     }
 
     for (const [key, range] of desiredByKey) {
@@ -221,12 +269,12 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
         created_at: new Date().toISOString(),
       }))
     )
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(`INSERT failed (${toInsert.length} rows): ${error.message}. sample=${JSON.stringify(toInsert.slice(0,3))}`)
   }
 
   if (toDelete.length > 0) {
     const { error } = await supabase.from('availability_slots').delete().in('id', toDelete)
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(`DELETE failed (${toDelete.length} rows): ${error.message}`)
   }
 
   for (const update of toUpdateEndTime) {
@@ -234,7 +282,7 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
       .from('availability_slots')
       .update({ end_time: update.end_time, updated_at: new Date().toISOString() })
       .eq('id', update.id)
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(`UPDATE failed id=${update.id} end_time=${update.end_time}: ${error.message}`)
   }
 
   return { created: toInsert.length, removed: toDelete.length, keptOccupied }
