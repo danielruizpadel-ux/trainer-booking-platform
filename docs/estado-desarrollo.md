@@ -1,6 +1,6 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Estado: **Fases A, B, C y C+ hechas y verificadas; migraciones 002–004 aplicadas. Fase D rediseñada (20/09) a horario semanal + excepciones (estilo Cal.com): sin vista de calendario en Disponibilidad (se ve en Reservas), horario semanal con edición local y botón "Guardar cambios" (prompt 12). Migración 005 escrita, sin aplicar todavía. Nada de esto verificado en el navegador.**
+Creado: 19/09/2026 · Última actualización: 21/09/2026 (prompt 20) · Estado: **Fases A, B, C, C+ y D hechas y verificadas. Migraciones 002–007 aplicadas. Duraciones 1h/1h30 (prompt 19) verificadas en el navegador contra Supabase real, con dos fixes encima (prompt 20): el regenerador ya no rompe con duplicate key, y se purgaron 130 huecos legacy de antes del 20/09 que bloqueaban días cerrados y clases de 1h30. Botón "Sincronizar huecos" nuevo en Disponibilidad.**
 
 ## Decisión de alcance
 
@@ -862,8 +862,9 @@ una clase abre su detalle sin salir de `/dashboard`. `type-check`: 20.
 
 Plan aprobado el 20/09 (con dos añadidos: el overlap cuenta
 `pending_confirmation` además de `confirmed`; recalcular TODAS las ventanas
-tras la 007). **Código completo y con `type-check` limpio; verificación en el
-navegador pendiente de aplicar `migrations/007_class_durations.sql`.**
+tras la 007). **Código completo y con `type-check` limpio; verificado en el
+navegador contra Supabase real el 21/09 (prompt 20), migración 007 aplicada
+por Daniel.**
 
 ### Hallazgo previo
 
@@ -1000,3 +1001,58 @@ el cambio no es "añadir 1 h 30" sino definir qué es una fila de
   generado u ocupado) y nunca se inserta uno nuevo si ese horario ya está
   cubierto. `type-check`: 20, sin cambios. Sin poder verificar en el
   navegador si esto resuelve el guardado que falló en su pantalla.
+- **Prompt 20 — 21/09/2026 (Claude, Cowork, sesión de retomar el desarrollo).**
+  Daniel aplicó la migración 007. Verificación en el navegador de las
+  duraciones 1h/1h30 contra Supabase real (sesión de Mauricio, `npm run dev`
+  en local — el sandbox de Cowork no tiene salida de red a Supabase, así que
+  la verificación se hizo con el servidor corriendo en el Mac de Daniel y el
+  navegador conectado a `localhost:3001`).
+
+  Dos hallazgos, los dos arreglados:
+  1. **`lib/availability/generate.ts` rompía con `duplicate key`** al
+     regenerar: cuando dos filas `generated_by_pattern=true` compartían
+     `start_time`+`class_type` con distinto `end_time` (restos de un patrón
+     anterior), el código intentaba actualizar la que sobraba hacia el
+     `end_time` deseado y chocaba con la otra fila, que ya lo tenía —
+     abortando el regenerado completo de las 8 semanas a la primera colisión.
+     Fix: agrupar por clave; si ya hay una fila EXACTA en el grupo (ocupada,
+     manual o libre) nunca se actualiza nada, solo se borran las libres
+     sobrantes; si no la hay, es seguro actualizar la primera libre.
+  2. **130 huecos legacy bloqueaban el calendario real**: la migración 005
+     añadió `generated_by_pattern` con default `false`, así que TODA fila que
+     ya existía antes de esa migración (18/09, antes del rediseño de horario
+     semanal) quedó marcada "manual" — y el generador nunca toca manuales, por
+     diseño. Resultado: cada día tenía huecos sueltos de 1h de 09:00 a 21:00,
+     incluidos días marcados "Sin horario" (el calendario público ofrecía
+     reservar en días que Daniel había cerrado), y como esos huecos eran de
+     exactamente 60 min, ninguna clase de 1h30 encajaba en ningún sitio.
+     Identificados con confianza porque los 130 comparten el mismo
+     `created_at` exacto (18/09 17:58, un solo lote). Purgados (nueva
+     `lib/availability/cleanup.ts`, `POST …/availability/purge-legacy`):
+     solo huecos futuros, sin ninguna reserva viva encima — 2 sí tenían
+     reserva viva (Miércoles 23 10:00–11:00 y Viernes 25 09:00–10:00, este
+     último en un día ya fuera del horario semanal actual) y se protegieron
+     correctamente, sin tocar.
+
+  Nuevo botón **"Sincronizar huecos"** en la cabecera de Disponibilidad (a
+  petición de Daniel): llama a `/generate` + `/purge-legacy` juntos y enseña
+  cuántos huecos se crearon/eliminaron. No hace falta para el uso normal
+  (cada cambio de horario ya regenera solo) — es la vía para corregir un
+  desajuste puntual sin pedírselo a Claude.
+
+  Verificado en el navegador tras el fix: Resumen y Reservas muestran ya una
+  sola ventana limpia por día (Martes 09:00–10:00, Miércoles 09:00–17:00 con
+  la reserva de las 10:00–11:00 dentro, Jueves 13:00–19:00; Lunes/Viernes–
+  Domingo sin ventana, como corresponde a "Sin horario"). `type-check`: 20,
+  sin cambios.
+
+  **Pendiente, sin confirmar**: en el diálogo "Nueva reserva" con 1 h 30 min
+  sobre la ventana grande del miércoles, la lista de horas de inicio incluía
+  10:00 y 10:30 — que solapan con la reserva real de 10:00–11:00 — sin
+  distinguirlas visualmente de las horas que sí encajan. No se confirmó si
+  esto es solo un problema de la lista mostrada (el servidor valida aparte
+  en `POST /api/reservations` vía `findBookableWindow`, así que no debería
+  poder confirmarse una reserva solapada) o si de verdad falta filtrar
+  `bookableStarts`/`freeRanges` para huecos con una reserva de duración
+  distinta ya dentro. No se investigó más para no tocar más código sin que
+  Daniel lo pidiera. Revisar antes de dar la Fase D+ por cerrada del todo.
