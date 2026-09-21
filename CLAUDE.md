@@ -42,6 +42,16 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
   huecos que la reserva rechazaba.
 - "Reserva viva" (ocupa su rango) = `reservationHoldsSlot`: incluye
   `pending_confirmation`, no solo `confirmed`.
+- **Limitación conocida (21/09/2026):** el generador nunca borra ni recorta
+  una ventana con una reserva viva encima, así que si el entrenador apaga un
+  día (o lo bloquea con una excepción) que tenga una ventana ancha con
+  reservas dentro, esa ventana entera se queda tal cual — y el tiempo libre
+  que le sobre alrededor de esas reservas sigue apareciendo como reservable
+  para clientes nuevos ese día, porque `bookableStarts`/`freeRanges` no saben
+  si el día sigue "activo" en la plantilla, solo miran la fila. No pasa nada
+  si la ventana coincide justo con la clase (caso normal hoy); importa el día
+  que una ventana ancha con huecos libres alrededor de una reserva se quede
+  en un día que el entrenador creía cerrado del todo.
 - No usar `.single()` para buscar un hueco por trainer + fecha + hora: la tabla
   admite varios `class_type` a la misma hora y `.single()` falla con más de uno.
 - Comparar horas normalizadas a `HH:MM`. En la base están como `HH:MM:SS`.
