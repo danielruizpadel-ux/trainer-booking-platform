@@ -17,8 +17,8 @@ import {
  *   confirm | needs_reschedule   decisión sobre una pendiente (lib/reservations/confirmation.ts)
  *   cancel                       cancelación directa desde el panel (lib/reservations/edit.ts)
  *
- * PUT /api/dashboard/reservations/[id]     body: { client_name?, client_email?, client_phone?, notes?, price?, slot_id? }
- *   edición de datos/precio y, si viene slot_id, cambio de horario.
+ * PUT /api/dashboard/reservations/[id]     body: { client_name?, client_email?, client_phone?, notes?, price?, slot_id?, start_time? }
+ *   edición de datos/precio y, si vienen slot_id + start_time, cambio de franja (misma duración).
  *
  * El entrenador sale de la sesión (requireTrainer): 401 sin sesión, 403 si la
  * reserva es de otro, 404 si no existe, 409 si el estado no lo permite.
@@ -82,7 +82,9 @@ export async function PUT(request: Request, context: RouteContext) {
     const reservation = await loadOwnReservation(context)
     if (reservation instanceof Response) return reservation
 
-    const body = (await request.json().catch(() => null)) as (ReservationDetailsInput & { slot_id?: unknown }) | null
+    const body = (await request.json().catch(() => null)) as
+      | (ReservationDetailsInput & { slot_id?: unknown; start_time?: unknown })
+      | null
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'Body inválido' }, { status: 400 })
     }
@@ -94,7 +96,9 @@ export async function PUT(request: Request, context: RouteContext) {
     if (!details.ok) return NextResponse.json({ success: false, error: details.message }, { status: details.status })
 
     if (typeof body.slot_id === 'string' && body.slot_id) {
-      const moved = await moveReservation({ ...reservation, ...parsed.updates } as EditableReservation, body.slot_id)
+      const startTime = typeof body.start_time === 'string' ? body.start_time : ''
+      if (!startTime) return NextResponse.json({ success: false, error: 'start_time es obligatorio para cambiar la franja', detailsSaved: true }, { status: 400 })
+      const moved = await moveReservation({ ...reservation, ...parsed.updates } as EditableReservation, body.slot_id, startTime)
       if (!moved.ok) return NextResponse.json({ success: false, error: moved.message, detailsSaved: true }, { status: moved.status })
     }
 

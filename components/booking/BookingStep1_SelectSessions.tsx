@@ -3,6 +3,9 @@
 import { useMemo } from 'react'
 import AvailabilityCalendar from '@/components/trainer/calendar/AvailabilityCalendar'
 import BookingSummaryCard from './BookingSummaryCard'
+import { DurationPicker } from '@/components/dashboard/reservations/DurationPicker'
+import { calculateBookingPrice } from '@/lib/reservations/pricing'
+import { durationLabel } from '@/lib/availability/durations'
 
 interface Session {
   date: string
@@ -20,7 +23,10 @@ interface BookingStep1Props {
   currentDate: Date
   onViewChange: (view: ViewType) => void
   onDateChange: (date: Date) => void
-  pricePerSession?: number
+  /** Duración elegida (60/90) y las que ofrece el entrenador */
+  duration: number
+  classDurations: number[]
+  onDurationChange: (value: number) => void
 }
 
 export default function BookingStep1_SelectSessions({
@@ -32,13 +38,15 @@ export default function BookingStep1_SelectSessions({
   currentDate,
   onViewChange,
   onDateChange,
-  pricePerSession = 300,
+  duration,
+  classDurations,
+  onDurationChange,
 }: BookingStep1Props) {
-  const { total, discount } = useMemo(() => {
-    const subtotal = selectedSessions.length * pricePerSession
-    const pct = selectedSessions.length >= 10 ? 15 : selectedSessions.length >= 5 ? 10 : 0
-    return { total: subtotal - Math.round((subtotal * pct) / 100), discount: pct }
-  }, [selectedSessions, pricePerSession])
+  // Misma regla de precio que el servidor (lib/reservations/pricing.ts).
+  const { total, discount, pricePerSession } = useMemo(() => {
+    const price = calculateBookingPrice(selectedSessions.length, duration)
+    return { total: price.total, discount: price.discountPercent, pricePerSession: price.pricePerSession }
+  }, [selectedSessions, duration])
 
   const handleRemove = (date: string, time: string) => {
     onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
@@ -54,6 +62,12 @@ export default function BookingStep1_SelectSessions({
           <p className="mt-1.5 text-gray-500">
             Elige los días y las horas que mejor te encajen. Cuantas más reserves, mejor precio.
           </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <DurationPicker durations={classDurations} value={duration} onChange={onDurationChange} />
+            <span className="text-sm text-gray-500">
+              Clase de {durationLabel(duration)} · RM {pricePerSession}
+            </span>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
@@ -66,6 +80,7 @@ export default function BookingStep1_SelectSessions({
             onDateChange={onDateChange}
             selectedSessions={selectedSessions}
             onSessionChange={onSessionChange}
+            durationMinutes={duration}
           />
 
           {/* Panel lateral */}
@@ -74,6 +89,7 @@ export default function BookingStep1_SelectSessions({
             total={total}
             discount={discount}
             pricePerSession={pricePerSession}
+            durationMinutes={duration}
             onRemove={handleRemove}
             onConfirm={() => selectedSessions.length > 0 && onConfirm(selectedSessions)}
           />

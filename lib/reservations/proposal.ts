@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { notifyProposalResponded, notifyRescheduleProposed } from '@/lib/notifications/notify'
-import { RESERVATION_STATUS, SLOT_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
-import { loadOwnedOpenSlot, occupySlot, releaseSlot } from './slots'
+import { RESERVATION_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
+import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
 
 /**
  * Propuesta de nueva fecha (migración 004).
@@ -24,6 +24,9 @@ export interface ProposableReservation {
   client_phone: string | null
   notes: string | null
   price: number | null
+  start_time: string | null
+  end_time: string | null
+  duration_minutes: number | null
 }
 
 export type ProposeResult =
@@ -31,26 +34,29 @@ export type ProposeResult =
   | { ok: false; status: number; message: string }
 
 const SELECT_FOR_PROPOSAL =
-  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price'
+  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes'
 
 export async function proposeReschedule(
   original: ProposableReservation,
   slotId: string,
+  startTime: string,
   origin: string
 ): Promise<ProposeResult> {
   if (!isAwaitingConfirmation(original.status)) {
     return { ok: false, status: 409, message: 'Solo se puede proponer otra fecha sobre una reserva pendiente' }
   }
-  if (slotId === original.availability_slot_id) {
-    return { ok: false, status: 400, message: 'Elige un hueco distinto del actual' }
+  const duration = original.duration_minutes ?? 60
+  if (slotId === original.availability_slot_id && (original.start_time ?? '').slice(0, 5) === startTime.slice(0, 5)) {
+    return { ok: false, status: 400, message: 'Elige una franja distinta de la actual' }
   }
 
   const supabase = getSupabaseServerClient()
-  const lookup = await loadOwnedOpenSlot(supabase, slotId, original.trainer_id)
-  if (!lookup.ok) {
-    const status = lookup.code === 'forbidden' ? 403 : lookup.code === 'not_found' ? 404 : lookup.code === 'taken' ? 409 : 500
-    return { ok: false, status, message: lookup.message }
-  }
+  // La original deja de contar como ocupante: se puede proponer la misma
+  // ventana en otra franja, o incluso la misma franja de otra ventana.
+  const lookup = await loadOwnedOpenWindow(supabase, slotId, original.trainer_id, startTime, duration, {
+    ignoreReservationId: original.id,
+  })
+  if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
 
   const token = randomBytes(24).toString('base64url')
   const now = new Date().toISOString()
@@ -65,6 +71,9 @@ export async function proposeReschedule(
       client_phone: original.client_phone,
       notes: original.notes,
       price: original.price,
+      start_time: lookup.range.start_time,
+      end_time: lookup.range.end_time,
+      duration_minutes: duration,
       status: RESERVATION_STATUS.RESCHEDULE_PROPOSED,
       rescheduled_from_id: original.id,
       proposal_token: token,
@@ -92,15 +101,15 @@ export async function proposeReschedule(
     .in('status', [RESERVATION_STATUS.PENDING_CONFIRMATION, 'pending'])
   if (originalError) console.warn('No se pudo actualizar la reserva original:', originalError.message)
 
-  await occupySlot(supabase, slotId, SLOT_STATUS.PENDING)
-  await releaseSlot(supabase, original.availability_slot_id)
+  await refreshWindowStatus(supabase, original.availability_slot_id)
+  if (slotId !== original.availability_slot_id) await refreshWindowStatus(supabase, slotId)
 
   await notifyRescheduleProposed(
     {
       ...original,
       id: proposal.id,
-      session_date: lookup.slot.session_date,
-      start_time: lookup.slot.start_time,
+      session_date: lookup.window.session_date,
+      start_time: lookup.range.start_time,
     },
     `${origin}/propuesta/${token}`
   )
@@ -112,6 +121,8 @@ export interface PublicProposal {
   id: string
   client_name: string
   price: number | null
+  duration_minutes: number
+  /** Fecha de la ventana y el rango REAL de la clase propuesta */
   slot: { session_date: string; start_time: string; end_time: string }
   trainer: { name: string; slug: string }
 }
@@ -122,7 +133,7 @@ export async function getProposalByToken(token: string): Promise<PublicProposal 
   const supabase = getSupabaseServerClient()
   const { data, error } = await supabase
     .from('reservations')
-    .select('id, client_name, price, status, availability_slots ( session_date, start_time, end_time ), trainers ( name, slug )')
+    .select('id, client_name, price, status, start_time, end_time, duration_minutes, availability_slots ( session_date, start_time, end_time ), trainers ( name, slug )')
     .eq('proposal_token', token)
     .maybeSingle()
   if (error || !data) return null
@@ -131,11 +142,22 @@ export async function getProposalByToken(token: string): Promise<PublicProposal 
     client_name: string
     price: number | null
     status: string | null
+    start_time: string | null
+    end_time: string | null
+    duration_minutes: number | null
     availability_slots: PublicProposal['slot'] | null
     trainers: PublicProposal['trainer'] | null
   }
   if (!isRescheduleProposed(row.status) || !row.availability_slots || !row.trainers) return null
-  return { id: row.id, client_name: row.client_name, price: row.price, slot: row.availability_slots, trainer: row.trainers }
+  const range = reservationRange(row, row.availability_slots)
+  return {
+    id: row.id,
+    client_name: row.client_name,
+    price: row.price,
+    duration_minutes: row.duration_minutes ?? 60,
+    slot: { session_date: row.availability_slots.session_date, ...range },
+    trainer: row.trainers,
+  }
 }
 
 export type RespondResult =
@@ -176,10 +198,10 @@ export async function respondToProposal(token: string, accepted: boolean): Promi
     return { ok: false, status: 409, message: 'Esta propuesta ya se respondió' }
   }
 
-  if (!accepted) await releaseSlot(supabase, row.availability_slot_id)
+  if (!accepted) await refreshWindowStatus(supabase, row.availability_slot_id)
 
   await notifyProposalResponded(
-    { ...row, session_date: row.availability_slots?.session_date, start_time: row.availability_slots?.start_time },
+    { ...row, session_date: row.availability_slots?.session_date, start_time: row.start_time ?? row.availability_slots?.start_time },
     accepted
   )
 

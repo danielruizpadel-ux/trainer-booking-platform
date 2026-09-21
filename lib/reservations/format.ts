@@ -56,3 +56,22 @@ export function normalizeForSearch(value: string): string {
     .replace(/[̀-ͯ]/g, '')
     .trim()
 }
+
+/**
+ * Rango real de una reserva: sus propias horas (migración 007) o, en las
+ * anteriores, la hora de su ventana + 60 min. null si no tiene ventana.
+ */
+export function reservationRangeOf(r: {
+  start_time?: string | null
+  end_time?: string | null
+  slot: { start_time: string; end_time: string } | null
+}): { start_time: string; end_time: string } | null {
+  if (r.start_time && r.end_time) return { start_time: r.start_time.slice(0, 5), end_time: r.end_time.slice(0, 5) }
+  if (!r.slot) return null
+  const [h, m] = r.slot.start_time.split(':').map(Number)
+  const end = Math.min(h * 60 + (m || 0) + 60, (() => { const [eh, em] = r.slot!.end_time.split(':').map(Number); return eh * 60 + (em || 0) })())
+  return {
+    start_time: r.slot.start_time.slice(0, 5),
+    end_time: `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`,
+  }
+}

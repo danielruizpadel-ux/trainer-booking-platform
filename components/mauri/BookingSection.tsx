@@ -5,12 +5,14 @@ import BookingFlow from '@/components/booking/BookingFlow'
 interface BookingSectionProps {
   trainerId: string
   trainerName: string
+  /** Duraciones de clase que ofrece el entrenador (60/90) */
+  classDurations?: number[]
   trainerPrice?: number
   trainerEmail?: string
   trainerPhone?: string
 }
 
-export default function BookingSection({ trainerId, trainerName }: BookingSectionProps) {
+export default function BookingSection({ trainerId, trainerName, classDurations = [60] }: BookingSectionProps) {
   // El encabezado y el fondo interiores los aporta BookingStep1 / BookingStep2,
   // así evitamos títulos y paddings duplicados. Aquí solo ponemos la banda de
   // contraste que destaca la reserva frente al resto de la página.
@@ -24,7 +26,7 @@ export default function BookingSection({ trainerId, trainerName }: BookingSectio
       className="scroll-mt-20 bg-blue-100 border-y border-blue-200"
     >
       <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
-      <BookingFlow trainerId={trainerId} trainerName={trainerName} />
+      <BookingFlow trainerId={trainerId} trainerName={trainerName} classDurations={classDurations} />
       <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
     </section>
   )

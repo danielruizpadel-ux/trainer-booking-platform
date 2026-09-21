@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
 import { getCurrentSession } from '@/lib/auth/current-trainer'
-import { PageHeader } from '@/components/dashboard/PageHeader'
+import { listTrainerReservations } from '@/lib/reservations/queries'
 import { StatCard } from '@/components/dashboard/StatCard'
+import { HomeCalendarSection } from '@/components/dashboard/home/HomeCalendarSection'
 
 export const metadata: Metadata = { title: 'Resumen' }
+
+// El calendario pinta reservas reales: siempre datos frescos.
+export const dynamic = 'force-dynamic'
 
 /**
  * Resumen. Las cifras llegan en la Fase F; aquí ya está la estructura con los
@@ -16,17 +20,18 @@ export default async function DashboardHomePage() {
   // paralelo, así que aquí solo hay que no reventar.
   if (!trainer) return null
 
-  const firstName = trainer.name.trim().split(/\s+/)[0] || trainer.name
+  // El trainer_id sale de la sesión, nunca de la URL ni del cliente.
+  const reservations = await listTrainerReservations(trainer.id)
 
   return (
     <>
-      <PageHeader
-        eyebrow="Resumen"
-        title={`Hola, ${firstName}`}
-        description={`Tu agenda de un vistazo. Perfil público: /${trainer.slug}`}
-      />
+      {/* Sin cabecera ni saludo: el calendario es lo primero que se ve. */}
+      <section aria-label="Calendario">
+        <h1 className="sr-only">Resumen</h1>
+        <HomeCalendarSection reservations={reservations} />
+      </section>
 
-      <section aria-labelledby="stats-title">
+      <section aria-labelledby="stats-title" className="mt-10">
         <h2 id="stats-title" className="sr-only">
           Cifras
         </h2>
@@ -52,14 +57,10 @@ export default async function DashboardHomePage() {
         </div>
       </section>
 
-      <section className="mt-6 bg-white rounded-2xl ring-1 ring-gray-200/70 p-6">
-        <h2 className="text-base font-semibold text-gray-900">Todavía sin datos</h2>
-        <p className="mt-1.5 text-sm text-gray-600">
-          Las cifras se calcularán a partir de tus reservas reales en cuanto estén las
-          secciones de Reservas y Disponibilidad. Mientras tanto la estructura ya es la
-          definitiva.
-        </p>
-      </section>
+      <p className="mt-6 text-xs text-gray-400">
+        Las cifras de arriba se calcularán a partir de tus reservas reales más adelante; la
+        estructura ya es la definitiva.
+      </p>
     </>
   )
 }

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { NewReservationDialog } from './NewReservationDialog'
 
 /** Botón de la cabecera de /dashboard/reservas. */
-export function NewReservationButton() {
+export function NewReservationButton({ durations }: { durations: number[] }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -18,7 +18,7 @@ export function NewReservationButton() {
         </svg>
         Nueva reserva
       </button>
-      {open && <NewReservationDialog onClose={() => setOpen(false)} />}
+      {open && <NewReservationDialog durations={durations} onClose={() => setOpen(false)} />}
     </>
   )
 }

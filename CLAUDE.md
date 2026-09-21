@@ -27,26 +27,35 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
 
 ## Disponibilidad
 
-- La regla de si un hueco se puede reservar vive **solo** en
-  `lib/availability/slot-status.ts` (`isSlotOpen`). La usan
-  `GET /api/availability` y `POST /api/reservations`.
-- Si hay que cambiarla, se cambia ahí. No duplicar la condición en una ruta:
-  cuando las dos divergieron, el calendario ofrecía huecos que la reserva
-  rechazaba.
+- Desde la migración 007 una fila de `availability_slots` es una **ventana**
+  (un rango abierto), no una clase. Las clases (1 h o 1 h 30) son reservas con
+  `start_time`/`end_time` dentro de la ventana, y se colocan por
+  **solapamiento** (`lib/availability/windows.ts`), nunca por igualdad de
+  `start_time`. No generar filas de hueco por duración.
+- Los inicios reservables los calcula **solo** `lib/availability/booking.ts`
+  (`bookableSlotsFor` / `findBookableWindow`), sobre `isSlotOpen` de
+  `lib/availability/slot-status.ts`. Lo usan `GET /api/availability` y
+  `POST /api/reservations`; el calendario del dashboard usa la misma
+  `bookableStarts`. Si hay que cambiar la regla, se cambia ahí. No duplicar la
+  condición en una ruta: cuando las dos divergieron, el calendario ofrecía
+  huecos que la reserva rechazaba.
+- "Reserva viva" (ocupa su rango) = `reservationHoldsSlot`: incluye
+  `pending_confirmation`, no solo `confirmed`.
 - No usar `.single()` para buscar un hueco por trainer + fecha + hora: la tabla
   admite varios `class_type` a la misma hora y `.single()` falla con más de uno.
 - Comparar horas normalizadas a `HH:MM`. En la base están como `HH:MM:SS`.
 
-- Estados de reserva y hueco: `lib/reservations/status.ts` y
-  `migrations/003_reservation_confirmation_flow.sql`. Un hueco `pending` tiene
-  una reserva sin confirmar encima y NO se ofrece. La decisión del entrenador
+- Estados de reserva y ventana: `lib/reservations/status.ts` y
+  `migrations/003_reservation_confirmation_flow.sql`. La decisión del entrenador
   (confirmar / sin pista) vive solo en `lib/reservations/confirmation.ts`.
 - El precio lo calcula el servidor (`lib/reservations/pricing.ts`); nunca
   aceptar un total del navegador.
-- Tocar huecos desde el dashboard solo con `lib/reservations/slots.ts`
-  (`loadOwnedOpenSlot` comprueba dueño + abierto + sin reserva viva). El
-  calendario deduce "reservada" de la reserva que ocupa el hueco, no de
-  `slot.status` (hay reservas antiguas sobre huecos `available`).
+- Tocar ventanas desde el dashboard solo con `lib/reservations/slots.ts`
+  (`loadOwnedOpenWindow` comprueba dueño + abierta + que el rango cabe sin
+  solapar; `refreshWindowStatus` recalcula contador y `full`). El estado
+  `pending` de ventana es legado: no se escribe.
+- Duraciones: `trainers.class_durations` (`lib/availability/durations.ts`);
+  la rejilla de inicios es de 30 min si se ofrece 1 h 30, 60 si solo 1 h.
 
 Detalle del flujo completo: `docs/BOOKING_FLOW.md`.
 

@@ -25,6 +25,7 @@ interface BookingStep2Props {
   selectedSessions: Session[]
   totalPrice: number
   discountPercent: number
+  durationMinutes?: number
   trainerId: string
   onSubmit: (data: ContactFormData) => Promise<void>
   onBack: () => void
@@ -34,6 +35,7 @@ export default function BookingStep2_ContactForm({
   selectedSessions,
   totalPrice,
   discountPercent,
+  durationMinutes = 60,
   trainerId,
   onSubmit,
   onBack,
@@ -151,7 +153,7 @@ export default function BookingStep2_ContactForm({
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
             <p className="text-gray-700 font-medium">
-              {selectedSessions.length} {selectedSessions.length === 1 ? 'sesión solicitada' : 'sesiones solicitadas'} · pendiente de confirmar
+              {selectedSessions.length} {selectedSessions.length === 1 ? 'sesión solicitada' : 'sesiones solicitadas'} de {durationMinutes === 90 ? '1 h 30' : '1 h'} · pendiente de confirmar
             </p>
             <p className="text-2xl font-bold text-blue-600 mt-2">RM {totalPrice}</p>
           </div>

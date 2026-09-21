@@ -1,5 +1,6 @@
 import type { TrainerReservation } from '@/lib/reservations/queries'
-import { formatDayShort, formatDuration, formatTime } from '@/lib/reservations/format'
+import { formatDayShort, formatDuration, formatTime, reservationRangeOf } from '@/lib/reservations/format'
+import { formatRM } from '@/lib/reservations/pricing'
 import { StatusBadge } from './StatusBadge'
 import { ReservationRowActions } from './ReservationRowActions'
 
@@ -10,7 +11,8 @@ interface ReservationMobileCardProps {
 
 /** Una reserva como tarjeta: la misma información que la fila de la tabla, apilada. */
 export function ReservationMobileCard({ reservation: r, highlighted = false }: ReservationMobileCardProps) {
-  const duration = formatDuration(r.slot?.start_time, r.slot?.end_time)
+  const range = reservationRangeOf(r)
+  const duration = formatDuration(range?.start_time, range?.end_time)
 
   return (
     <article
@@ -23,7 +25,7 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
         <div className="min-w-0">
           <p className="text-base font-semibold text-gray-900">{r.client_name}</p>
           <p className="mt-1 text-sm text-gray-900">
-            {r.slot ? `${formatDayShort(r.slot.session_date)} · ${formatTime(r.slot.start_time)}` : 'Hueco no disponible'}
+            {r.slot && range ? `${formatDayShort(r.slot.session_date)} · ${formatTime(range.start_time)}` : 'Hueco no disponible'}
             {duration && <span className="text-gray-500"> · {duration}</span>}
           </p>
         </div>
@@ -49,7 +51,7 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
         )}
         <dt className="text-gray-400">Precio</dt>
         <dd className="font-semibold text-gray-900 tabular-nums">
-          {r.price !== null && r.price !== undefined ? `RM ${r.price}` : <span className="text-gray-400 font-medium">—</span>}
+          {r.price !== null && r.price !== undefined ? formatRM(r.price) : <span className="text-gray-400 font-medium">—</span>}
         </dd>
       </dl>
 

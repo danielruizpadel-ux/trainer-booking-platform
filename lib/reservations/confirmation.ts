@@ -3,13 +3,15 @@ import {
   notifyReservationConfirmed,
   notifyReservationNeedsReschedule,
 } from '@/lib/notifications/notify'
-import { RESERVATION_STATUS, SLOT_STATUS, isAwaitingConfirmation } from './status'
+import { RESERVATION_STATUS, isAwaitingConfirmation } from './status'
+import { refreshWindowStatus } from './slots'
 
 /**
  * Las dos decisiones del entrenador sobre una reserva pendiente.
  *
- *   confirm           reserva → confirmed;        hueco → full
- *   needs_reschedule  reserva → needs_reschedule; hueco → available (liberado)
+ *   confirm           reserva → confirmed         (sigue ocupando su rango en la ventana)
+ *   needs_reschedule  reserva → needs_reschedule  (deja de ocupar su rango: se libera)
+ * En ambos casos se recalcula el estado de la ventana (refreshWindowStatus).
  *
  * Solo se puede decidir sobre una reserva que esté esperando confirmación.
  * Quien llama ya ha comprobado que la reserva es del entrenador de la sesión
@@ -27,6 +29,9 @@ export interface DecidableReservation {
   client_email: string
   client_phone: string | null
   notes: string | null
+  start_time?: string | null
+  end_time?: string | null
+  duration_minutes?: number | null
 }
 
 export type DecisionResult =
@@ -70,39 +75,21 @@ export async function applyReservationDecision(
     }
   }
 
-  // 2. El hueco. No es crítico: si falla, la reserva ya tiene su estado y
-  //    GET /api/availability cruza con `reservations` de todos modos.
-  const { data: slot, error: slotReadError } = await supabase
+  // 2. La ventana: recalcular contador y estado (full solo si ya no cabe nada).
+  //    No es crítico: si falla, la reserva ya tiene su estado y la
+  //    disponibilidad se calcula por solapamiento de todos modos.
+  await refreshWindowStatus(supabase, reservation.availability_slot_id)
+  const { data: slot } = await supabase
     .from('availability_slots')
-    .select('id, session_date, start_time, current_bookings, max_capacity')
+    .select('session_date, start_time')
     .eq('id', reservation.availability_slot_id)
     .maybeSingle()
-
-  if (slotReadError || !slot) {
-    console.warn('No se pudo leer el hueco de la reserva:', slotReadError?.message)
-  } else {
-    const slotUpdate =
-      decision === 'confirm'
-        ? { status: SLOT_STATUS.FULL, updated_at: now }
-        : {
-            status: SLOT_STATUS.AVAILABLE,
-            current_bookings: Math.max(0, (slot.current_bookings ?? 0) - 1),
-            updated_at: now,
-          }
-
-    const { error: slotError } = await supabase
-      .from('availability_slots')
-      .update(slotUpdate)
-      .eq('id', slot.id)
-
-    if (slotError) console.warn('No se pudo actualizar el hueco:', slotError.message)
-  }
 
   // 3. Avisar al cliente (stub).
   const notifiable = {
     ...reservation,
     session_date: slot?.session_date ?? null,
-    start_time: slot?.start_time ?? null,
+    start_time: reservation.start_time ?? slot?.start_time ?? null,
   }
   if (decision === 'confirm') {
     await notifyReservationConfirmed(notifiable)

@@ -7,10 +7,12 @@ import {
   formatDuration,
   formatTime,
   normalizeForSearch,
+  reservationRangeOf,
   reservationTab,
   type ReservationTab,
 } from '@/lib/reservations/format'
 import { StatusBadge } from './StatusBadge'
+import { formatRM } from '@/lib/reservations/pricing'
 import { ReservationRowActions } from './ReservationRowActions'
 import { ReservationMobileCard } from './ReservationMobileCard'
 
@@ -189,13 +191,13 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
                         {r.slot ? formatDayShort(r.slot.session_date) : <span className="text-gray-400">—</span>}
                       </Td>
                       <Td className="whitespace-nowrap tabular-nums text-gray-900">
-                        {r.slot ? formatTime(r.slot.start_time) : '—'}
+                        {reservationRangeOf(r) ? formatTime(reservationRangeOf(r)!.start_time) : '—'}
                       </Td>
                       <Td className="whitespace-nowrap tabular-nums text-gray-600">
-                        {formatDuration(r.slot?.start_time, r.slot?.end_time) || '—'}
+                        {formatDuration(reservationRangeOf(r)?.start_time, reservationRangeOf(r)?.end_time) || '—'}
                       </Td>
                       <Td className="whitespace-nowrap tabular-nums text-right font-semibold text-gray-900">
-                        {r.price !== null && r.price !== undefined ? `RM ${r.price}` : <span className="text-gray-400 font-medium">—</span>}
+                        {r.price !== null && r.price !== undefined ? formatRM(r.price) : <span className="text-gray-400 font-medium">—</span>}
                       </Td>
                       <Td>
                         <StatusBadge status={r.status} />

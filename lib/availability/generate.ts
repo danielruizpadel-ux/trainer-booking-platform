@@ -4,10 +4,11 @@ import { isSlotOpen, reservationHoldsSlot } from './slot-status'
 
 /**
  * Generador: a partir de la plantilla semanal + excepciones (migración 005),
- * crea o borra las filas reales de `availability_slots` de las próximas
- * `weeksAhead` semanas. Es lo único que traduce la plantilla en huecos que
- * ve el cliente; el widget público y `POST /api/reservations` no saben que
- * la plantilla existe.
+ * crea o borra las VENTANAS reales de `availability_slots` de las próximas
+ * `weeksAhead` semanas: una fila por rango y fecha (modelo 007). Las clases
+ * de 1 h / 1 h 30 se colocan dentro de cada ventana por solapamiento
+ * (lib/availability/windows.ts); aquí no se generan filas por duración, y
+ * por eso el unique constraint (trainer, fecha, inicio, fin) no molesta.
  *
  * Regla de seguridad, la misma que en todo el proyecto: un hueco con una
  * reserva viva encima (`reservationHoldsSlot`) NUNCA se borra ni se toca,

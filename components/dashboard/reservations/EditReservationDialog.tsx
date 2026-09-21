@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { TrainerReservation } from '@/lib/reservations/queries'
-import type { CalendarSlot } from '@/lib/reservations/calendar'
-import { formatDayShort, formatTime } from '@/lib/reservations/format'
+import type { SlotPick } from '@/lib/reservations/calendar'
+import { formatDayShort, formatTime, reservationRangeOf } from '@/lib/reservations/format'
+import { durationLabel } from '@/lib/availability/durations'
 import { RESERVATION_STATUS, isAwaitingConfirmation, reservationStatusLabel } from '@/lib/reservations/status'
 import { DialogShell, dialogButton, fieldClass, labelClass } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from './ClientFields'
@@ -32,7 +33,9 @@ export function EditReservationDialog({ reservation: r, onClose }: EditReservati
   })
   const [price, setPrice] = useState(r.price === null || r.price === undefined ? '' : String(r.price))
   const [picking, setPicking] = useState(false)
-  const [newSlot, setNewSlot] = useState<CalendarSlot | null>(null)
+  const [newSlot, setNewSlot] = useState<SlotPick | null>(null)
+  const duration = r.duration_minutes ?? 60
+  const range = reservationRangeOf(r)
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,7 +68,7 @@ export function EditReservationDialog({ reservation: r, onClose }: EditReservati
       {
         ...client,
         price: price.trim() === '' ? null : Number(price),
-        ...(newSlot ? { slot_id: newSlot.id } : {}),
+        ...(newSlot ? { slot_id: newSlot.window_id, start_time: newSlot.start_time } : {}),
       },
       'save'
     )
@@ -76,9 +79,10 @@ export function EditReservationDialog({ reservation: r, onClose }: EditReservati
     void call('PATCH', { action: 'cancel' }, 'cancel')
   }
 
-  const currentSlot = r.slot
-    ? `${formatDayShort(r.slot.session_date)} · ${formatTime(r.slot.start_time)} – ${formatTime(r.slot.end_time)}`
-    : 'Sin hueco'
+  const currentSlot =
+    r.slot && range
+      ? `${formatDayShort(r.slot.session_date)} · ${formatTime(range.start_time)} – ${formatTime(range.end_time)} · ${durationLabel(duration)}`
+      : 'Sin hueco'
 
   return (
     <DialogShell
@@ -165,10 +169,10 @@ export function EditReservationDialog({ reservation: r, onClose }: EditReservati
         {picking && (
           <section className="flex flex-col gap-2">
             <p className="text-sm text-gray-500">
-              Elige un hueco libre. El actual se libera y el nuevo queda {status === 'confirmed' ? 'ocupado' : 'pendiente'}.
+              Elige una hora de inicio libre para una clase de {durationLabel(duration)}. La franja actual se libera.
               {!isCancelled && status === 'needs_reschedule' ? ' Al moverla vuelve a estar pendiente de confirmar.' : ''}
             </p>
-            <ReservationsCalendar mode="select" compact selectedSlotId={newSlot?.id ?? null} onSlotSelect={setNewSlot} initialDate={r.slot?.session_date} />
+            <ReservationsCalendar mode="select" compact duration={duration} selected={newSlot} onSlotSelect={setNewSlot} initialDate={r.slot?.session_date} />
           </section>
         )}
 

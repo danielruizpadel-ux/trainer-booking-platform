@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { createSessionClient } from '@/lib/supabase/server'
+import { normalizeDurations } from '@/lib/availability/durations'
 
 export interface CurrentTrainer {
   id: string
@@ -10,6 +11,8 @@ export interface CurrentTrainer {
   phone: string | null
   image_url: string | null
   status: string | null
+  /** Duraciones de clase que ofrece (60/90), migración 007 */
+  class_durations: number[]
 }
 
 export interface CurrentSession {
@@ -40,11 +43,12 @@ export async function getCurrentSession(): Promise<CurrentSession> {
   }
 
   const admin = getSupabaseServerClient()
-  const { data: trainer, error } = await admin
-    .from('trainers')
-    .select('id, slug, name, email, phone, image_url, status')
-    .eq('auth_user_id', user.id)
-    .maybeSingle()
+  const select = (columns: string) => admin.from('trainers').select(columns).eq('auth_user_id', user.id).maybeSingle()
+  let { data: trainer, error } = await select('id, slug, name, email, phone, image_url, status, class_durations')
+  if (error?.code === '42703') {
+    // migración 007 sin aplicar: solo 1 h
+    ;({ data: trainer, error } = await select('id, slug, name, email, phone, image_url, status'))
+  }
 
   if (error) {
     // Si la columna aún no existe (migración 002 sin aplicar) el error es
@@ -53,7 +57,11 @@ export async function getCurrentSession(): Promise<CurrentSession> {
     return { user, trainer: null }
   }
 
-  return { user, trainer: (trainer as CurrentTrainer | null) ?? null }
+  const row = trainer as unknown as (Omit<CurrentTrainer, 'class_durations'> & { class_durations?: unknown }) | null
+  return {
+    user,
+    trainer: row ? { ...row, class_durations: normalizeDurations(row.class_durations) } : null,
+  }
 }
 
 /**

@@ -1,7 +1,11 @@
 import { getSupabaseServerClient } from '@/lib/supabase/client'
-import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { calculateBookingPrice } from '@/lib/reservations/pricing'
-import { RESERVATION_STATUS, SLOT_STATUS } from '@/lib/reservations/status'
+import { RESERVATION_STATUS } from '@/lib/reservations/status'
+import { findBookableWindow, loadOpenWindows } from '@/lib/availability/booking'
+import { getTrainerDurations } from '@/lib/availability/trainer-durations'
+import { isClassDuration } from '@/lib/availability/durations'
+import { addMinutes } from '@/lib/availability/windows'
+import { refreshWindowStatus } from '@/lib/reservations/slots'
 
 interface Session {
   date: string
@@ -11,6 +15,8 @@ interface Session {
 interface ReservationRequest {
   trainer_id: string
   sessions: Session[]
+  /** 60 o 90; por defecto la primera que ofrece el entrenador. Misma para todas las sesiones. */
+  duration_minutes?: number
   client_name: string
   client_email: string
   client_phone: string
@@ -61,68 +67,65 @@ export async function POST(request: Request) {
       trainerId = trainerData.id
     }
 
-    // Localizar el hueco de cada sesión
-    const slotIds: string[] = []
+    // Duración: una de las que ofrece el entrenador (migración 007).
+    const offered = await getTrainerDurations(supabase, trainerId)
+    const duration = body.duration_minutes === undefined ? offered[0] : Number(body.duration_minutes)
+    if (!isClassDuration(duration) || !offered.includes(duration)) {
+      return Response.json(
+        { success: false, error: 'Esa duración no está disponible para este entrenador' },
+        { status: 400 }
+      )
+    }
+
+    // Localizar la ventana de cada sesión: la hora pedida tiene que ser un
+    // inicio reservable (rejilla + sin solapar reservas vivas), con EXACTAMENTE
+    // el mismo cálculo que GET /api/availability (lib/availability/booking.ts).
+    // Las reservas vivas cuentan pending_confirmation y confirmed: dos clientes
+    // no pueden coger la misma franja mientras la primera sigue pendiente.
+    const dates = [...new Set(sessions.map((s) => s.date))].sort()
+    let windows
+    try {
+      windows = await loadOpenWindows(supabase, trainerId, dates[0], dates[dates.length - 1])
+    } catch (error) {
+      console.error('Error buscando ventanas:', error)
+      return Response.json(
+        { success: false, error: 'No se pudo comprobar la disponibilidad' },
+        { status: 500 }
+      )
+    }
+
+    const picked: Array<{ windowId: string; start: string; end: string }> = []
+    const seen = new Set<string>()
 
     for (const session of sessions) {
-      // Sin .single(): la tabla permite varios huecos a la misma hora con
-      // distinto class_type, y .single() reventaba en ese caso dando un
-      // "no disponible" que en realidad era "hay más de uno".
-      const { data: candidates, error: slotsError } = await supabase
-        .from('availability_slots')
-        .select('*')
-        .eq('trainer_id', trainerId)
-        .eq('session_date', session.date)
-
-      if (slotsError) {
-        console.error('Error buscando huecos:', slotsError)
-        return Response.json(
-          { success: false, error: 'No se pudo comprobar la disponibilidad' },
-          { status: 500 }
-        )
-      }
-
       const wanted = normalizeTime(session.time)
-      const sameTime = (candidates || []).filter((slot) => normalizeTime(slot.start_time) === wanted)
-
-      if (sameTime.length === 0) {
+      const key = `${session.date} ${wanted}`
+      if (seen.has(key)) {
         return Response.json(
-          { success: false, error: `Ese horario ya no existe: ${session.date} ${session.time}` },
-          { status: 404 }
+          { success: false, error: `La sesión ${key} está repetida` },
+          { status: 400 }
         )
       }
+      seen.add(key)
 
-      const openSlot = sameTime.find(isSlotOpen)
-
-      if (!openSlot) {
-        return Response.json(
-          {
-            success: false,
-            error: `Acaban de reservar ${session.date} a las ${wanted}. Elige otra hora.`,
-          },
-          { status: 409 }
-        )
-      }
-
-      // ¿Alguien tiene ya una reserva viva sobre este hueco?
-      const { data: existing, error: existingError } = await supabase
-        .from('reservations')
-        .select('id, status')
-        .eq('availability_slot_id', openSlot.id)
-
-      if (existingError) {
-        console.warn('No se pudieron comprobar las reservas existentes:', existingError.message)
-      } else if ((existing || []).some((reservation) => reservationHoldsSlot(reservation.status))) {
+      const found = findBookableWindow(windows, session.date, wanted, duration, offered)
+      if (!found) {
+        const anyWindow = windows.some((w) => w.window.session_date === session.date)
         return Response.json(
           {
             success: false,
-            error: `Acaban de reservar ${session.date} a las ${wanted}. Elige otra hora.`,
+            error: anyWindow
+              ? `Acaban de reservar ${session.date} a las ${wanted}. Elige otra hora.`
+              : `Ese horario ya no existe: ${session.date} ${session.time}`,
           },
-          { status: 409 }
+          { status: anyWindow ? 409 : 404 }
         )
       }
 
-      slotIds.push(openSlot.id)
+      const end = addMinutes(wanted, duration)
+      picked.push({ windowId: found.window.id, start: wanted, end })
+      // Dentro de esta misma petición, la sesión ya ocupa su franja.
+      found.taken.push({ id: `pending-${key}`, start_time: wanted, end_time: end })
     }
 
     // Create reservations (one per session)
@@ -136,18 +139,23 @@ export async function POST(request: Request) {
     // `notes`, que si existe, para no perder el dato.
     //
     // El precio se calcula AQUÍ (lib/reservations/pricing.ts), nunca se acepta
-    // del navegador. Cada fila guarda el precio de su sesión ya con descuento.
+    // del navegador: 300 RM/h (×1,5 para 1 h 30) con el descuento por volumen.
+    // Cada fila guarda el precio de su sesión ya con descuento.
     //
     // Nace en `pending_confirmation`: el entrenador tiene que conseguir pista
     // antes de confirmar (migrations/003_reservation_confirmation_flow.sql).
-    const price = calculateBookingPrice(sessions.length)
+    // La reserva ocupa [start_time, end_time) dentro de su ventana (007).
+    const price = calculateBookingPrice(sessions.length, duration)
     const reservationIds: string[] = []
-    const reservationsToInsert = sessions.map((_session, index) => ({
+    const reservationsToInsert = picked.map((p) => ({
       trainer_id: trainerId,
-      availability_slot_id: slotIds[index],
+      availability_slot_id: p.windowId,
       client_name,
       client_email,
       client_phone,
+      start_time: p.start,
+      end_time: p.end,
+      duration_minutes: duration,
       price: price.discountedPricePerSession,
       status: RESERVATION_STATUS.PENDING_CONFIRMATION,
       notes: `WhatsApp: ${client_whatsapp_opt_in ? 'si' : 'no'}`,
@@ -177,30 +185,10 @@ export async function POST(request: Request) {
 
     console.log(`✅ Created ${reservationIds.length} reservations:`, reservationIds)
 
-    // Marcar los huecos como `pending`: hay una reserva sin confirmar encima y
-    // isSlotOpen() los deja de ofrecer. Pasan a `full` cuando el entrenador
-    // confirma, o vuelven a `available` si no consigue pista
-    // (lib/reservations/confirmation.ts). No es critico (GET /api/availability
-    // tambien cruza con `reservations`), por eso un fallo aqui se registra pero
-    // no tumba la reserva, que ya esta creada.
-    try {
-      const { data: bookedSlots, error: readError } = await supabase
-        .from('availability_slots')
-        .select('id, current_bookings')
-        .in('id', slotIds)
-
-      if (readError) throw readError
-
-      for (const slot of bookedSlots || []) {
-        const { error: updateError } = await supabase
-          .from('availability_slots')
-          .update({ current_bookings: (slot.current_bookings ?? 0) + 1, status: SLOT_STATUS.PENDING })
-          .eq('id', slot.id)
-
-        if (updateError) throw updateError
-      }
-    } catch (slotUpdateError) {
-      console.warn('No se pudo marcar el hueco como pendiente:', slotUpdateError)
+    // Recalcular el estado de cada ventana tocada (contador y `full` si ya no
+    // cabe nada). No es crítico: la disponibilidad se calcula por solapamiento.
+    for (const windowId of new Set(picked.map((p) => p.windowId))) {
+      await refreshWindowStatus(supabase, windowId, offered)
     }
 
     return Response.json({
@@ -210,6 +198,7 @@ export async function POST(request: Request) {
       status: RESERVATION_STATUS.PENDING_CONFIRMATION,
       reservationIds,
       count: sessions.length,
+      durationMinutes: duration,
       total: price.total,
       discountPercent: price.discountPercent,
     })

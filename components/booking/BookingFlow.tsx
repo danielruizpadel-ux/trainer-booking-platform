@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import BookingStep1_SelectSessions from './BookingStep1_SelectSessions'
 import BookingStep2_ContactForm from './BookingStep2_ContactForm'
+import { calculateBookingPrice } from '@/lib/reservations/pricing'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -21,11 +22,14 @@ interface ContactFormData {
 interface BookingFlowProps {
   trainerId: string
   trainerName: string
+  /** Duraciones de clase que ofrece el entrenador (60/90); la primera es la inicial */
+  classDurations?: number[]
 }
 
-export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps) {
+export default function BookingFlow({ trainerId, trainerName, classDurations = [60] }: BookingFlowProps) {
   const [step, setStep] = useState<'selection' | 'contact'>('selection')
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
+  const [duration, setDuration] = useState<number>(classDurations[0] ?? 60)
   const [totalPrice, setTotalPrice] = useState(0)
   const [discountPercent, setDiscountPercent] = useState(0)
   const [currentView, setCurrentView] = useState<ViewType>('month')
@@ -34,21 +38,11 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
   const handleConfirmSessions = (sessions: Session[]) => {
     setSelectedSessions(sessions)
 
-    // Calculate totals
-    const pricePerSession = 300
-    const subtotal = sessions.length * pricePerSession
-    let discount = 0
-
-    if (sessions.length >= 10) {
-      discount = 15
-    } else if (sessions.length >= 5) {
-      discount = 10
-    }
-
-    const finalTotal = subtotal - Math.round((subtotal * discount) / 100)
-
-    setTotalPrice(finalTotal)
-    setDiscountPercent(discount)
+    // Totales: la misma regla que el servidor (lib/reservations/pricing.ts),
+    // solo informativa; el precio real lo fija POST /api/reservations.
+    const price = calculateBookingPrice(sessions.length, duration)
+    setTotalPrice(price.total)
+    setDiscountPercent(price.discountPercent)
     setStep('contact')
   }
 
@@ -64,6 +58,7 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
         body: JSON.stringify({
           trainer_id: trainerId,
           sessions: selectedSessions,
+          duration_minutes: duration,
           client_name: formData.name,
           client_email: formData.email,
           client_phone: formData.phone,
@@ -96,6 +91,13 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
       {step === 'selection' && (
         <BookingStep1_SelectSessions
           trainerId={trainerId}
+          duration={duration}
+          classDurations={classDurations}
+          onDurationChange={(value) => {
+            // Las horas libres dependen de la duración: se vacía la selección.
+            setDuration(value)
+            setSelectedSessions([])
+          }}
           selectedSessions={selectedSessions}
           onSessionChange={setSelectedSessions}
           onConfirm={handleConfirmSessions}
@@ -111,6 +113,7 @@ export default function BookingFlow({ trainerId, trainerName }: BookingFlowProps
           selectedSessions={selectedSessions}
           totalPrice={totalPrice}
           discountPercent={discountPercent}
+          durationMinutes={duration}
           trainerId={trainerId}
           onBack={handleBack}
           onSubmit={handleConfirmReservation}

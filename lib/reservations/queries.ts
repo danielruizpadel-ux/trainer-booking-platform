@@ -10,6 +10,10 @@ export interface TrainerReservation {
   notes: string | null
   price: number | null
   created_at: string
+  /** Rango real de la clase dentro de su ventana (migración 007); null en reservas anteriores */
+  start_time: string | null
+  end_time: string | null
+  duration_minutes: number | null
   /** Solo en reschedule_proposed: token del enlace público (migración 004) */
   proposal_token: string | null
   /** Reserva original si esta es una propuesta de nueva fecha */
@@ -35,8 +39,8 @@ const BASE_COLUMNS =
   'id, status, client_name, client_email, client_phone, notes, price, created_at, ' +
   'availability_slots ( id, session_date, start_time, end_time, class_type )'
 
-/** Columnas de la migración 004. Si aún no está aplicada se piden sin ellas. */
-const PROPOSAL_COLUMNS = 'proposal_token, rescheduled_from_id, '
+/** Columnas de las migraciones 004 y 007. Si aún no están aplicadas se piden sin ellas. */
+const PROPOSAL_COLUMNS = 'proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, '
 
 export async function listTrainerReservations(trainerId: string): Promise<TrainerReservation[]> {
   const supabase = getSupabaseServerClient()
@@ -51,9 +55,9 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
   let { data, error } = await fetchWith(PROPOSAL_COLUMNS + BASE_COLUMNS)
 
   if (error?.code === '42703') {
-    // migrations/004_reschedule_proposals.sql sin aplicar: la página sigue
-    // funcionando, pero sin propuestas de nueva fecha.
-    console.warn('reservations: faltan las columnas de la migración 004; se cargan sin ellas')
+    // migrations/004 o 007 sin aplicar: la página sigue funcionando, sin
+    // propuestas de nueva fecha ni rangos propios (se usa la hora de la ventana).
+    console.warn('reservations: faltan columnas de las migraciones 004/007; se cargan sin ellas')
     ;({ data, error } = await fetchWith(BASE_COLUMNS))
   }
 
@@ -62,16 +66,22 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
   }
 
   const rows = (data ?? []) as unknown as Array<
-    Omit<TrainerReservation, 'slot' | 'proposal_token' | 'rescheduled_from_id'> & {
+    Omit<TrainerReservation, 'slot' | 'proposal_token' | 'rescheduled_from_id' | 'start_time' | 'end_time' | 'duration_minutes'> & {
       proposal_token?: string | null
       rescheduled_from_id?: string | null
+      start_time?: string | null
+      end_time?: string | null
+      duration_minutes?: number | null
       availability_slots: TrainerReservation['slot'] | TrainerReservation['slot'][]
     }
   >
 
   return rows
-    .map(({ availability_slots, proposal_token, rescheduled_from_id, ...row }) => ({
+    .map(({ availability_slots, proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, ...row }) => ({
       ...row,
+      start_time: start_time ?? null,
+      end_time: end_time ?? null,
+      duration_minutes: duration_minutes ?? null,
       proposal_token: proposal_token ?? null,
       rescheduled_from_id: rescheduled_from_id ?? null,
       // PostgREST devuelve objeto para una FK a-uno; el array es por si acaso.
@@ -81,7 +91,7 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
 }
 
 function bySessionAsc(a: TrainerReservation, b: TrainerReservation): number {
-  const ka = `${a.slot?.session_date ?? '9999'} ${a.slot?.start_time ?? ''}`
-  const kb = `${b.slot?.session_date ?? '9999'} ${b.slot?.start_time ?? ''}`
+  const ka = `${a.slot?.session_date ?? '9999'} ${a.start_time ?? a.slot?.start_time ?? ''}`
+  const kb = `${b.slot?.session_date ?? '9999'} ${b.start_time ?? b.slot?.start_time ?? ''}`
   return ka.localeCompare(kb)
 }

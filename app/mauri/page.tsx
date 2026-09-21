@@ -9,6 +9,7 @@ import PremiumHero from '@/components/mauri/PremiumHero'
 import SpecialtiesSection from '@/components/mauri/SpecialtiesSection'
 import CoursesSection from '@/components/mauri/CoursesSection'
 import BookingSection from '@/components/mauri/BookingSection'
+import { normalizeDurations } from '@/lib/availability/durations'
 import CtaSection from '@/components/mauri/CtaSection'
 import FooterSection from '@/components/mauri/FooterSection'
 
@@ -45,6 +46,7 @@ export default async function MauriPage() {
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
+        classDurations={normalizeDurations(trainer.class_durations)}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
       />

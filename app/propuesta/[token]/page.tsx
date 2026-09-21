@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { getProposalByToken } from '@/lib/reservations/proposal'
 import { formatDuration, formatTime } from '@/lib/reservations/format'
+import { formatRM } from '@/lib/reservations/pricing'
 import { formatSessionLabel } from '@/lib/dateUtils'
 import { ProposalResponse } from '@/components/proposal/ProposalResponse'
 
@@ -44,7 +45,7 @@ export default async function PropuestaPage({ params }: { params: Promise<{ toke
                   {formatTime(proposal.slot.start_time)} – {formatTime(proposal.slot.end_time)}
                   {formatDuration(proposal.slot.start_time, proposal.slot.end_time) &&
                     ` · ${formatDuration(proposal.slot.start_time, proposal.slot.end_time)}`}
-                  {proposal.price !== null && ` · RM ${proposal.price}`}
+                  {proposal.price !== null && ` · ${formatRM(proposal.price)}`}
                 </p>
               </div>
 

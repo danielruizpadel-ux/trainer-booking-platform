@@ -20,7 +20,14 @@ creaba su propio cliente con la anon key, no encontraba la fila y respondía
 `getSupabaseServerClient()` (`lib/supabase/client.ts`).** Nunca `createClient()`
 con la anon key dentro de un `route.ts`.
 
-## `availability_slots`
+## `availability_slots` — VENTANAS (desde la migración 007)
+
+> Una fila es una **ventana abierta** del entrenador (una por rango de la
+> plantilla y fecha, p. ej. miércoles 09:00–17:00), no "una clase". Las clases
+> son reservas con su propio rango dentro de la ventana; la disponibilidad se
+> calcula al vuelo por solapamiento (`lib/availability/windows.ts`,
+> `lib/availability/booking.ts`). No se generan filas por duración: el unique
+> constraint `(trainer_id, session_date, start_time, end_time)` se queda.
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -31,8 +38,9 @@ con la anon key dentro de un `route.ts`.
 | `end_time` | time | |
 | `class_type` | text | en los datos actuales: `private` |
 | `max_capacity` | int | 1 en los datos actuales |
-| `current_bookings` | int | +1 en `POST /api/reservations`; −1 si el entrenador no consigue pista |
-| `status` | text | `available` · `pending` (reserva sin confirmar encima, no se ofrece) · `full` (ocupado) · `cancelled` · `blocked`. Ver migración 003 |
+| `current_bookings` | int | nº de reservas vivas dentro de la ventana (lo recalcula `refreshWindowStatus`) |
+| `status` | text | `available` · `full` (no queda ningún inicio libre para la duración mínima ofrecida; lo recalcula la app) · `cancelled` · `blocked`. `pending` es legado (anterior a la 007): ya no se escribe y se lee como cerrado |
+| `generated_by_pattern` | bool | migración 005: la creó el generador de la plantilla semanal |
 | `created_at`, `updated_at` | timestamptz | |
 
 No existen: `is_available`, `is_booked`, `price`.
@@ -45,7 +53,9 @@ No existen: `is_available`, `is_booked`, `price`.
 | `trainer_id` | uuid | |
 | `availability_slot_id` | uuid | |
 | `client_name`, `client_email`, `client_phone` | text | el cliente vive en la propia fila |
-| `price` | numérico | lo calcula el servidor al crear (`lib/reservations/pricing.ts`): precio por sesión ya con descuento |
+| `price` | numérico | lo calcula el servidor al crear (`lib/reservations/pricing.ts`): precio por sesión ya con descuento; 1 h 30 = precio de 1 h × 1,5 |
+| `start_time`, `end_time` | time | **migración 007**: rango real de la clase dentro de su ventana. NULL solo en reservas anteriores (se leen como ventana.start_time + 60 min) |
+| `duration_minutes` | smallint | **migración 007**: 60 o 90 |
 | `status` | text | `pending_confirmation` (default tras la migración 003) · `reschedule_proposed` (004) · `confirmed` · `needs_reschedule` · `cancelled` · `completed`. Ver `migrations/003_…` y `004_…` |
 | `rescheduled_from_id` | uuid | **migración 004**: reserva original de una propuesta de nueva fecha |
 | `proposal_token` | text | **migración 004**: token del enlace público `/propuesta/[token]`; NULL al responder |
@@ -81,6 +91,7 @@ Verificado con `node scripts/inspect-schema.mjs trainers` el 19/09/2026
 | `status` | text | default `active` |
 | `created_at`, `updated_at` | timestamp | sin zona horaria |
 | `auth_user_id` | uuid | **la añade `migrations/002_trainers_auth_user_id.sql`**: unique, FK a `auth.users(id)`. Es el vínculo con el login del dashboard |
+| `class_durations` | smallint[] | **migración 007**: duraciones que ofrece, `{60}`, `{90}` o `{60,90}`. Configuración global del entrenador (Disponibilidad → "Duración de las clases") |
 
 No existe `price` (y `app/api/admin/setup-mauri` intenta insertarlo).
 
@@ -88,6 +99,20 @@ RLS activo: **la anon key no ve ninguna fila** (igual que en `availability_slots
 El dashboard resuelve el entrenador con la service role key desde
 `lib/auth/current-trainer.ts`. La migración 002 añade además una política
 `trainers_select_own` para que un usuario autenticado pueda leer su propia fila.
+
+## `client_packages` y `package_sessions` (migración 006)
+
+Paquetes de 5/10 clases con el precio fijado al vender. `client_packages.duration_minutes`
+(**migración 007**): 60 o 90, la misma para todas las sesiones del paquete.
+`package_sessions.reservation_id` enlaza cada sesión agendada con su fila
+real de `reservations`.
+
+## `trainer_weekly_hours` y `trainer_availability_overrides` (migración 005)
+
+Plantilla semanal y excepciones por fecha. `lib/availability/generate.ts` las
+traduce a ventanas de `availability_slots` de las próximas 8 semanas. Sin
+cambios en la 007: la duración no vive aquí (`class_type` es otra dimensión y
+sigue hardcodeada a `private`).
 
 ## `email_logs` y `whatsapp_logs`
 

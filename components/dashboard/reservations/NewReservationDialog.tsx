@@ -2,13 +2,18 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { CalendarSlot } from '@/lib/reservations/calendar'
+import type { SlotPick } from '@/lib/reservations/calendar'
 import { formatDayShort, formatTime } from '@/lib/reservations/format'
+import { durationLabel } from '@/lib/availability/durations'
+import { calculateBookingPrice, formatRM } from '@/lib/reservations/pricing'
+import { DurationPicker } from './DurationPicker'
 import { DialogShell, dialogButton } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from './ClientFields'
 import { ReservationsCalendar } from './ReservationsCalendar'
 
 interface NewReservationDialogProps {
+  /** Duraciones que ofrece el entrenador (60/90) */
+  durations: number[]
   onClose: () => void
 }
 
@@ -16,10 +21,11 @@ interface NewReservationDialogProps {
  * "Nueva reserva" (Parte 4): hueco libre → datos del cliente → ¿ya tengo la
  * pista? Crea `confirmed` o `pending_confirmation` vía POST /api/dashboard/reservations.
  */
-export function NewReservationDialog({ onClose }: NewReservationDialogProps) {
+export function NewReservationDialog({ durations, onClose }: NewReservationDialogProps) {
   const router = useRouter()
   const [step, setStep] = useState<'slot' | 'client'>('slot')
-  const [slot, setSlot] = useState<CalendarSlot | null>(null)
+  const [duration, setDuration] = useState<number>(durations[0] ?? 60)
+  const [slot, setSlot] = useState<SlotPick | null>(null)
   const [client, setClient] = useState<ClientFieldValues>({ client_name: '', client_email: '', client_phone: '', notes: '' })
   const [confirmed, setConfirmed] = useState(false)
   const [sending, setSending] = useState(false)
@@ -33,7 +39,7 @@ export function NewReservationDialog({ onClose }: NewReservationDialogProps) {
       const response = await fetch('/api/dashboard/reservations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot_id: slot.id, ...client, confirmed }),
+        body: JSON.stringify({ slot_id: slot.window_id, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo crear la reserva')
@@ -45,19 +51,22 @@ export function NewReservationDialog({ onClose }: NewReservationDialogProps) {
     }
   }
 
-  const slotLabel = slot ? `${formatDayShort(slot.session_date)} · ${formatTime(slot.start_time)} – ${formatTime(slot.end_time)}` : null
+  const slotLabel = slot
+    ? `${formatDayShort(slot.session_date)} · ${formatTime(slot.start_time)} – ${formatTime(slot.end_time)} · ${durationLabel(duration)}`
+    : null
+  const price = calculateBookingPrice(1, duration)
 
   return (
     <DialogShell
       eyebrow="Nueva reserva"
-      title={step === 'slot' ? 'Elige un hueco libre' : 'Datos del cliente'}
-      description={step === 'slot' ? 'Solo tu disponibilidad abierta.' : slotLabel ?? undefined}
+      title={step === 'slot' ? 'Elige una franja libre' : 'Datos del cliente'}
+      description={step === 'slot' ? 'Solo tu disponibilidad abierta. Toca una hora de inicio.' : slotLabel ?? undefined}
       onClose={onClose}
       locked={sending}
       footer={
         step === 'slot' ? (
           <>
-            <p className="text-sm text-gray-600">{slotLabel ? <>Hueco: <span className="font-semibold text-gray-900">{slotLabel}</span></> : 'Toca un hueco libre del calendario.'}</p>
+            <p className="text-sm text-gray-600">{slotLabel ? <>Franja: <span className="font-semibold text-gray-900">{slotLabel}</span></> : 'Toca una hora de inicio libre en el calendario.'}</p>
             <div className="flex gap-2">
               <button type="button" onClick={onClose} className={dialogButton.secondary}>Cancelar</button>
               <button type="button" onClick={() => setStep('client')} disabled={!slot} className={dialogButton.primary}>Continuar</button>
@@ -84,7 +93,17 @@ export function NewReservationDialog({ onClose }: NewReservationDialogProps) {
       }
     >
       {step === 'slot' ? (
-        <ReservationsCalendar mode="select" compact selectedSlotId={slot?.id ?? null} onSlotSelect={setSlot} />
+        <div className="flex flex-col gap-4">
+          <DurationPicker
+            durations={durations}
+            value={duration}
+            onChange={(value) => {
+              setDuration(value)
+              setSlot(null)
+            }}
+          />
+          <ReservationsCalendar mode="select" compact duration={duration} selected={slot} onSlotSelect={setSlot} />
+        </div>
       ) : (
         <div className="flex flex-col gap-6">
           <ClientFields values={client} onChange={setClient} disabled={sending} idPrefix="new" />
@@ -105,7 +124,9 @@ export function NewReservationDialog({ onClose }: NewReservationDialogProps) {
             </span>
           </label>
 
-          <p className="text-sm text-gray-500">Precio: el de una sesión según la tarifa habitual (RM 300). Se puede cambiar después desde Editar.</p>
+          <p className="text-sm text-gray-500">
+            Precio: {formatRM(price.pricePerSession)} (clase de {durationLabel(duration)}, tarifa habitual). Se puede cambiar después desde Editar.
+          </p>
 
           {error && (
             <p role="alert" className="text-sm text-red-600">

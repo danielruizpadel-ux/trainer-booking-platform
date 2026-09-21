@@ -2,17 +2,17 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { notifyReservationCancelled, notifyReservationMoved } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isRescheduleProposed } from './status'
-import { loadOwnedOpenSlot, occupySlot, releaseSlot, slotStatusFor } from './slots'
+import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
 
 /**
  * Edición directa desde el panel (Parte 3): el entrenador ya ha hablado con
  * el cliente, así que no pasa por la página pública.
  *
  *   updateReservationDetails  nombre, email, teléfono, notas, precio (override manual)
- *   moveReservation           a otro hueco propio: libera el viejo y marca el nuevo
- *                             según el estado (pending si pendiente, full si confirmada).
- *                             Una needs_reschedule / cancelled movida se reactiva como
- *                             pending_confirmation.
+ *   moveReservation           a otra franja (ventana + hora de inicio, misma duración):
+ *                             comprueba solapamiento en la ventana nueva y recalcula
+ *                             las dos ventanas. Una needs_reschedule / cancelled movida
+ *                             se reactiva como pending_confirmation.
  *   cancelReservation         → cancelled (sin intención de reprogramar) y libera el hueco
  */
 
@@ -26,10 +26,13 @@ export interface EditableReservation {
   client_phone: string | null
   notes: string | null
   price: number | null
+  start_time: string | null
+  end_time: string | null
+  duration_minutes: number | null
 }
 
 export const SELECT_FOR_EDIT =
-  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price'
+  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes'
 
 export type EditResult = { ok: true } | { ok: false; status: number; message: string }
 
@@ -91,33 +94,46 @@ export async function updateReservationDetails(
   return { ok: true }
 }
 
-export async function moveReservation(reservation: EditableReservation, slotId: string): Promise<EditResult> {
-  if (slotId === reservation.availability_slot_id) {
-    return { ok: false, status: 400, message: 'Es el mismo hueco' }
-  }
+export async function moveReservation(
+  reservation: EditableReservation,
+  slotId: string,
+  startTime: string
+): Promise<EditResult> {
+  const duration = reservation.duration_minutes ?? 60
   const supabase = getSupabaseServerClient()
-  const lookup = await loadOwnedOpenSlot(supabase, slotId, reservation.trainer_id)
-  if (!lookup.ok) {
-    const status = lookup.code === 'forbidden' ? 403 : lookup.code === 'not_found' ? 404 : lookup.code === 'taken' ? 409 : 500
-    return { ok: false, status, message: lookup.message }
-  }
+  const lookup = await loadOwnedOpenWindow(supabase, slotId, reservation.trainer_id, startTime, duration, {
+    ignoreReservationId: reservation.id,
+  })
+  if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+
+  const sameRange =
+    slotId === reservation.availability_slot_id &&
+    (reservation.start_time ?? '').slice(0, 5) === lookup.range.start_time
+  if (sameRange) return { ok: false, status: 400, message: 'Es la misma franja' }
 
   const wasHolding = reservationHoldsSlot(reservation.status)
   const nextStatus = wasHolding ? reservation.status : RESERVATION_STATUS.PENDING_CONFIRMATION
 
   const { error } = await supabase
     .from('reservations')
-    .update({ availability_slot_id: slotId, status: nextStatus, updated_at: new Date().toISOString() })
+    .update({
+      availability_slot_id: slotId,
+      start_time: lookup.range.start_time,
+      end_time: lookup.range.end_time,
+      duration_minutes: duration,
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', reservation.id)
   if (error) return { ok: false, status: 500, message: error.message }
 
-  if (wasHolding) await releaseSlot(supabase, reservation.availability_slot_id)
-  await occupySlot(supabase, slotId, slotStatusFor(nextStatus))
+  await refreshWindowStatus(supabase, reservation.availability_slot_id)
+  if (slotId !== reservation.availability_slot_id) await refreshWindowStatus(supabase, slotId)
 
   await notifyReservationMoved({
     ...reservation,
-    session_date: lookup.slot.session_date,
-    start_time: lookup.slot.start_time,
+    session_date: lookup.window.session_date,
+    start_time: lookup.range.start_time,
   })
   return { ok: true }
 }
@@ -136,13 +152,17 @@ export async function cancelReservation(reservation: EditableReservation): Promi
   const { error } = await supabase.from('reservations').update(updates).eq('id', reservation.id)
   if (error) return { ok: false, status: 500, message: error.message }
 
-  if (wasHolding) await releaseSlot(supabase, reservation.availability_slot_id)
+  if (wasHolding) await refreshWindowStatus(supabase, reservation.availability_slot_id)
 
   const { data: slot } = await supabase
     .from('availability_slots')
     .select('session_date, start_time')
     .eq('id', reservation.availability_slot_id)
     .maybeSingle()
-  await notifyReservationCancelled({ ...reservation, session_date: slot?.session_date, start_time: slot?.start_time })
+  await notifyReservationCancelled({
+    ...reservation,
+    session_date: slot?.session_date,
+    start_time: reservation.start_time ?? slot?.start_time,
+  })
   return { ok: true }
 }

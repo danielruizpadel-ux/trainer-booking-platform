@@ -1,98 +1,156 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status'
+import { bookableStarts, fitsInWindow, fromMinutes, toMinutes, type TimeRange } from '@/lib/availability/windows'
+import { gridStepFor } from '@/lib/availability/durations'
+import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { SLOT_STATUS } from './status'
 
 /**
- * Operaciones sobre huecos que comparten propuesta (Parte 2), edición
- * (Parte 3) y reserva manual (Parte 4). Todas con el cliente service role
- * que les pasa quien llama, y siempre comprobando que el hueco es del
- * entrenador de la sesión.
+ * Ventanas (migración 007). Una fila de `availability_slots` es un rango
+ * abierto del entrenador; las clases son reservas con [start_time, end_time)
+ * dentro. Todo lo que ocupa o libera tiempo pasa por aquí:
+ *
+ *   loadOwnedOpenWindow   la ventana es del entrenador, está abierta y el
+ *                         rango pedido cabe sin solapar reservas vivas
+ *   refreshWindowStatus   recalcula `current_bookings` y `status`
+ *                         (`full` solo si no queda ningún inicio libre para la
+ *                         duración mínima que ofrece el entrenador)
+ *
+ * "Reserva viva" = reservationHoldsSlot: pending_confirmation (y el `pending`
+ * antiguo), reschedule_proposed y confirmed. Así dos clientes no pueden coger
+ * la misma franja mientras la primera sigue pendiente.
  */
 
-export interface OwnedSlot {
+export interface WindowRow {
   id: string
   trainer_id: string
   session_date: string
   start_time: string
   end_time: string
+  class_type: string
   status: string | null
   current_bookings: number | null
   max_capacity: number | null
 }
 
-export type SlotLookup =
-  | { ok: true; slot: OwnedSlot }
-  | { ok: false; code: 'not_found' | 'forbidden' | 'taken' | 'db_error'; message: string }
+export interface WindowReservation {
+  id: string
+  status: string | null
+  start_time: string | null
+  end_time: string | null
+}
 
-/** Hueco del entrenador, abierto y sin reserva viva encima. */
-export async function loadOwnedOpenSlot(
+export interface LoadedWindow {
+  window: WindowRow
+  /** Rangos de las reservas vivas (ya con el fallback de las anteriores a la 007) */
+  taken: Array<TimeRange & { id: string }>
+}
+
+export const WINDOW_SELECT =
+  'id, trainer_id, session_date, start_time, end_time, class_type, status, current_bookings, max_capacity, ' +
+  'reservations ( id, status, start_time, end_time )'
+
+/** Rango real de una reserva. Las anteriores a la 007 no tienen start_time: son la hora de su ventana + 60 min. */
+export function reservationRange(reservation: { start_time?: string | null; end_time?: string | null }, window: TimeRange): TimeRange {
+  if (reservation.start_time && reservation.end_time) {
+    return { start_time: reservation.start_time.slice(0, 5), end_time: reservation.end_time.slice(0, 5) }
+  }
+  const start = toMinutes(window.start_time)
+  return { start_time: fromMinutes(start), end_time: fromMinutes(Math.min(start + 60, toMinutes(window.end_time))) }
+}
+
+export function toLoadedWindow(row: WindowRow & { reservations?: WindowReservation[] | null }): LoadedWindow {
+  const { reservations, ...window } = row
+  const taken = (reservations ?? [])
+    .filter((r) => reservationHoldsSlot(r.status))
+    .map((r) => ({ id: r.id, ...reservationRange(r, window) }))
+  return { window, taken }
+}
+
+export async function loadWindow(supabase: SupabaseClient, windowId: string): Promise<LoadedWindow | null> {
+  const { data, error } = await supabase.from('availability_slots').select(WINDOW_SELECT).eq('id', windowId).maybeSingle()
+  if (error || !data) return null
+  return toLoadedWindow(data as unknown as WindowRow & { reservations: WindowReservation[] | null })
+}
+
+export type WindowLookup =
+  | { ok: true; window: WindowRow; range: TimeRange }
+  | { ok: false; code: 'not_found' | 'forbidden' | 'taken' | 'closed' | 'db_error'; message: string }
+
+export function lookupStatus(code: Exclude<WindowLookup, { ok: true }>['code']): number {
+  return code === 'forbidden' ? 403 : code === 'not_found' ? 404 : code === 'db_error' ? 500 : 409
+}
+
+/**
+ * Ventana del entrenador, abierta, y en la que [startTime, startTime + duración)
+ * cabe sin solapar ninguna reserva viva. `ignoreReservationId` excluye la propia
+ * reserva al moverla dentro de la misma ventana.
+ */
+export async function loadOwnedOpenWindow(
   supabase: SupabaseClient,
-  slotId: string,
-  trainerId: string
-): Promise<SlotLookup> {
-  const { data, error } = await supabase
-    .from('availability_slots')
-    .select('id, trainer_id, session_date, start_time, end_time, status, current_bookings, max_capacity, reservations ( id, status )')
-    .eq('id', slotId)
-    .maybeSingle()
-
+  windowId: string,
+  trainerId: string,
+  startTime: string,
+  durationMinutes: number,
+  options: { ignoreReservationId?: string } = {}
+): Promise<WindowLookup> {
+  const { data, error } = await supabase.from('availability_slots').select(WINDOW_SELECT).eq('id', windowId).maybeSingle()
   if (error) return { ok: false, code: 'db_error', message: error.message }
   if (!data) return { ok: false, code: 'not_found', message: 'Ese hueco no existe' }
 
-  const { reservations, ...slot } = data as unknown as OwnedSlot & {
-    reservations: Array<{ id: string; status: string | null }> | null
-  }
-  if (slot.trainer_id !== trainerId) {
+  const loaded = toLoadedWindow(data as unknown as WindowRow & { reservations: WindowReservation[] | null })
+  if (loaded.window.trainer_id !== trainerId) {
     return { ok: false, code: 'forbidden', message: 'Ese hueco no es tuyo' }
   }
-  const holder = (reservations ?? []).find((r) => reservationHoldsSlot(r.status))
-  if (holder || !isSlotOpen(slot)) {
-    return { ok: false, code: 'taken', message: 'Ese hueco ya no está libre' }
+  if (!isSlotOpen(loaded.window)) {
+    return { ok: false, code: 'closed', message: 'Esa ventana está cerrada' }
   }
-  return { ok: true, slot }
+
+  const start = startTime.slice(0, 5)
+  if (!/^\d{2}:\d{2}$/.test(start)) return { ok: false, code: 'taken', message: 'Hora no válida' }
+  const range: TimeRange = { start_time: start, end_time: fromMinutes(toMinutes(start) + durationMinutes) }
+  const taken = loaded.taken.filter((t) => t.id !== options.ignoreReservationId)
+  if (!fitsInWindow(loaded.window, taken, range)) {
+    return { ok: false, code: 'taken', message: 'Esa franja ya no está libre' }
+  }
+  return { ok: true, window: loaded.window, range }
 }
 
-/** Marca un hueco como ocupado por una reserva: `pending` o `full`. */
-export async function occupySlot(
-  supabase: SupabaseClient,
-  slotId: string,
-  status: typeof SLOT_STATUS.PENDING | typeof SLOT_STATUS.FULL
-) {
-  const { data } = await supabase
-    .from('availability_slots')
-    .select('current_bookings')
-    .eq('id', slotId)
-    .maybeSingle()
+/**
+ * Recalcula el estado de una ventana a partir de sus reservas vivas.
+ * No toca ventanas `cancelled`/`blocked` (cerradas a mano).
+ */
+export async function refreshWindowStatus(supabase: SupabaseClient, windowId: string, durations?: number[]): Promise<void> {
+  const loaded = await loadWindow(supabase, windowId)
+  if (!loaded) return
+  const { window, taken } = loaded
+  const current = (window.status ?? '').toLowerCase()
+  if (current === 'cancelled' || current === 'canceled' || current === 'blocked') return
+
+  const offered = durations ?? (await getTrainerDurations(supabase, window.trainer_id))
+  const minDuration = Math.min(...offered)
+  const hasRoom = bookableStarts(window, taken, minDuration, gridStepFor(offered)).length > 0
+
   const { error } = await supabase
     .from('availability_slots')
     .update({
-      status,
-      current_bookings: (data?.current_bookings ?? 0) + 1,
+      status: hasRoom ? SLOT_STATUS.AVAILABLE : SLOT_STATUS.FULL,
+      current_bookings: taken.length,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', slotId)
-  if (error) console.warn('No se pudo ocupar el hueco:', error.message)
+    .eq('id', window.id)
+  if (error) console.warn('No se pudo recalcular la ventana:', error.message)
 }
 
-/** Devuelve un hueco a `available` y resta la reserva del contador. */
-export async function releaseSlot(supabase: SupabaseClient, slotId: string) {
-  const { data } = await supabase
+/** Todas las ventanas del entrenador desde `fromDate` (tras cambiar duraciones o aplicar la 007). */
+export async function refreshAllWindows(supabase: SupabaseClient, trainerId: string, fromDate: string): Promise<number> {
+  const { data, error } = await supabase
     .from('availability_slots')
-    .select('current_bookings')
-    .eq('id', slotId)
-    .maybeSingle()
-  const { error } = await supabase
-    .from('availability_slots')
-    .update({
-      status: SLOT_STATUS.AVAILABLE,
-      current_bookings: Math.max(0, (data?.current_bookings ?? 0) - 1),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', slotId)
-  if (error) console.warn('No se pudo liberar el hueco:', error.message)
-}
-
-/** Estado de hueco que corresponde a una reserva que lo ocupa. */
-export function slotStatusFor(reservationStatus: string | null | undefined) {
-  return (reservationStatus ?? '').trim().toLowerCase() === 'confirmed' ? SLOT_STATUS.FULL : SLOT_STATUS.PENDING
+    .select('id')
+    .eq('trainer_id', trainerId)
+    .gte('session_date', fromDate)
+  if (error || !data) return 0
+  const durations = await getTrainerDurations(supabase, trainerId)
+  for (const row of data) await refreshWindowStatus(supabase, row.id, durations)
+  return data.length
 }

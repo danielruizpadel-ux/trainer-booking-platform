@@ -26,7 +26,7 @@ export function ReservationRowActions({ reservation, size = 'md', stacked = fals
   return (
     <div className={`flex ${stacked ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:flex-wrap'} gap-2`}>
       {isAwaitingConfirmation(reservation.status) && (
-        <ReservationActions reservationId={reservation.id} clientName={reservation.client_name} size={size} stacked={stacked} />
+        <ReservationActions reservationId={reservation.id} clientName={reservation.client_name} durationMinutes={reservation.duration_minutes ?? 60} size={size} stacked={stacked} />
       )}
       {isRescheduleProposed(reservation.status) && <ProposalLink token={reservation.proposal_token} size={size} />}
 

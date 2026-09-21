@@ -740,6 +740,208 @@ comprobar contra `docs/DATABASE.md` qué columnas existen de verdad (no hay
 Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
 — este entorno no puede levantar `npm run dev`.
 
+## Paquetes de clases + detalle en calendario (20/09/2026, prompt 14)
+
+Especificación: `docs/PLAN_PAQUETES_Y_CALENDARIO.md`. Implementado en el orden
+de su sección 3.
+
+### 1. Detalle al hacer clic en el calendario de Reservas
+
+`ReservationsView.tsx`: el clic en un bloque ocupado abre
+`EditReservationDialog` en sitio (estado `editingId`, la reserva sale del array
+que ya recibe la vista). Se ha quitado el salto a la tabla (decisión por
+defecto del plan); `ReservationsTable` conserva la prop `focus` sin uso.
+`title` del bloque: "Ver detalle". Verificado en el navegador con una sesión
+de prueba: el diálogo abre sobre el calendario y la vista sigue en Calendario.
+
+### 2. Paquetes de 5 y 10 clases
+
+- **`migrations/006_class_packages.sql`** (tal cual el plan): `client_packages`
+  (foto fija del precio) y `package_sessions` (una fila por sesión,
+  `not_scheduled` hasta que se agenda contra un hueco real). `reservations`
+  no cambia. **Pendiente de aplicar** (Daniel, SQL Editor). Hasta entonces
+  `/dashboard/paquetes` muestra un aviso claro y `POST /api/dashboard/packages`
+  responde "Falta aplicar migrations/006…" (comprobado).
+- **`lib/packages/`**: `pricing.ts` (`PACKAGE_SIZES`, `packagePriceQuote` =
+  `calculateBookingPrice`, sin regla nueva), `status.ts` (tipos y reglas puras,
+  compartidas con la UI), `queries.ts` (`listTrainerPackages`,
+  `getPackageDetail` con embed de sesiones → reservas → huecos),
+  `create.ts` (`createClientPackage`, valida con `parseDetails`, borra el
+  paquete si fallan las sesiones), `schedule.ts` (`schedulePackageSession`
+  con `loadOwnedOpenSlot`/`occupySlot` y precio del paquete;
+  `unschedulePackageSession` con `cancelReservation` de `edit.ts`).
+- Regla de crédito (2.7 del plan, asumida "se recupera"): una sesión
+  `scheduled` cuya reserva ya no ocupa hueco (cancelada desde Reservas o
+  `needs_reschedule`) vuelve a poder agendarse — `sessionCanBeScheduled` —
+  y el listado no la cuenta como agendada.
+- **Rutas** (`requireTrainer()` siempre): `GET/POST /api/dashboard/packages`,
+  `GET /api/dashboard/packages/[id]`,
+  `PATCH /api/dashboard/packages/[id]/sessions/[sessionId]`
+  (`schedule` con `slot_id`/`confirmed`, o `unschedule`).
+- **UI**: sección "Paquetes" en `nav-items.ts` (icono `package`; la barra
+  inferior móvil ya reparte columnas según el número de secciones);
+  `app/dashboard/(protected)/paquetes/page.tsx` con `PageHeader` + "Vender
+  paquete"; `components/dashboard/packages/`: `PackagesTable` (cliente,
+  tamaño, agendadas/total, precio, estado; clic abre el detalle),
+  `NewPackageDialog` (`DialogShell` + `ClientFields` + selector 5/10 con precio
+  en vivo), `PackageDetailDialog` (cabecera + tabla de sesiones; "Agendar"
+  abre `ReservationsCalendar mode="select"` con el checkbox de pista; una
+  sesión agendada muestra fecha/hora, badge de la reserva, "Editar" —abre
+  `EditReservationDialog` sobre la reserva real— y "Cancelar" —devuelve el
+  crédito—).
+
+`npm run type-check`: 20 (los preexistentes). Sin `shadow-*`, `border-l-4` ni
+emojis. `components/trainer`, `components/booking` y `lib/dateUtils.ts` sin
+tocar.
+
+### Paquetes integrado en Reservas (20/09/2026, prompt 15)
+
+Ya no es una sección de la barra: es la tercera pestaña del selector de vista
+de `/dashboard/reservas` (Tabla / Calendario / **Paquetes**).
+
+- `nav-items.ts` sin "Paquetes"; `app/dashboard/(protected)/paquetes/` borrado.
+- `reservas/page.tsx` carga también `listTrainerPackages` (con try/catch por
+  si falta la 006) y pasa `packages` y `packagesError` a `ReservationsView`;
+  el `PageHeader` ya no lleva `actions`.
+- `ReservationsView.tsx`: `View = 'table' | 'calendar' | 'packages'`; el botón
+  de acción vive junto al selector y cambia con la vista ("Nueva reserva" en
+  Tabla/Calendario, "Vender paquete" en Paquetes); la vista Paquetes pinta
+  `PackagesTable`, el vacío "Todavía no has vendido ningún paquete" o el
+  aviso de migración. El estado vacío de reservas ("Todavía no hay reservas")
+  vive ahora dentro de la vista, solo en Tabla, para que Paquetes siga
+  accesible sin reservas.
+- `lib/packages/*`, rutas y el interior de los diálogos de paquetes: sin tocar.
+
+### Verificación en el navegador (20/09/2026, con la 006 ya aplicada)
+
+Con sesión de prueba en `daniel-ruiz` (todo deshecho después, paquete incluido):
+
+- Nav con 4 secciones; selector con las tres pestañas; "Nueva reserva" en
+  Tabla y Calendario, "Vender paquete" en Paquetes.
+- Vender paquete de 5 → fila `0/5 agendadas`, RM 1350, −10 %, "Activo"; la
+  vista se queda en Paquetes tras refrescar.
+- Detalle → sesión 1 con "Ya tengo la pista" → Confirmada; sesión 2 sin
+  marcar → Pendiente; `2/5`. En la base: reservas a RM 270 con nota
+  "Paquete de 5 clases · sesión n/5", huecos `full`/1 y `pending`/1.
+- Cancelar la 2 desde el detalle → "Sin agendar" + "Agendar", `1/5`;
+  reserva `cancelled`, hueco `available`/0.
+- Cancelar la 1 desde Reservas → Editar → en el detalle "Cancelada · crédito
+  disponible" con "Agendar"; el listado muestra `0/5`.
+- Clic en el calendario abre el detalle en sitio.
+- `npm run type-check`: 20 (preexistentes).
+
+### El Calendario se muda a Resumen (20/09/2026, prompt 16)
+
+Sección 5 del plan. Reservas queda con dos pestañas: **Tabla** y
+**Paquetes**; el calendario semanal/diario (`ReservationsCalendar
+mode="view"`) vive ahora en `/dashboard` (Resumen).
+
+- `ReservationsView.tsx`: `View = 'table' | 'packages'`; fuera la entrada
+  Calendario, la rama `view === 'calendar'`, el estado `editingId` y los
+  imports de `ReservationsCalendar`/`EditReservationDialog`.
+- Nuevo `components/dashboard/home/HomeCalendarSection.tsx` (cliente): esa
+  misma rama, movida tal cual (calendario `mode="view"` + `EditReservationDialog`
+  al hacer clic, buscando la reserva en el array `reservations` que recibe).
+- `app/dashboard/(protected)/page.tsx`: carga `listTrainerReservations`,
+  `export const dynamic = 'force-dynamic'`, sección "Tu calendario" **justo
+  debajo del saludo y antes de las tarjetas de cifras** (ajuste del prompt
+  17: a Daniel le importa ver el calendario lo primero); sin `PageHeader`,
+  saludo ni título de sección (prompt 18: "el hola no me gusta") — la página
+  arranca con la navegación del calendario, con un `h1` "Resumen" solo para
+  lectores de pantalla; el aviso de "Todavía sin datos" pasa a una línea
+  discreta al pie (las cifras siguen en `null`).
+- `mode="select"` en `NewReservationDialog`/`EditReservationDialog`/
+  `ProposeRescheduleDialog`/`PackageDetailDialog`: sin cambios.
+
+Verificado en el navegador (sesión de prueba, deshecha): el selector de
+Reservas muestra solo Tabla y Paquetes (sin calendario en la página); en
+Resumen aparece "Tu calendario" con navegación y Día/Semana, y el clic en
+una clase abre su detalle sin salir de `/dashboard`. `type-check`: 20.
+
+## Clases de 1 h y 1 h 30 min — modelo ventana + rango (21/09/2026, prompt 19)
+
+Plan aprobado el 20/09 (con dos añadidos: el overlap cuenta
+`pending_confirmation` además de `confirmed`; recalcular TODAS las ventanas
+tras la 007). **Código completo y con `type-check` limpio; verificación en el
+navegador pendiente de aplicar `migrations/007_class_durations.sql`.**
+
+### Hallazgo previo
+
+La "1 h implícita" no existía en el horario semanal: el generador creaba una
+sola fila por rango (en la base de Mauri hay ventanas de 6 y 8 h,
+`generated_by_pattern = true`) y una reserva ocupaba el rango entero. Por eso
+el cambio no es "añadir 1 h 30" sino definir qué es una fila de
+`availability_slots`.
+
+### Modelo (migración 007)
+
+- `availability_slots` = **ventana** abierta (lo que ya producía el
+  generador). Sin cambios de esquema; el unique constraint se queda porque no
+  se generan filas por duración.
+- `reservations.start_time`, `end_time`, `duration_minutes` (60/90): la clase
+  ocupa un rango dentro de su ventana. Backfill: las antiguas = inicio de su
+  ventana + 60 min. `availability_slot_id` sigue siendo la FK a la ventana.
+- Disponibilidad al vuelo: inicios en la rejilla (30 min si se ofrece 1 h 30,
+  60 si solo 1 h) que caben en la ventana sin solapar reservas vivas
+  (`reservationHoldsSlot`: pending_confirmation, reschedule_proposed,
+  confirmed). Una clase de 1 h 30 a las 10:00 cierra 10:00–11:30 para
+  cualquier duración; una de 1 h a las 11:30 encaja detrás.
+- `trainers.class_durations` (`{60}`, `{90}`, `{60,90}`): configuración
+  global del entrenador. `client_packages.duration_minutes`: fija por paquete.
+- Precio: `calculateBookingPrice(n, duration)` = 300 × (duración/60) con los
+  descuentos de siempre → 1 h 30: 450 / 405 (−10 %) / 382,50 (−15 %). Único
+  cálculo para widget, reservas, manual y paquetes (`formatRM` para pintar).
+- `class_type` no se toca: sigue en la ventana/plantilla, dimensión aparte.
+- La ventana deja de usar `status = 'pending'`; `full` solo si no cabe ninguna
+  clase de la duración mínima ofrecida (`refreshWindowStatus`). La 007 deja
+  todas las ventanas `pending`/`full` en `available` con el contador de
+  reservas vivas; "Regenerar huecos" y el PATCH de duraciones recalculan
+  (`refreshAllWindows`).
+
+### Código
+
+- Puro: `lib/availability/durations.ts` (constantes, rejilla, etiqueta,
+  multiplicador), `lib/availability/windows.ts` (`overlaps`, `bookableStarts`,
+  `fitsInWindow`, `freeRanges`), `lib/reservations/pricing.ts` (duración).
+- Servidor: `lib/availability/booking.ts` (`loadOpenWindows`,
+  `bookableSlotsFor`, `findBookableWindow` — el MISMO cálculo para
+  `GET /api/availability` y `POST /api/reservations`),
+  `lib/availability/trainer-durations.ts`, `lib/reservations/slots.ts`
+  reescrito (`loadOwnedOpenWindow` con `ignoreReservationId`,
+  `refreshWindowStatus`, `refreshAllWindows`, `reservationRange`).
+  `confirmation.ts`, `edit.ts` (`moveReservation(slotId, startTime)`),
+  `manual.ts`, `proposal.ts`, `packages/schedule.ts` y `packages/create.ts`
+  portados: ya no hay `occupySlot`/`releaseSlot`/`slotStatusFor`.
+- Rutas: `GET /api/availability` acepta `duration` y devuelve un pseudo-hueco
+  por inicio reservable (`id` = ventana) + `durations`; `POST /api/reservations`
+  acepta `duration_minutes` y valida contra `findBookableWindow`;
+  `GET /api/dashboard/calendar` devuelve `windows` (con tramos libres) +
+  `reservations` (con rango) + `durations`/`step`; rutas del dashboard
+  (`PUT` reservas, `propose`, manual, sesiones de paquete) llevan `start_time`;
+  nueva `GET/PATCH /api/dashboard/availability/durations`;
+  `POST …/availability/generate` además recalcula ventanas.
+- UI: `ReservationsCalendar` reescrito (ventanas con "Libre"/"No cabe",
+  reservas con altura por duración 48/72 px; en `select` cada tramo libre
+  ofrece sus horas de inicio para la duración pedida); `DurationPicker`
+  reutilizado en Nueva reserva, Vender paquete y el widget; `DurationsCard`
+  en Disponibilidad; tabla/tarjetas/diálogos muestran el rango real
+  (`reservationRangeOf`) y `formatRM`.
+- Widget público (con permiso): `BookingFlow`/`Step1`/`Step2`/`SummaryCard`
+  usan `calculateBookingPrice` (sin fórmula propia), selector de duración
+  visible solo si el entrenador ofrece ambas, y envían `duration_minutes`.
+  **`components/trainer/calendar/AvailabilityCalendar.tsx` recibe una prop
+  `durationMinutes` y la añade al fetch** (no estaba en el permiso explícito;
+  es el cambio mínimo posible). `DayView`/`TimePickerDropdown` no cambian.
+  La página genérica `app/[trainerSlug]` usa el flujo legacy
+  (`components/trainer/BookingSection`) y queda fuera.
+
+### Pendiente
+
+1. **Daniel**: aplicar `migrations/007_class_durations.sql` (después de la
+   006) en Supabase → SQL Editor.
+2. Verificación en el navegador (los 7 puntos del encargo). Hasta entonces:
+   `type-check` 20 (preexistentes); sin sombras/emojis nuevos.
+
 ## Log de prompts
 
 - **Prompt 1 (Fase A) — 19/09/2026.** Auth, migración `auth_user_id`, proxy de

@@ -34,6 +34,8 @@ interface AvailabilityCalendarProps {
   /** Estado controlado por el padre: única fuente de verdad de las sesiones. */
   selectedSessions: Session[]
   onSessionChange: (sessions: Session[]) => void
+  /** Duración de la clase (60/90): las horas libres dependen de ella (migración 007) */
+  durationMinutes?: number
 }
 
 export default function AvailabilityCalendar({
@@ -44,6 +46,7 @@ export default function AvailabilityCalendar({
   onDateChange,
   selectedSessions,
   onSessionChange,
+  durationMinutes,
 }: AvailabilityCalendarProps) {
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -82,7 +85,8 @@ export default function AvailabilityCalendar({
 
       setIsLoading(true)
       try {
-        const url = `/api/availability?trainer_id=${trainerId}&start_date=${range.start}&end_date=${range.end}`
+        const durationParam = durationMinutes ? `&duration=${durationMinutes}` : ''
+        const url = `/api/availability?trainer_id=${trainerId}&start_date=${range.start}&end_date=${range.end}${durationParam}`
         const response = await fetch(url)
         const data = await response.json().catch(() => null)
 
@@ -110,7 +114,7 @@ export default function AvailabilityCalendar({
     return () => {
       cancelled = true
     }
-  }, [trainerId, range.start, range.end])
+  }, [trainerId, range.start, range.end, durationMinutes])
 
   const availableDates = useMemo(() => new Set(slots.map((s) => s.session_date)), [slots])
 

@@ -3,39 +3,25 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { requireTrainer } from '@/lib/auth/current-trainer'
 import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { isAwaitingConfirmation, isRescheduleProposed } from '@/lib/reservations/status'
-import type { CalendarSlot, CalendarSlotKind } from '@/lib/reservations/calendar'
+import { freeRanges } from '@/lib/availability/windows'
+import { gridStepFor } from '@/lib/availability/durations'
+import { WINDOW_SELECT, reservationRange, type WindowRow } from '@/lib/reservations/slots'
+import type { CalendarData, CalendarReservation, CalendarWindow } from '@/lib/reservations/calendar'
 
-// Siempre fresco: el cliente lo pide justo despues de guardar un cambio.
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/dashboard/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD
  *
- * Huecos del entrenador de la sesión en ese rango, cada uno con la reserva
- * que lo ocupa (si la hay) y su estado visual. Solo lectura.
+ * Ventanas del entrenador de la sesión en ese rango (con sus tramos libres,
+ * ya descontadas las reservas vivas) y sus reservas con el rango real de la
+ * clase (60 o 90 min). Solo lectura.
  *
- * El estado se deduce de la reserva, no de `slot.status`: hay reservas
- * antiguas (anteriores a la Fase C) sobre huecos que siguen en `available`.
- *
- *   pending     reserva pending_confirmation encima
- *   proposed    propuesta de nueva fecha esperando al cliente
- *   confirmed   reserva confirmada
- *   available   hueco abierto sin reserva viva
- *   closed      hueco cerrado (full/blocked...) sin reserva viva: raro, pero existe
- *
- * Lo que no devuelve es "sin abrir": eso es la ausencia de hueco, y lo pinta
- * el calendario como fondo.
+ * "Sin abrir" es la ausencia de ventana; lo pinta el calendario como fondo.
+ * Una ventana cerrada (full/blocked) no tiene tramos libres.
  */
-interface SlotRow {
-  id: string
-  session_date: string
-  start_time: string
-  end_time: string
-  class_type: string
-  status: string | null
-  current_bookings: number | null
-  max_capacity: number | null
-  reservations: Array<{ id: string; client_name: string; status: string | null }> | null
+interface SlotRow extends WindowRow {
+  reservations: Array<{ id: string; client_name: string; status: string | null; start_time: string | null; end_time: string | null; duration_minutes: number | null }> | null
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -59,10 +45,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseServerClient()
     const { data, error } = await supabase
       .from('availability_slots')
-      .select(
-        'id, session_date, start_time, end_time, class_type, status, current_bookings, max_capacity, ' +
-          'reservations ( id, client_name, status )'
-      )
+      .select(WINDOW_SELECT.replace('reservations ( id, status, start_time, end_time )', 'reservations ( id, client_name, status, start_time, end_time, duration_minutes )'))
       .eq('trainer_id', trainer.id)
       .gte('session_date', start)
       .lte('session_date', end)
@@ -73,35 +56,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
-    // El select con embed no lo tipa supabase-js sin tipos generados.
     const rows = (data ?? []) as unknown as SlotRow[]
+    const windows: CalendarWindow[] = []
+    const reservations: CalendarReservation[] = []
 
-    const slots: CalendarSlot[] = rows.map((row) => {
-      const holder = (row.reservations ?? []).find((r) => reservationHoldsSlot(r.status)) ?? null
+    for (const row of rows) {
+      const { reservations: rowReservations, ...window } = row
+      const live = (rowReservations ?? []).filter((r) => reservationHoldsSlot(r.status))
+      const taken = live.map((r) => reservationRange(r, window))
 
-      let kind: CalendarSlotKind
-      if (holder) {
-        kind = isRescheduleProposed(holder.status)
-          ? 'proposed'
-          : isAwaitingConfirmation(holder.status)
-            ? 'pending'
-            : 'confirmed'
-      } else {
-        kind = isSlotOpen(row) ? 'available' : 'closed'
+      windows.push({
+        id: window.id,
+        session_date: window.session_date,
+        start_time: window.start_time.slice(0, 5),
+        end_time: window.end_time.slice(0, 5),
+        class_type: window.class_type,
+        status: window.status,
+        free: isSlotOpen(window) ? freeRanges(window, taken) : [],
+      })
+
+      for (const r of live) {
+        const range = reservationRange(r, window)
+        reservations.push({
+          id: r.id,
+          window_id: window.id,
+          session_date: window.session_date,
+          start_time: range.start_time,
+          end_time: range.end_time,
+          duration_minutes: r.duration_minutes ?? 60,
+          client_name: r.client_name,
+          status: r.status,
+          kind: isRescheduleProposed(r.status) ? 'proposed' : isAwaitingConfirmation(r.status) ? 'pending' : 'confirmed',
+        })
       }
+    }
 
-      return {
-        id: row.id,
-        session_date: row.session_date,
-        start_time: row.start_time,
-        end_time: row.end_time,
-        class_type: row.class_type,
-        kind,
-        reservation: holder,
-      }
-    })
-
-    return NextResponse.json({ success: true, slots })
+    const durations = trainer.class_durations
+    const payload: CalendarData = { windows, reservations, durations, step: gridStepFor(durations) }
+    return NextResponse.json({ success: true, ...payload })
   } catch (error) {
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
   }

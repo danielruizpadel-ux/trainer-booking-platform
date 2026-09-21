@@ -24,7 +24,7 @@ export function DashboardNav({ variant }: DashboardNavProps) {
         aria-label="Secciones"
         className="md:hidden fixed inset-x-0 bottom-0 z-20 bg-white/95 backdrop-blur border-t border-gray-100 pb-[env(safe-area-inset-bottom)]"
       >
-        <ul className="grid grid-cols-4">
+        <ul className="grid" style={{ gridTemplateColumns: `repeat(${DASHBOARD_NAV.length}, minmax(0, 1fr))` }}>
           {DASHBOARD_NAV.map((item) => {
             const active = isNavItemActive(item.href, pathname)
             return (

@@ -2,37 +2,48 @@
 
 import { useState } from 'react'
 import type { TrainerReservation } from '@/lib/reservations/queries'
+import type { ClientPackageSummary } from '@/lib/packages/status'
 import { ReservationsTable } from './ReservationsTable'
-import { ReservationsCalendar } from './ReservationsCalendar'
+import { NewReservationButton } from './NewReservationButton'
+import { PackagesTable } from '@/components/dashboard/packages/PackagesTable'
+import { NewPackageButton } from '@/components/dashboard/packages/NewPackageButton'
 
-type View = 'table' | 'calendar'
+type View = 'table' | 'packages'
 
 interface ReservationsViewProps {
   reservations: TrainerReservation[]
+  packages: ClientPackageSummary[]
+  /** Duraciones que ofrece el entrenador (60/90) */
+  durations: number[]
+  /** Mensaje si no se pudieron cargar los paquetes (p. ej. migración 006 sin aplicar) */
+  packagesError?: string | null
 }
 
-/**
- * Tabla (pestañas + buscador) o Calendario (semana/día), con un selector
- * junto a las pestañas. Un clic en una reserva del calendario vuelve a la
- * tabla y la resalta.
- */
-export function ReservationsView({ reservations }: ReservationsViewProps) {
-  const [view, setView] = useState<View>('table')
-  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
+const VIEWS: Array<{ id: View; label: string; icon: React.ReactNode }> = [
+  { id: 'table', label: 'Tabla', icon: <path d="M3 6h18M3 12h18M3 18h18" /> },
+  {
+    id: 'packages',
+    label: 'Paquetes',
+    icon: (
+      <>
+        <path d="m3 7 9-4 9 4v10l-9 4-9-4Z" />
+        <path d="m3 7 9 4 9-4M12 11v10" />
+      </>
+    ),
+  },
+]
 
-  function jumpToReservation(id: string) {
-    setFocus({ id, nonce: Date.now() })
-    setView('table')
-  }
+/**
+ * Tabla (pestañas + buscador) o Paquetes de clases, con un selector de vista
+ * y el botón de acción que le corresponde ("Nueva reserva" o "Vender
+ * paquete"). El calendario vive en Resumen (HomeCalendarSection).
+ */
+export function ReservationsView({ reservations, packages, durations, packagesError = null }: ReservationsViewProps) {
+  const [view, setView] = useState<View>('table')
 
   const switcher = (
-    <div role="group" aria-label="Vista" className="inline-flex rounded-xl bg-gray-100 p-1 mb-1">
-      {(
-        [
-          { id: 'table', label: 'Tabla', icon: <path d="M3 6h18M3 12h18M3 18h18" /> },
-          { id: 'calendar', label: 'Calendario', icon: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></> },
-        ] as Array<{ id: View; label: string; icon: React.ReactNode }>
-      ).map((option) => (
+    <div role="group" aria-label="Vista" className="inline-flex rounded-xl bg-gray-100 p-1">
+      {VIEWS.map((option) => (
         <button
           key={option.id}
           type="button"
@@ -51,14 +62,53 @@ export function ReservationsView({ reservations }: ReservationsViewProps) {
     </div>
   )
 
-  if (view === 'calendar') {
+  // El botón de acción cambia con la vista: reserva suelta o venta de paquete.
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-3 mb-1">
+      {switcher}
+      {view === 'packages' ? <NewPackageButton durations={durations} /> : <NewReservationButton durations={durations} />}
+    </div>
+  )
+
+  if (view === 'packages') {
     return (
       <div className="flex flex-col gap-4">
-        {switcher}
-        <ReservationsCalendar mode="view" onReservationClick={jumpToReservation} />
+        {toolbar}
+        {packagesError ? (
+          <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 text-center">
+            <h2 className="text-base font-semibold text-gray-900">No se pudieron cargar los paquetes</h2>
+            <p className="mt-1.5 text-sm text-gray-600">
+              Si es la primera vez, falta aplicar <code className="text-gray-900">migrations/006_class_packages.sql</code> en Supabase.
+            </p>
+            <p className="mt-2 text-xs text-gray-400">{packagesError}</p>
+          </div>
+        ) : packages.length === 0 ? (
+          <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 sm:p-12 text-center">
+            <h2 className="text-base font-semibold text-gray-900">Todavía no has vendido ningún paquete</h2>
+            <p className="mt-1.5 text-sm text-gray-600">
+              Con "Vender paquete" registras el bono y después vas agendando cada clase sobre tu disponibilidad.
+            </p>
+          </div>
+        ) : (
+          <PackagesTable packages={packages} />
+        )}
       </div>
     )
   }
 
-  return <ReservationsTable reservations={reservations} leading={switcher} focus={focus} />
+  if (reservations.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        {toolbar}
+        <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 sm:p-12 text-center">
+          <h2 className="text-base font-semibold text-gray-900">Todavía no hay reservas</h2>
+          <p className="mt-1.5 text-sm text-gray-600">
+            Cuando un cliente reserve desde tu página pública aparecerá aquí.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return <ReservationsTable reservations={reservations} leading={toolbar} />
 }

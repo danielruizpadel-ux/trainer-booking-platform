@@ -6,6 +6,7 @@ import type { WeeklyRange } from '@/lib/availability/weekly'
 import type { AvailabilityOverride } from '@/lib/availability/overrides'
 import { WeeklySchedule } from './WeeklySchedule'
 import { DateOverridesPanel } from './DateOverridesPanel'
+import { DurationsCard } from './DurationsCard'
 
 /**
  * Composición de /dashboard/disponibilidad: horario semanal recurrente +
@@ -54,6 +55,10 @@ export function AvailabilityView() {
           {error}
         </p>
       )}
+
+      <div className="mb-6">
+        <DurationsCard />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-start">
         <WeeklySchedule weekly={weekly} loading={loading} onSaved={loadSchedule} />

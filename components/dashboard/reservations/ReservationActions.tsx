@@ -7,6 +7,7 @@ import { ProposeRescheduleDialog } from './ProposeRescheduleDialog'
 interface ReservationActionsProps {
   reservationId: string
   clientName: string
+  durationMinutes: number
   /** 'sm' para la fila de la tabla; el normal para la tarjeta móvil */
   size?: 'sm' | 'md'
   /** En la tabla: uno debajo del otro, para que la fila no desborde */
@@ -23,7 +24,7 @@ type Pending = 'confirm' | 'needs_reschedule' | null
  *   Proponer otra fecha    abre el calendario en modo selector (ProposeRescheduleDialog)
  * Al terminar se refresca la página (Server Component) y la fila cambia de pestaña.
  */
-export function ReservationActions({ reservationId, clientName, size = 'md', stacked = false }: ReservationActionsProps) {
+export function ReservationActions({ reservationId, clientName, durationMinutes, size = 'md', stacked = false }: ReservationActionsProps) {
   const router = useRouter()
   const [pending, setPending] = useState<Pending>(null)
   const [error, setError] = useState<string | null>(null)
@@ -88,6 +89,7 @@ export function ReservationActions({ reservationId, clientName, size = 'md', sta
         <ProposeRescheduleDialog
           reservationId={reservationId}
           clientName={clientName}
+          durationMinutes={durationMinutes}
           onClose={() => setProposing(false)}
           onProposed={() => {
             setProposing(false)

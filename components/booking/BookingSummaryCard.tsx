@@ -12,6 +12,7 @@ interface BookingSummaryCardProps {
   total: number
   discount: number
   pricePerSession?: number
+  durationMinutes?: number
   onRemove?: (date: string, time: string) => void
   onConfirm?: () => void
 }
@@ -21,6 +22,7 @@ export default function BookingSummaryCard({
   total,
   discount,
   pricePerSession = 300,
+  durationMinutes = 60,
   onRemove,
   onConfirm,
 }: BookingSummaryCardProps) {
@@ -56,7 +58,7 @@ export default function BookingSummaryCard({
           <div className="mt-5 pt-5 border-t border-gray-100 space-y-2.5">
             <div className="flex justify-between text-sm text-gray-600">
               <span>
-                {count} {count === 1 ? 'clase' : 'clases'} × RM {pricePerSession}
+                {count} {count === 1 ? 'clase' : 'clases'} de {durationMinutes === 90 ? '1 h 30' : '1 h'} × RM {pricePerSession}
               </span>
               <span className="tabular-nums">RM {subtotal}</span>
             </div>

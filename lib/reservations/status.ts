@@ -21,9 +21,9 @@ export type ReservationStatus = (typeof RESERVATION_STATUS)[keyof typeof RESERVA
 
 export const SLOT_STATUS = {
   AVAILABLE: 'available',
-  /** Hay una reserva pending_confirmation encima: no se ofrece */
+  /** LEGADO (anterior a la migración 007): ya no se escribe; se lee como cerrado */
   PENDING: 'pending',
-  /** Ocupado: reserva confirmada o capacidad llena */
+  /** Sin ningún inicio libre para la duración mínima que ofrece el entrenador */
   FULL: 'full',
 } as const
 

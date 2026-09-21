@@ -18,6 +18,8 @@ export interface TrainerData {
   total_reviews?: number
   specializations?: string[]
   status: 'active' | 'inactive'
+  /** Duraciones de clase que ofrece (60/90), migración 007 */
+  class_durations?: number[]
   created_at: string
   updated_at: string
 }
