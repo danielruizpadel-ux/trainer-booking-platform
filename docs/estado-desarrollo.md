@@ -1,6 +1,6 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Última actualización: 21/09/2026 (prompt 20) · Estado: **Fases A, B, C, C+ y D hechas y verificadas. Migraciones 002–007 aplicadas. Duraciones 1h/1h30 (prompt 19) verificadas en el navegador contra Supabase real, con dos fixes encima (prompt 20): el regenerador ya no rompe con duplicate key, y se purgaron 130 huecos legacy de antes del 20/09 que bloqueaban días cerrados y clases de 1h30. Botón "Sincronizar huecos" nuevo en Disponibilidad.**
+Creado: 19/09/2026 · Última actualización: 21/09/2026 (prompt 22) · Estado: **Fases A, B, C, C+ y D hechas y verificadas. Migraciones 002–007 aplicadas. Duraciones 1h/1h30 verificadas de extremo a extremo contra Supabase real. Calendario del dashboard legible por duración (prompt 22, mismo patrón que la web pública) y corregido un bug real de doble reserva cuando hay ventanas de disponibilidad solapadas el mismo día (prompt 22, verificado con una reserva de prueba antes/después del fix). Bloqueante 1 de seguridad (service role key en claro) resuelto (prompt 21); rotar la clave y limpiar el historial de git siguen pendientes de Daniel.**
 
 ## Decisión de alcance
 
@@ -1046,16 +1046,9 @@ el cambio no es "añadir 1 h 30" sino definir qué es una fila de
   Domingo sin ventana, como corresponde a "Sin horario"). `type-check`: 20,
   sin cambios.
 
-  **Pendiente, sin confirmar**: en el diálogo "Nueva reserva" con 1 h 30 min
-  sobre la ventana grande del miércoles, la lista de horas de inicio incluía
-  10:00 y 10:30 — que solapan con la reserva real de 10:00–11:00 — sin
-  distinguirlas visualmente de las horas que sí encajan. No se confirmó si
-  esto es solo un problema de la lista mostrada (el servidor valida aparte
-  en `POST /api/reservations` vía `findBookableWindow`, así que no debería
-  poder confirmarse una reserva solapada) o si de verdad falta filtrar
-  `bookableStarts`/`freeRanges` para huecos con una reserva de duración
-  distinta ya dentro. No se investigó más para no tocar más código sin que
-  Daniel lo pidiera. Revisar antes de dar la Fase D+ por cerrada del todo.
+  **Resuelto en el prompt 22** (ver más abajo): no era un problema de la
+  lista, era real — `POST /api/reservations` SÍ aceptaba la reserva
+  solapada. Detalle y fix en la entrada de abajo.
 
 ## Limpieza de seguridad — bloqueante 1 de ANTES_DE_PUBLICAR (21/09/2026, prompt 21, Claude Cowork)
 
@@ -1081,3 +1074,79 @@ los hubiera bloqueado de verdad mientras se avanzaba con paquetes y duraciones.
 
 `docs/ANTES_DE_PUBLICAR.md`, `CLAUDE.md` y `docs/SETUP_TRAINER.md` actualizados
 para reflejar esto.
+
+## Calendario legible por duración + doble reserva real corregida (21/09/2026, prompt 22, Claude Cowork)
+
+Daniel pidió dos cosas a la vez: arreglar la lista de horas del calendario
+del dashboard (poco legible, captura suya) y poder filtrar por duración
+(1 h / 1 h 30) tanto en su propio panel como en la web pública, con un
+ejemplo concreto de solapamiento (9:00–10:00 + 11:00–12:00 → no debe
+ofrecer 1 h 30 a las 10:00; si la segunda fuera 11:30–12:30, sí).
+
+**Legibilidad + duración en el dashboard.** `ReservationsCalendar.tsx`
+pintaba, dentro de cada tramo libre, un botón por cada hora de inicio en
+una caja `absolute` de altura fija: en la vista de semana (columnas
+~130px) la lista desbordaba sobre los bloques vecinos. Se comprobó antes
+que el widget público (`/mauri`) ya no tenía este problema: tiene un
+selector "1 h / 1 h 30 min" arriba del calendario y, al tocar un día,
+abre un modal con una rejilla legible de horas — justo el patrón de las
+capturas de referencia de Daniel. Se llevó ese mismo patrón al dashboard:
+- Componente nuevo `DaySlotPickerDialog.tsx`: modal con rejilla de horas
+  (clicables en modo "select", solo informativas en modo "view").
+- `ReservationsCalendar.tsx`: cada tramo libre es ahora un único bloque
+  clicable ("Libre 09:00–17:00 · 15 horas") que abre el modal, en vez de
+  la lista incrustada. En modo `view` (el Resumen del propio Daniel) se
+  añadió un selector de duración igual al de "Nueva reserva", para poder
+  ver, filtrando, qué horas quedarían libres sin tener que crear una
+  reserva.
+- Se intentó delegar la implementación al `claude` CLI local por indicación
+  de Daniel ("apóyate en Claude Code"), pero no está habilitado en este
+  entorno (`claude: is not enabled in this environment`) — se implementó
+  directamente, con el mismo flujo de siempre (edición vía `device_bash`,
+  `npm run type-check` contra el baseline de 20, verificación en el
+  navegador).
+
+**Doble reserva real (bloqueante, encontrado verificando lo anterior).** Al
+probar el modal de 1 h 30 sobre el miércoles 23, aparecían 09:00, 09:30 y
+10:00 como libres pese a la reserva real de Daniel Ruiz Guinea a las
+10:00–11:00 — exactamente el "pendiente, sin confirmar" que quedó apuntado
+en el prompt 20. Investigado a fondo esta vez: miércoles 23 tiene DOS filas
+de `availability_slots` que se solapan —
+`63c220a8` (09:00–17:00, la ventana generada por el patrón semanal) y
+`62a59bdf` (10:00–11:00, manual/legacy, la fila a la que está enlazada la
+reserva real). El cálculo de solapamiento (`bookableStarts`/`fitsInWindow`)
+solo miraba las reservas de LA MISMA fila — así que la ventana ancha no
+sabía que 10:00–11:00 ya estaba ocupado.
+
+Se comprobó que esto no era solo un problema de la lista: una petición de
+prueba a `POST /api/reservations` para miércoles 23 a las 10:00 **se
+aceptó** (creó una reserva duplicada de verdad, borrada después) antes del
+fix. Doble reserva real, no solo visual — bloqueante.
+
+Fix en `lib/reservations/slots.ts` (`loadOwnedOpenWindow`,
+`refreshWindowStatus`), `lib/availability/booking.ts` (`loadOpenWindows`) y
+`app/api/dashboard/calendar/route.ts`: las reservas que cuentan como
+"ocupado" para calcular huecos libres se agrupan por trainer+día (todas las
+ventanas de esa fecha), no por fila. El `current_bookings` que persiste
+`refreshWindowStatus` se deja igual (el de su propia fila) para no disparar
+`isSlotOpen` por capacidad en ventanas de otros días o sin relación.
+
+Verificado tras el fix, todo contra Supabase real:
+- `GET /api/availability` para miércoles 23 (1 h) ya no ofrece 09:30/10:00/
+  10:30 — solo 09:00 y 11:00–16:00.
+- `POST /api/reservations` y `POST /api/dashboard/reservations` para
+  miércoles 23 a las 10:00 devuelven **409** ("Acaban de reservar…" / "Esa
+  franja ya no está libre") en vez de crear la reserva.
+- El calendario del dashboard (Resumen y "Nueva reserva") ya divide el
+  tramo libre del miércoles en 09:00–10:00 y 11:00–17:00 alrededor de la
+  reserva.
+- `type-check`: 20, sin cambios; ninguno en los archivos tocados.
+
+Las dos filas solapadas de esa fecha (`63c220a8`/`62a59bdf`) se quedan tal
+cual: son datos reales con una reserva viva, no hay que tocarlas a mano.
+Cuando esa reserva se resuelva (se confirme o se cancele), la fila legacy
+`62a59bdf` queda libre y el próximo "Sincronizar huecos" ya la trata como
+cualquier hueco sin ocupar.
+
+`type-check` sigue en 20 (baseline sin cambios). Commits:
+`0fc0d14` (calendario legible) y `8afd312` (fix de solapamiento).
