@@ -73,6 +73,23 @@ export async function loadWindow(supabase: SupabaseClient, windowId: string): Pr
   return toLoadedWindow(data as unknown as WindowRow & { reservations: WindowReservation[] | null })
 }
 
+/**
+ * Reservas vivas de CUALQUIER ventana del entrenador ese día, no solo las
+ * de una fila. Si hay más de una fila de `availability_slots` solapada en
+ * el mismo día (huecos manuales sueltos junto a la ventana generada por el
+ * patrón semanal, herencia de antes de la 007), una reserva en una no debe
+ * quedar invisible para las demás: eso es lo que dejaba ofrecer la misma
+ * hora real dos veces. Solo para comprobar solapamiento (fitsInWindow /
+ * bookableStarts) — el conteo `current_bookings` de una fila sigue siendo
+ * el suyo propio, ver refreshWindowStatus.
+ */
+async function loadTakenForDate(supabase: SupabaseClient, trainerId: string, date: string): Promise<Array<TimeRange & { id: string }>> {
+  const { data, error } = await supabase.from('availability_slots').select(WINDOW_SELECT).eq('trainer_id', trainerId).eq('session_date', date)
+  if (error || !data) return []
+  const rows = data as unknown as Array<WindowRow & { reservations: WindowReservation[] | null }>
+  return rows.flatMap((row) => toLoadedWindow(row).taken)
+}
+
 export type WindowLookup =
   | { ok: true; window: WindowRow; range: TimeRange }
   | { ok: false; code: 'not_found' | 'forbidden' | 'taken' | 'closed' | 'db_error'; message: string }
@@ -109,7 +126,8 @@ export async function loadOwnedOpenWindow(
   const start = startTime.slice(0, 5)
   if (!/^\d{2}:\d{2}$/.test(start)) return { ok: false, code: 'taken', message: 'Hora no válida' }
   const range: TimeRange = { start_time: start, end_time: fromMinutes(toMinutes(start) + durationMinutes) }
-  const taken = loaded.taken.filter((t) => t.id !== options.ignoreReservationId)
+  const dateTaken = await loadTakenForDate(supabase, loaded.window.trainer_id, loaded.window.session_date)
+  const taken = dateTaken.filter((t) => t.id !== options.ignoreReservationId)
   if (!fitsInWindow(loaded.window, taken, range)) {
     return { ok: false, code: 'taken', message: 'Esa franja ya no está libre' }
   }
@@ -129,7 +147,14 @@ export async function refreshWindowStatus(supabase: SupabaseClient, windowId: st
 
   const offered = durations ?? (await getTrainerDurations(supabase, window.trainer_id))
   const minDuration = Math.min(...offered)
-  const hasRoom = bookableStarts(window, taken, minDuration, gridStepFor(offered)).length > 0
+  // hasRoom mira las reservas de TODO el día (loadTakenForDate), no solo las
+  // de esta fila, para no marcar "available" un hueco que en realidad se
+  // solapa con una reserva de otra ventana ese mismo día. current_bookings
+  // sigue siendo el conteo de esta fila (taken, de loadWindow): isSlotOpen
+  // lo compara contra max_capacity, y contar ahí reservas de otras filas
+  // cerraría de golpe ventanas que no tienen nada que ver.
+  const dateTaken = await loadTakenForDate(supabase, window.trainer_id, window.session_date)
+  const hasRoom = bookableStarts(window, dateTaken, minDuration, gridStepFor(offered)).length > 0
 
   const { error } = await supabase
     .from('availability_slots')

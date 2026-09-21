@@ -267,7 +267,11 @@ export function ReservationsCalendar({
                   <WindowBlock
                     key={w.id}
                     window={w}
-                    reservations={(reservationsByDay.get(day) ?? []).filter((r) => r.window_id === w.id)}
+                    // Todas las reservas del día, no solo las de esta ventana:
+                    // si hay dos filas de disponibilidad solapadas el mismo
+                    // día (huecos legacy sin depurar), una reserva en una no
+                    // debe quedar invisible al calcular las horas de la otra.
+                    reservations={reservationsByDay.get(day) ?? []}
                     mode={mode}
                     gridStart={gridStart}
                     duration={effectiveDuration}

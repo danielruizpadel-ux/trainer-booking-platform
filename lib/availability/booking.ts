@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isSlotOpen } from './slot-status'
-import { bookableStarts } from './windows'
+import { bookableStarts, type TimeRange } from './windows'
 import { gridStepFor, type ClassDuration } from './durations'
 import { WINDOW_SELECT, toLoadedWindow, type LoadedWindow, type WindowReservation, type WindowRow } from '@/lib/reservations/slots'
 
@@ -41,7 +41,25 @@ export async function loadOpenWindows(
     .order('start_time')
   if (error) throw new Error(error.message)
   const rows = (data ?? []) as unknown as Array<WindowRow & { reservations: WindowReservation[] | null }>
-  return rows.map(toLoadedWindow)
+  const windows = rows.map(toLoadedWindow)
+
+  // Reservas vivas de CUALQUIER ventana del entrenador ese día, no solo las
+  // de su propia fila: si hay más de una fila de disponibilidad para el
+  // mismo día (huecos legacy sueltos junto a la ventana generada por el
+  // patrón semanal), una reserva en una no debe quedar invisible para las
+  // demás y dejar reservar la misma hora real dos veces. Solo lectura, así
+  // que agrupar en memoria (ya se pidió todo el rango en una sola consulta)
+  // en vez de repetir la consulta como hace loadTakenForDate en slots.ts.
+  const takenByDate = new Map<string, Array<TimeRange & { id: string }>>()
+  for (const w of windows) {
+    const list = takenByDate.get(w.window.session_date) ?? []
+    list.push(...w.taken)
+    takenByDate.set(w.window.session_date, list)
+  }
+  for (const w of windows) {
+    w.taken = takenByDate.get(w.window.session_date) ?? []
+  }
+  return windows
 }
 
 export function bookableSlotsFor(windows: LoadedWindow[], duration: ClassDuration, offered: readonly number[]): BookableSlot[] {

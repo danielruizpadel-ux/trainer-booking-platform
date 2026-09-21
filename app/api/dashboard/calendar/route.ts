@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { requireTrainer } from '@/lib/auth/current-trainer'
 import { isSlotOpen, reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { isAwaitingConfirmation, isRescheduleProposed } from '@/lib/reservations/status'
-import { freeRanges } from '@/lib/availability/windows'
+import { freeRanges, type TimeRange } from '@/lib/availability/windows'
 import { gridStepFor } from '@/lib/availability/durations'
 import { WINDOW_SELECT, reservationRange, type WindowRow } from '@/lib/reservations/slots'
 import type { CalendarData, CalendarReservation, CalendarWindow } from '@/lib/reservations/calendar'
@@ -57,13 +57,28 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = (data ?? []) as unknown as SlotRow[]
-    const windows: CalendarWindow[] = []
-    const reservations: CalendarReservation[] = []
 
+    // Primera pasada: reservas vivas de cada fila y, agrupado por día, las de
+    // CUALQUIER fila ese día. Si hay más de una fila de disponibilidad
+    // solapada en el mismo día (huecos legacy sueltos junto a la ventana del
+    // patrón semanal), una reserva en una no debe quedar invisible para el
+    // "free" de las demás.
+    const parsedRows: Array<{ window: Omit<SlotRow, 'reservations'>; live: NonNullable<SlotRow['reservations']> }> = []
+    const takenByDate = new Map<string, TimeRange[]>()
     for (const row of rows) {
       const { reservations: rowReservations, ...window } = row
       const live = (rowReservations ?? []).filter((r) => reservationHoldsSlot(r.status))
-      const taken = live.map((r) => reservationRange(r, window))
+      parsedRows.push({ window, live })
+      const list = takenByDate.get(window.session_date) ?? []
+      for (const r of live) list.push(reservationRange(r, window))
+      takenByDate.set(window.session_date, list)
+    }
+
+    const windows: CalendarWindow[] = []
+    const reservations: CalendarReservation[] = []
+
+    for (const { window, live } of parsedRows) {
+      const dateTaken = takenByDate.get(window.session_date) ?? []
 
       windows.push({
         id: window.id,
@@ -72,7 +87,7 @@ export async function GET(request: NextRequest) {
         end_time: window.end_time.slice(0, 5),
         class_type: window.class_type,
         status: window.status,
-        free: isSlotOpen(window) ? freeRanges(window, taken) : [],
+        free: isSlotOpen(window) ? freeRanges(window, dateTaken) : [],
       })
 
       for (const r of live) {
