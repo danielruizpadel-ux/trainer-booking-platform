@@ -1,21 +1,14 @@
 # Alta de un entrenador y sus huecos
 
-## Aviso de seguridad antes de usar `scripts/`
+## Aviso de seguridad
 
 `scripts/quick-setup.sh`, `scripts/setup-mauri.sh` y `scripts/setup-mauri-prod.js`
-llevan la **service role key de Supabase escrita en claro**, y los tres están
-versionados en git. Esa clave se salta el RLS: quien la tenga puede leer y
-borrar toda la base de datos.
-
-Hoy el repo no tiene remoto configurado, así que no ha salido de este ordenador.
-Antes de subirlo a GitHub (aunque sea privado) hay que:
-
-1. Rotar la clave en Supabase → Settings → API.
-2. Sacarla de los tres scripts y leerla de `process.env.SUPABASE_SERVICE_ROLE_KEY`.
-3. Limpiar el historial de git, porque el commit antiguo la sigue conteniendo
-   (`git filter-repo` o reescribir el historial).
-
-Mientras tanto, preferir la opción 1 de abajo, que no toca esos scripts.
+llevaban la **service role key de Supabase escrita en claro** y se borraron el
+21/09/2026 (superados por la Opción 1 de abajo, que ya iba bien). La clave que
+llevaban sigue sin rotar y sigue en un commit antiguo del historial de git: no
+subir este repo a un remoto sin antes rotarla en Supabase → Settings → API y
+reescribir el historial (o empezar uno nuevo). Ver `docs/ANTES_DE_PUBLICAR.md`,
+bloqueante 1.
 
 ## Opción 1 — endpoint de setup (recomendada)
 

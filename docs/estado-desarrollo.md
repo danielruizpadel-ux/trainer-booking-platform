@@ -1056,3 +1056,28 @@ el cambio no es "añadir 1 h 30" sino definir qué es una fila de
   `bookableStarts`/`freeRanges` para huecos con una reserva de duración
   distinta ya dentro. No se investigó más para no tocar más código sin que
   Daniel lo pidiera. Revisar antes de dar la Fase D+ por cerrada del todo.
+
+## Limpieza de seguridad — bloqueante 1 de ANTES_DE_PUBLICAR (21/09/2026, prompt 21, Claude Cowork)
+
+Daniel pidió revisar por qué el proceso de desarrollo se sentía como ir
+parcheando sin sistema. Al leer `docs/ANTES_DE_PUBLICAR.md` se confirmó que los
+bloqueantes de seguridad seguían exactamente igual que el 19/09, sin que nada
+los hubiera bloqueado de verdad mientras se avanzaba con paquetes y duraciones.
+
+- Se borraron `scripts/quick-setup.sh`, `scripts/setup-mauri.sh` y
+  `scripts/setup-mauri-prod.js`: llevaban la service role key en claro,
+  estaban superados por `POST /api/admin/setup-mauri` (ya usa
+  `getSupabaseServerClient()` correctamente) y escribían además contra
+  columnas que ya no existen (`is_available`, `price` en `trainers`, `class_type:
+  "individual"`) — no se reescribieron porque no había nada que conservar.
+- Sigue pendiente, y es de Daniel: **rotar la clave en Supabase → Settings →
+  API** y **reescribir o reiniciar el historial de git** antes de configurar
+  cualquier remoto (confirmado el 21/09 que la clave vieja sigue en un commit
+  antiguo).
+- Decisión con Daniel: la autenticación real de `/admin` (bloqueante 3) se deja
+  para cuando haga falta el panel cross-tenant — hoy nadie usa `/admin`, el
+  dashboard de Mauricio en `/dashboard` no depende de él. No desplegar `/admin`
+  hasta que exista login real.
+
+`docs/ANTES_DE_PUBLICAR.md`, `CLAUDE.md` y `docs/SETUP_TRAINER.md` actualizados
+para reflejar esto.

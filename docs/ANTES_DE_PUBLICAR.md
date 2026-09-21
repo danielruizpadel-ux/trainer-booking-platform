@@ -12,28 +12,35 @@ Marca cada casilla antes de hacer deploy. Los bloqueantes son bloqueantes.
 
 ## 🔴 BLOQUEANTES — sin esto NO se publica
 
-### 1. La service role key está escrita en claro y versionada
+### 1. La service role key sigue en el historial de git — pendiente de rotar
 
-- [ ] Rotar la clave en Supabase → Settings → API
-- [ ] Sacarla de los 3 archivos y leerla de `process.env.SUPABASE_SERVICE_ROLE_KEY`
-- [ ] Limpiar el historial de git
+- [x] Los 3 scripts que la llevaban en claro se borraron (21/09/2026, Claude
+      Cowork): estaban superados por `POST /api/admin/setup-mauri` (que ya usa
+      `getSupabaseServerClient()` / `SUPABASE_SERVICE_ROLE_KEY` desde
+      `.env.local`, ver `docs/SETUP_TRAINER.md`) y escribían además contra
+      columnas que ya no existen (`is_available`, `price` en `trainers`).
+- [ ] Rotar la clave en Supabase → Settings → API — sigue siendo la misma que
+      estuvo escrita en claro; hay que asumirla comprometida aunque el repo no
+      haya tenido remoto nunca.
+- [ ] Limpiar el historial de git (`git filter-repo`, o más simple al no tener
+      remoto todavía: empezar un repo nuevo sin historial) antes de configurar
+      cualquier remoto.
 
-**Archivos afectados:** `scripts/quick-setup.sh`, `scripts/setup-mauri.sh`,
+**Archivos borrados:** `scripts/quick-setup.sh`, `scripts/setup-mauri.sh`,
 `scripts/setup-mauri-prod.js`.
 
-**Y un cuarto, menos obvio:** `.claude/settings.local.json` también contiene la
-clave (se quedó grabada al autorizar un comando). No estaba en `.gitignore`, así
-que un `git add .` la habría subido. Ya está añadido al `.gitignore` — comprueba
-que sigue estándolo.
+**Un cuarto sitio, menos obvio:** `.claude/settings.local.json` también contenía
+la clave (se quedó grabada al autorizar un comando). Ya está en `.gitignore` —
+comprueba que sigue estándolo.
 
 Esa clave **se salta el RLS por completo**: quien la tenga lee, modifica y borra
 toda la base de datos, incluidos los datos de tus clientes. Hoy el repo no tiene
 remoto configurado, así que no ha salido de tu ordenador. En cuanto lo subas a
 GitHub —**aunque sea privado**— está expuesta.
 
-Quitarla del código **no basta**: los commits antiguos la conservan. Hay que
-reescribir el historial (`git filter-repo`) o, más simple, empezar un repo nuevo
-sin historial. Y rotarla igualmente, porque hay que asumirla comprometida.
+Rotarla no basta si luego subes el historial tal cual: los commits antiguos la
+conservan (comprobado el 21/09: sigue apareciendo en un commit viejo). Antes de
+añadir un remoto, reescribe el historial o empieza uno nuevo.
 
 ### 2. Endpoints de administración abiertos — RESUELTO el 19/09/2026
 

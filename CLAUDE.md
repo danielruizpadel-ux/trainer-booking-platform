@@ -4,10 +4,11 @@ Léete esto antes de tocar código. Son las cosas que ya han roto algo una vez.
 
 ## ⛔ Si el tema es publicar, desplegar o subir a producción
 
-**Para y lee `docs/ANTES_DE_PUBLICAR.md` primero.** Hay bloqueantes de seguridad
-sin resolver: la service role key de Supabase está en claro en `scripts/` y
-versionada en git, `/api/admin/setup-mauri` y `/api/dev/seed` no comprueban
-absolutamente nada, y el login de admin es un `TODO`.
+**Para y lee `docs/ANTES_DE_PUBLICAR.md` primero.** Bloqueantes de seguridad sin
+resolver: la key vieja de Supabase sigue en el historial de git sin rotar (los
+3 scripts que la llevaban en claro se borraron el 21/09, pero un commit
+antiguo la conserva — no reescribir el historial ni añadir un remoto sin
+rotarla antes), y el login de admin sigue siendo un `TODO`.
 
 Si el usuario pide desplegar, subir a Vercel, publicar la web o conectar un
 dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
