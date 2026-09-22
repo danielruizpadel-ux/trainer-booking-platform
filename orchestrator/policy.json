@@ -1,0 +1,35 @@
+{
+  "maxReviewIterations": 3,
+  "maxVerdictFormatRetries": 1,
+  "claude": {
+    "command": "claude",
+    "timeoutMs": 900000,
+    "analysisTools": "Read,Grep,Glob",
+    "implementationTools": "Read,Edit,Write,Grep,Glob"
+  },
+  "codex": {
+    "command": "codex",
+    "timeoutMs": 900000,
+    "analysisSandbox": "read-only",
+    "reviewSandbox": "read-only"
+  },
+  "bothread": {
+    "url": "http://127.0.0.1:4889/mcp",
+    "agentName": "Orchestrator V1",
+    "brand": "orchestrator",
+    "sessionId": null
+  },
+  "worktree": {
+    "lockFile": "orchestrator/runs/.active.lock",
+    "allowedPreexistingUntracked": [".bothread/"]
+  },
+  "verdictMarkers": {
+    "accepted": "ORCHESTRATOR_VERDICT: ACCEPTED",
+    "changesRequested": "ORCHESTRATOR_VERDICT: CHANGES_REQUESTED"
+  },
+  "validation": {
+    "typeCheckCommand": ["npm", "run", "type-check"],
+    "formatCheckCommand": ["npm", "run", "format:check"]
+  },
+  "forbiddenActionsNote": "The orchestrator never runs git commit, git push, migrations, deploys or credential changes. Claude has no Bash tool in this workflow (Read/Edit/Write/Grep/Glob only), so it cannot invoke them either. Codex only ever runs with --sandbox read-only and is never asked to implement."
+}
