@@ -41,10 +41,54 @@ Bothread message.
 
 ## Usage
 
+The terminal is the V1 operational interface. A web Control Center may be
+added later, but is not part of V1.
+
+### Start / check system
+
 ```bash
-node orchestrator/orchestrate-v1.mjs "Describe one bounded task"
-node orchestrator/orchestrate-v1.mjs "Describe one bounded task" --bothread-session "$BOTHREAD_SESSION_ID"
+npm run company:start
+```
+
+This is a read-only bootstrap check: it verifies the repository, Node, CLI
+availability, Bothread reachability, run storage, worktree status and the
+active-run lock. It does not invoke an LLM or start a mission. If Bothread is
+unreachable it reports the configured endpoint; V1 does not assume or invent a
+startup command for it.
+
+### New mission
+
+```bash
+npm run company -- "Describe one bounded task"
+```
+
+### Check status
+
+```bash
+npm run company:status
+```
+
+### Recover after interruption
+
+```bash
+npm run company:resume
+```
+
+`company:resume` proceeds only when exactly one persisted non-terminal run is
+safe to resume. It refuses to guess among multiple candidates, and terminal
+runs are never restarted.
+
+### Deep diagnostic
+
+```bash
+npm run company:doctor
+```
+
+The underlying controller commands remain available for diagnostics:
+
+```bash
 node orchestrator/orchestrate-v1.mjs --resume run_1234567890_abcd1234
+node orchestrator/orchestrate-v1.mjs --help
 ```
 
 The controller writes one JSON record per run to `orchestrator/runs/`. These
@@ -92,12 +136,20 @@ fails safely instead of guessing the verdict.
 ## Recovery and stop conditions
 
 - Resume a non-terminal run using its run ID after an interruption.
+- Before each Claude mutation step, V1 atomically persists a marker. If the
+  machine stops after that marker but before Claude's result is recorded, the
+  working tree may already have been modified. Recovery is then ambiguous: V1
+  records a clear `FAILED` reason and stops for Dani rather than repeating the
+  mutation automatically.
 - Do not resume a terminal run as if it were active; it only prints its final
   report.
 - `ESCALATED_TO_DANI` means the three-review limit was reached.
 - `FAILED` means an agent process, parser, transition or prerequisite failed.
 - `WAITING_FOR_DANI` means Codex accepted the work and the controller has
   stopped. It is not permission to commit or deploy.
+- If Claude or Codex is unavailable (including a usage limit), V1 records the
+  process error in the run and finishes as `FAILED`. It does not substitute one
+  agent for the other; choosing a replacement requires Dani's decision.
 
 For changes affecting architecture, security, database schema/data, production
 or a protected area named in `CLAUDE.md`, stop and follow the human-approval

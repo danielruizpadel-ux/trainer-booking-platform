@@ -231,7 +231,7 @@ function fail(run, error, nextState = "FAILED") {
 
 function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
   return new Promise((resolve) => {
-    execFile(
+    const child = execFile(
       command,
       args,
       {
@@ -239,7 +239,6 @@ function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
         timeout: timeoutMs,
         killSignal: "SIGKILL",
         maxBuffer: 64 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "pipe"],
         shell: false,
       },
       (error, stdout, stderr) => {
@@ -260,6 +259,10 @@ function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
         });
       },
     );
+    // execFile crea stdin como pipe. Si se deja abierto, Claude --print espera
+    // hasta tres segundos a que llegue un prompt por stdin y luego falla. El
+    // prompt siempre se entrega por argv, así que cerramos stdin explícitamente.
+    child.stdin?.end();
   });
 }
 
@@ -269,7 +272,6 @@ function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
 
 async function callClaude(prompt, { tools, resumeSessionId, timeoutMs } = {}) {
   const args = [
-    prompt,
     "-p",
     "--output-format",
     "json",
@@ -278,6 +280,7 @@ async function callClaude(prompt, { tools, resumeSessionId, timeoutMs } = {}) {
   ];
   if (tools) args.push("--tools", tools);
   if (resumeSessionId) args.push("--resume", resumeSessionId);
+  args.push("--", prompt);
 
   const t0 = Date.now();
   const proc = await runProcess(POLICY.claude.command, args, {
@@ -789,6 +792,10 @@ async function stepSynthesis(run) {
 
 async function stepImplementation(run) {
   const plan = lastStep(run, "synthesis").text;
+  // Se persiste antes de invocar a Claude: si el proceso o el Mac cae mientras
+  // Claude escribe, reanudar automáticamente sería ambiguo y potencialmente
+  // repetiría una modificación con efectos laterales.
+  recordStep(run, "claude_mutation_started", { phase: "implementation" });
   await bothreadNotify(
     run,
     "Orchestrator: implementando el plan acordado (Claude, sin Bash, sin git commit/push posible).",
@@ -934,6 +941,7 @@ async function stepCodexReview(run) {
 
 async function stepClaudeFix(run) {
   const review = lastStep(run, "codex_review");
+  recordStep(run, "claude_mutation_started", { phase: "claude_fix" });
   const res = await callClaude(claudeFixPrompt(review.text), {
     tools: POLICY.claude.implementationTools,
     resumeSessionId: run.claudeSessionId,
@@ -1002,6 +1010,19 @@ const TERMINAL_STATES = new Set([
   "ESCALATED_TO_DANI",
   "FAILED",
 ]);
+
+function hasAmbiguousClaudeMutation(run) {
+  const started = [...run.history]
+    .reverse()
+    .find((entry) => entry.kind === "claude_mutation_started");
+  if (!started) return false;
+  const completedKind =
+    started.phase === "implementation" ? "implementation" : "claude_fix";
+  const startedIndex = run.history.indexOf(started);
+  return !run.history
+    .slice(startedIndex + 1)
+    .some((entry) => entry.kind === completedKind);
+}
 
 async function runOrchestration(run) {
   while (!TERMINAL_STATES.has(run.status)) {
@@ -1090,16 +1111,29 @@ async function printFinalReport(run) {
 // CLI
 // ---------------------------------------------------------------------------
 
+function printUsage() {
+  process.stdout.write(
+    [
+      "Usage:",
+      '  New mission: node orchestrator/orchestrate-v1.mjs "TASK"',
+      "  Resume:      node orchestrator/orchestrate-v1.mjs --resume RUN_ID",
+      "  Help:        node orchestrator/orchestrate-v1.mjs --help",
+    ].join("\n") + "\n",
+  );
+}
+
 function parseArgs(argv) {
   const args = {
     task: null,
     resume: null,
+    help: false,
     bothreadSession:
       POLICY.bothread.sessionId ?? process.env.BOTHREAD_SESSION_ID ?? null,
   };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--resume") args.resume = argv[++i];
+    if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
+    else if (argv[i] === "--resume") args.resume = argv[++i];
     else if (argv[i] === "--bothread-session") args.bothreadSession = argv[++i];
     else rest.push(argv[i]);
   }
@@ -1109,6 +1143,10 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    printUsage();
+    return;
+  }
 
   let run;
   if (args.resume) {
@@ -1121,11 +1159,19 @@ async function main() {
       await printFinalReport(run);
       return;
     }
+    if (hasAmbiguousClaudeMutation(run)) {
+      fail(
+        run,
+        new Error(
+          "Recuperación ambigua: el proceso se interrumpió después de iniciar una modificación de Claude. Revisa el árbol de trabajo y el run JSON con Dani; el orquestador no repetirá esa modificación automáticamente.",
+        ),
+      );
+      await printFinalReport(run);
+      return;
+    }
   } else {
     if (!args.task) {
-      process.stderr.write(
-        'Uso: node orchestrator/orchestrate-v1.mjs "descripción de la tarea" [--bothread-session <id>]\n       node orchestrator/orchestrate-v1.mjs --resume <runId>\n',
-      );
+      printUsage();
       process.exit(2);
     }
     const baseline = await captureCleanBaseline();

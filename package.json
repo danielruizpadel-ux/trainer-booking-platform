@@ -10,7 +10,12 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "company": "node orchestrator/company.mjs mission",
+    "company:start": "node orchestrator/company.mjs start",
+    "company:doctor": "node orchestrator/company.mjs doctor",
+    "company:status": "node orchestrator/company.mjs status",
+    "company:resume": "node orchestrator/company.mjs resume"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
