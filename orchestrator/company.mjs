@@ -203,6 +203,10 @@ function printDoctor(data) {
   process.stdout.write(
     `Bothread reachable     ${icon(data.bothread.ok)}${data.bothread.ok ? "" : " (check http://127.0.0.1:4889/mcp manually; no startup command is assumed)"}\n`,
   );
+  const latestRun = data.runs.runs[0];
+  process.stdout.write(
+    `Latest Bothread room   ${latestRun?.bothreadRoomId || latestRun?.bothreadSessionId ? "present" : "none"}\n`,
+  );
   process.stdout.write(`Run storage            ${icon(data.storage)}\n`);
   const worktreeLabel =
     data.worktree.ok && data.worktree.changes.length === 0 ? "✓" : "warning";
@@ -236,6 +240,7 @@ function printStatus(runRecord) {
       `Review iteration:       ${runRecord.reviewIteration ?? 0}`,
       `Claude session:         ${runRecord.claudeSessionId ? "present" : "none"}`,
       `Codex thread:           ${runRecord.codexThreadId ? "present" : "none"}`,
+      `Bothread room:          ${runRecord.bothreadRoomId ? "present" : "none"}`,
       `Bothread session:       ${runRecord.bothreadSessionId ? "present" : "none"}`,
       `Last error:             ${runRecord.lastError ?? "none"}`,
       `Terminal:               ${TERMINAL_STATES.has(runRecord.status) ? "yes" : "no"}`,

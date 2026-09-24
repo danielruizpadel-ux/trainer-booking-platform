@@ -30,11 +30,11 @@ second task. Dani receives the final report and decides the next action.
 - A clean working tree before starting. The only allowed pre-existing
   untracked path is `.bothread/`; this is needed so work from a prior person or
   agent cannot be mistaken for the current run.
-- Optionally, a Bothread session ID in `BOTHREAD_SESSION_ID` or passed with
-  `--bothread-session`. The controller uses the local Bothread MCP HTTP
-  endpoint configured in `orchestrator/policy.json` and only sends redacted
-  status/audit messages. Bothread failure is recorded but cannot advance a
-  workflow state.
+- Bothread running locally at the configured endpoint. Development missions
+  create their own room automatically through the local Bothread API, persist
+  its room/session identifiers in the run record, and use its MCP endpoint for
+  coordination. Bothread setup and relay failures fail the mission safely;
+  Bothread never decides workflow transitions.
 
 No credential values belong in `policy.json`, a run record, a prompt, or a
 Bothread message.
@@ -117,11 +117,18 @@ approval or an automatic claim that a change introduced every reported error.
 
 ## Bothread protocol
 
-When a session ID is supplied, the controller joins as `Orchestrator V1`, posts
-state updates and analysis/review relays, records the agreed plan as a decision
-note, sends the final report, then leaves. Bothread is an audit and discussion
-bus only: Node owns all state transitions and parses Codex's explicit verdict
-marker.
+Each development mission creates a dedicated local Bothread room before any
+agent runs. The controller persists the opaque room session ID used by
+`join_session` plus the separate API room ID; neither is the MCP transport
+session ID. It joins as `Orchestrator V1`, posts the task, relays bounded Codex
+analysis/review/validation output, records decisions and final verification
+notes, then leaves. Claude receives the room session ID in every phase prompt
+and must join/read/post; it claims files before edits and releases them after.
+
+Bothread is required coordination infrastructure in development mode, so a
+creation, join, or relay failure fails the run rather than silently continuing.
+Node owns all state transitions and parses Codex's explicit verdict marker;
+Git and the persisted run JSON remain the recovery source of truth.
 
 The required review markers are:
 
@@ -136,6 +143,8 @@ fails safely instead of guessing the verdict.
 ## Recovery and stop conditions
 
 - Resume a non-terminal run using its run ID after an interruption.
+- On resume, V1 reinitializes its MCP transport and rejoins the persisted
+  Bothread room. It never creates a second room for the same run.
 - Before each Claude mutation step, V1 atomically persists a marker. If the
   machine stops after that marker but before Claude's result is recorded, the
   working tree may already have been modified. Recovery is then ambiguous: V1

@@ -95,7 +95,7 @@ function redact(text) {
 // Estado del run — un único JSON por ejecución, escritura atómica
 // ---------------------------------------------------------------------------
 
-function newRun(task, bothreadSessionId, baseline) {
+function newRun(task, baseline) {
   const runId = `run_${Date.now()}_${randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
   return {
@@ -104,7 +104,8 @@ function newRun(task, bothreadSessionId, baseline) {
     status: "RECEIVED",
     createdAt: now,
     updatedAt: now,
-    bothreadSessionId: bothreadSessionId ?? null,
+    bothreadRoomId: null,
+    bothreadSessionId: null,
     claudeSessionId: null,
     codexThreadId: null,
     reviewIteration: 0,
@@ -487,6 +488,10 @@ class BothreadClient {
     this.joined = true;
   }
 
+  async getRoomState(sessionId) {
+    return this.callTool("get_room_state", { sessionId });
+  }
+
   async sendMessage(sessionId, text, importance = "info") {
     if (!this.joined) return;
     await this.callTool("send_message", {
@@ -516,32 +521,95 @@ class BothreadClient {
   }
 }
 
+function bothreadClient(run) {
+  if (!run._bothread) {
+    Object.defineProperty(run, "_bothread", {
+      value: new BothreadClient(POLICY.bothread.url),
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return run._bothread;
+}
+
+async function createBothreadRoom(run) {
+  const res = await fetch(`${POLICY.bothread.apiUrl}/rooms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: `${path.basename(REPO_ROOT)} — ${run.runId}`,
+      projectPath: REPO_ROOT,
+      settings: {},
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await res.text();
+  if (!res.ok)
+    throw new Error(
+      `Bothread no pudo crear la sala (HTTP ${res.status}): ${body.slice(0, 500)}`,
+    );
+  const created = JSON.parse(body);
+  if (!created?.room?.id || !created?.sessionId)
+    throw new Error("Bothread devolvió una sala sin room.id o sessionId");
+  run.bothreadRoomId = created.room.id;
+  run.bothreadSessionId = created.sessionId;
+  recordStep(run, "bothread_room_created", { roomId: created.room.id });
+}
+
+async function prepareBothreadWorkspace(run, { createRoom = false } = {}) {
+  if (!POLICY.bothread.requiredForDevelopment) return;
+  if (!run.bothreadSessionId) {
+    if (!createRoom)
+      throw new Error(
+        "El run no tiene una sala Bothread persistida; no se creará una segunda sala durante la recuperación.",
+      );
+    await createBothreadRoom(run);
+  }
+  const client = bothreadClient(run);
+  if (!client.joined) {
+    await client.join(run.bothreadSessionId);
+    await client.getRoomState(run.bothreadSessionId);
+    recordStep(run, "bothread_joined", { roomId: run.bothreadRoomId ?? null });
+  }
+}
+
+async function startBothreadWorkspace(run) {
+  await prepareBothreadWorkspace(run, { createRoom: true });
+  const client = bothreadClient(run);
+  await client.sendMessage(
+    run.bothreadSessionId,
+    `Orchestrator: misión iniciada para ${run.runId}.\n\nTarea de Dani:\n${redact(run.task).slice(0, 6000)}`,
+    "steering",
+  );
+  await client.recordNote(
+    run.bothreadSessionId,
+    "decision",
+    `Misión iniciada: ${run.runId}`,
+    redact(run.task).slice(0, 3900),
+  );
+  recordStep(run, "bothread_mission_started", { roomId: run.bothreadRoomId });
+}
+
 async function bothreadNotify(run, text, { importance = "info", note } = {}) {
-  if (!run.bothreadSessionId) return;
+  if (!run.bothreadSessionId)
+    throw new Error(
+      "Bothread es obligatorio para desarrollo, pero este run no tiene una sala configurada.",
+    );
   try {
-    // No enumerable: así JSON.stringify(run) nunca lo serializa (el run.json
-    // no debe llevar el objeto cliente) y, si el run viene de loadRun() (un
-    // JSON plano), aquí siempre estará ausente de verdad -> se recrea el
-    // cliente real en vez de reusar un objeto sin métodos.
-    if (!run._bothread) {
-      Object.defineProperty(run, "_bothread", {
-        value: new BothreadClient(POLICY.bothread.url),
-        enumerable: false,
-        configurable: true,
-      });
-    }
-    if (!run._bothread.joined) await run._bothread.join(run.bothreadSessionId);
-    await run._bothread.sendMessage(run.bothreadSessionId, text, importance);
+    await prepareBothreadWorkspace(run);
+    const client = bothreadClient(run);
+    await client.sendMessage(run.bothreadSessionId, text, importance);
     if (note)
-      await run._bothread.recordNote(
+      await client.recordNote(
         run.bothreadSessionId,
         note.kind,
         note.title,
         note.detail,
       );
   } catch (e) {
-    log(`[bothread] best-effort fallo (no bloquea el run): ${e.message}`);
+    log(`[bothread] fallo obligatorio: ${e.message}`);
     recordStep(run, "bothread_warning", { message: redact(e.message) });
+    throw e;
   }
 }
 
@@ -599,16 +667,24 @@ function parseVerdict(text) {
 const SECRET_WARNING =
   "Nunca imprimas, repitas ni incluyas en tu respuesta el contenido de .env.local ni ningún valor de API key, token o credencial.";
 
-function claudeAnalysisPrompt(task) {
+function claudeBothreadInstructions(sessionId, phase) {
+  return [
+    `Bothread es obligatorio en esta misión. Sala: ${sessionId}. Tu rol en esta fase: ${phase}.`,
+    "Usa las herramientas MCP mcp__bothread__ para unirte con join_session, llama get_room_state antes de actuar y publica un mensaje útil con send_message.",
+  ];
+}
+
+function claudeAnalysisPrompt(task, bothreadSessionId) {
   return [
     "Eres un participante de un flujo automatizado de dos agentes (Claude + Codex) orquestado por un script Node, trabajando sobre el repositorio en el directorio actual.",
     "Este es un paso de ANÁLISIS INDEPENDIENTE y de solo lectura — no tienes herramientas de escritura en este turno (no puedes editar nada).",
     "",
     `Tarea encargada por Dani (dueño del proyecto): "${task}"`,
     "",
+    ...claudeBothreadInstructions(bothreadSessionId, "análisis independiente"),
     "Lee lo que necesites (CLAUDE.md, docs/, código relevante) para entender la tarea en el contexto real de este proyecto concreto.",
     "Escribe un análisis técnico conciso: qué hay que cambiar, por qué, qué archivos probablemente estén implicados, riesgos, y cualquier cosa ambigua que debería decidir un humano.",
-    "Si tienes disponible alguna herramienta MCP cuyo nombre empiece por mcp__bothread__, puedes (opcional, no obligatorio) usar send_message para avisar en la sala que estás empezando el análisis.",
+    "Debes publicar en Bothread los hallazgos y riesgos útiles de tu análisis.",
     "",
     "No implementes nada. No ejecutes comandos destructivos. Esto es solo análisis.",
     SECRET_WARNING,
@@ -629,30 +705,38 @@ function codexAnalysisPrompt(task) {
   ].join("\n");
 }
 
-function synthesisPrompt(task, claudeAnalysis, codexAnalysis) {
+function synthesisPrompt(
+  task,
+  claudeAnalysis,
+  codexAnalysis,
+  bothreadSessionId,
+) {
   return [
     "Sigues en modo de solo lectura (sin herramientas de escritura). Ahora tienes DOS análisis independientes de la misma tarea: el tuyo propio y el de Codex, un agente distinto que la analizó sin ver el tuyo.",
     "",
     `Tarea original: "${task}"`,
     "",
+    ...claudeBothreadInstructions(bothreadSessionId, "síntesis y plan"),
     "--- Tu análisis (Claude) ---",
     claudeAnalysis,
     "",
     "--- Análisis de Codex ---",
     codexAnalysis,
     "",
-    'Produce una SÍNTESIS técnica: en qué coincidís, en qué discrepáis (si acaso), y UN plan de implementación concreto y acordado — el que se va a implementar literalmente a continuación, así que sé específico sobre archivos y cambios. Si hay una decisión de arquitectura relevante aquí, y tienes disponible una herramienta MCP mcp__bothread__record_note, puedes (opcional) registrarla como "decision".',
+    "Produce una SÍNTESIS técnica: en qué coincidís, en qué discrepáis (si acaso), y UN plan de implementación concreto y acordado — el que se va a implementar literalmente a continuación, así que sé específico sobre archivos y cambios. Publica el plan en Bothread y registra una decisión relevante con record_note.",
     SECRET_WARNING,
   ].join("\n");
 }
 
-function implementationPrompt(task, plan) {
+function implementationPrompt(task, plan, bothreadSessionId) {
   return [
     "Ahora SÍ tienes herramientas de escritura (Read, Edit, Write, Grep, Glob) pero NO tienes Bash: no puedes ejecutar git, npm, ni ningún comando de shell bajo ningún concepto en este turno — es una restricción técnica del proceso, no una petición.",
     "Por eso NUNCA vas a poder hacer git commit, git push, una migración ni ninguna acción destructiva: literalmente no tienes la herramienta para intentarlo.",
     "",
     `Tarea original: "${task}"`,
     "",
+    ...claudeBothreadInstructions(bothreadSessionId, "implementación"),
+    "Antes de editar, reclama con claim_files los archivos concretos que vayas a cambiar. Al terminar, publica el resumen y libera esas reclamaciones con release_files.",
     "--- Plan acordado a implementar ---",
     plan,
     "",
@@ -701,10 +785,15 @@ function verdictFormatReminderPrompt() {
   ].join("\n");
 }
 
-function claudeFixPrompt(codexReviewText) {
+function claudeFixPrompt(codexReviewText, bothreadSessionId) {
   return [
     "Codex ha revisado tu implementación y ha pedido cambios. Sigues sin Bash — solo Read, Edit, Write, Grep, Glob.",
     "",
+    ...claudeBothreadInstructions(
+      bothreadSessionId,
+      "corrección solicitada por Codex",
+    ),
+    "Lee en Bothread el feedback relayed de Codex. Antes de editar reclama los archivos afectados con claim_files; publica el resumen y libera las reclamaciones con release_files al terminar.",
     "--- Revisión de Codex (texto exacto) ---",
     codexReviewText,
     "",
@@ -724,9 +813,12 @@ async function stepClaudeAnalysis(run) {
     run,
     `Orchestrator: empezando análisis independiente — "${run.task}"`,
   );
-  const res = await callClaude(claudeAnalysisPrompt(run.task), {
-    tools: POLICY.claude.analysisTools,
-  });
+  const res = await callClaude(
+    claudeAnalysisPrompt(run.task, run.bothreadSessionId),
+    {
+      tools: POLICY.claude.analysisTools,
+    },
+  );
   recordStep(run, "claude_analysis", {
     ok: res.ok,
     text: res.text,
@@ -753,14 +845,16 @@ async function stepCodexAnalysis(run) {
     error: res.error,
   });
   if (!res.ok) return fail(run, res.error);
-  const claudeText = lastStep(run, "claude_analysis").text;
   await bothreadNotify(
     run,
-    `Orchestrator: análisis de Codex recibido (thread ${res.threadId}). Relay del texto completo abajo.\n\n--- Análisis de Codex ---\n${res.text}`,
-  );
-  await bothreadNotify(
-    run,
-    `--- Análisis de Claude (para referencia) ---\n${claudeText}`,
+    `Orchestrator: análisis de Codex recibido (thread ${res.threadId}).\n\n--- Análisis de Codex (resumen acotado) ---\n${res.text.slice(0, 6000)}`,
+    {
+      note: {
+        kind: "decision",
+        title: `Análisis de Codex: ${run.runId}`,
+        detail: res.text.slice(0, 3900),
+      },
+    },
   );
   transition(run, "SYNTHESIS", "análisis de Codex recibido y relayado");
 }
@@ -769,7 +863,7 @@ async function stepSynthesis(run) {
   const claudeText = lastStep(run, "claude_analysis").text;
   const codexText = lastStep(run, "codex_analysis").text;
   const res = await callClaude(
-    synthesisPrompt(run.task, claudeText, codexText),
+    synthesisPrompt(run.task, claudeText, codexText, run.bothreadSessionId),
     { tools: POLICY.claude.analysisTools },
   );
   recordStep(run, "synthesis", {
@@ -783,7 +877,7 @@ async function stepSynthesis(run) {
   if (!res.ok) return fail(run, res.error);
   await bothreadNotify(
     run,
-    `Orchestrator: síntesis/plan acordado —\n\n${res.text}`,
+    `Orchestrator: síntesis/plan acordado —\n\n${res.text.slice(0, 6000)}`,
     {
       note: {
         kind: "decision",
@@ -805,10 +899,13 @@ async function stepImplementation(run) {
     run,
     "Orchestrator: implementando el plan acordado (Claude, sin Bash, sin git commit/push posible).",
   );
-  const res = await callClaude(implementationPrompt(run.task, plan), {
-    tools: POLICY.claude.implementationTools,
-    permissionMode: "acceptEdits",
-  });
+  const res = await callClaude(
+    implementationPrompt(run.task, plan, run.bothreadSessionId),
+    {
+      tools: POLICY.claude.implementationTools,
+      permissionMode: "acceptEdits",
+    },
+  );
   recordStep(run, "implementation", {
     ok: res.ok,
     text: res.text,
@@ -828,6 +925,17 @@ async function stepImplementation(run) {
     status: redact(status),
     validation,
   });
+  await bothreadNotify(
+    run,
+    `Orchestrator: validación tras implementación.\n\n${validationSummaryText(validation).slice(0, 6000)}`,
+    {
+      note: {
+        kind: "verification",
+        title: `Validación tras implementación: ${run.runId}`,
+        detail: validationSummaryText(validation).slice(0, 3900),
+      },
+    },
+  );
 
   const changedSinceStart =
     diff !== run.baseline.diff || status !== run.baseline.status;
@@ -850,6 +958,23 @@ function validationSummaryText(validation) {
         `${k}: ${v.passed ? "PASSED" : `FAILED (exit ${v.exitCode})`}\n${v.output.slice(-1500)}`,
     )
     .join("\n\n");
+}
+
+async function publishWaitingForDani(run) {
+  const review = lastStep(run, "codex_review");
+  const check = lastStep(run, "post_implementation_check", "claude_fix_check");
+  await bothreadNotify(
+    run,
+    `Orchestrator: estado final WAITING_FOR_DANI; revisión ${run.reviewIteration}; veredicto ${review.verdict}. Dani debe aprobar cualquier siguiente acción.\n\nCambios:\n${check.status.slice(0, 1200) || "(sin cambios)"}\n\nValidación:\n${validationSummaryText(check.validation).slice(0, 1400)}`,
+    {
+      importance: "steering",
+      note: {
+        kind: "verification",
+        title: "Run finalizado: WAITING_FOR_DANI",
+        detail: `Revisión: ${run.reviewIteration}. Veredicto Codex: ${review.verdict}. Dani debe aprobar cualquier siguiente acción.\n\nCambios:\n${check.status.slice(0, 1200) || "(sin cambios)"}`,
+      },
+    },
+  );
 }
 
 async function stepCodexReview(run) {
@@ -928,10 +1053,21 @@ async function stepCodexReview(run) {
 
   await bothreadNotify(
     run,
-    `Orchestrator: revisión de Codex #${run.reviewIteration} — veredicto ${verdict}.\n\n${res.text}`,
+    `Orchestrator: revisión de Codex #${run.reviewIteration} — veredicto ${verdict}.\n\n${res.text.slice(0, 6000)}`,
+    {
+      note: {
+        kind: verdict === "ACCEPTED" ? "verification" : "issue",
+        title: `Revisión Codex #${run.reviewIteration}: ${verdict}`,
+        detail: res.text.slice(0, 3900),
+      },
+    },
   );
 
   if (verdict === "ACCEPTED") {
+    // Bothread is required in development mode. Publish the final workspace
+    // record before making the human-handoff state durable, so an unavailable
+    // workspace cannot leave a run apparently ready for Dani.
+    await publishWaitingForDani(run);
     return transition(
       run,
       "WAITING_FOR_DANI",
@@ -948,11 +1084,14 @@ async function stepCodexReview(run) {
 async function stepClaudeFix(run) {
   const review = lastStep(run, "codex_review");
   recordStep(run, "claude_mutation_started", { phase: "claude_fix" });
-  const res = await callClaude(claudeFixPrompt(review.text), {
-    tools: POLICY.claude.implementationTools,
-    resumeSessionId: run.claudeSessionId,
-    permissionMode: "acceptEdits",
-  });
+  const res = await callClaude(
+    claudeFixPrompt(review.text, run.bothreadSessionId),
+    {
+      tools: POLICY.claude.implementationTools,
+      resumeSessionId: run.claudeSessionId,
+      permissionMode: "acceptEdits",
+    },
+  );
   recordStep(run, "claude_fix", {
     iteration: run.reviewIteration,
     ok: res.ok,
@@ -973,10 +1112,14 @@ async function stepClaudeFix(run) {
     status: redact(status),
     validation,
   });
+  await bothreadNotify(
+    run,
+    `Orchestrator: validación tras fix #${run.reviewIteration}.\n\n${validationSummaryText(validation).slice(0, 6000)}`,
+  );
 
   await bothreadNotify(
     run,
-    `Orchestrator: fix #${run.reviewIteration} aplicado por Claude —\n\n${res.text}`,
+    `Orchestrator: fix #${run.reviewIteration} aplicado por Claude —\n\n${res.text.slice(0, 6000)}`,
   );
   transition(
     run,
@@ -1043,8 +1186,7 @@ async function runOrchestration(run) {
     }
   }
   await printFinalReport(run);
-  if (run._bothread)
-    await run._bothread.leave(run.bothreadSessionId).catch(() => {});
+  if (run._bothread) await run._bothread.leave(run.bothreadSessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1071,6 +1213,7 @@ async function printFinalReport(run) {
     `Estado final: ${run.status}`,
     `Rondas de revisión usadas: ${run.reviewIteration} de ${POLICY.maxReviewIterations}`,
     `Veredicto de Codex: ${lastReview?.verdict ?? "n/a"}`,
+    `Sala Bothread: ${run.bothreadRoomId ?? "n/a"}`,
     "",
     "--- git status --short ---",
     status || "(sin cambios)",
@@ -1105,11 +1248,17 @@ async function printFinalReport(run) {
   ];
   const report = lines.filter((l) => l !== "").join("\n");
   process.stdout.write(report + "\n");
+  if (run.status === "WAITING_FOR_DANI") return;
   await bothreadNotify(
     run,
-    `Orchestrator: run ${run.runId} terminado en estado ${run.status}.\n\n${report.slice(0, 3000)}`,
+    `Orchestrator: run ${run.runId} terminado en estado ${run.status}; revisión ${run.reviewIteration}; veredicto ${lastReview?.verdict ?? "n/a"}. Dani debe aprobar cualquier siguiente acción.\n\nCambios:\n${status.slice(0, 1200) || "(sin cambios)"}\n\nValidación:\n${JSON.stringify(fixes.at(-1)?.validation ?? run.history.find((h) => h.kind === "post_implementation_check")?.validation ?? {}).slice(0, 1400)}`,
     {
       importance: run.status === "WAITING_FOR_DANI" ? "steering" : "interrupt",
+      note: {
+        kind: run.status === "WAITING_FOR_DANI" ? "verification" : "issue",
+        title: `Run finalizado: ${run.status}`,
+        detail: `Revisión: ${run.reviewIteration}. Veredicto Codex: ${lastReview?.verdict ?? "n/a"}. Dani debe aprobar cualquier siguiente acción.\n\nCambios:\n${status.slice(0, 1200) || "(sin cambios)"}`,
+      },
     },
   );
 }
@@ -1134,14 +1283,11 @@ function parseArgs(argv) {
     task: null,
     resume: null,
     help: false,
-    bothreadSession:
-      POLICY.bothread.sessionId ?? process.env.BOTHREAD_SESSION_ID ?? null,
   };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else if (argv[i] === "--resume") args.resume = argv[++i];
-    else if (argv[i] === "--bothread-session") args.bothreadSession = argv[++i];
     else rest.push(argv[i]);
   }
   args.task = rest.join(" ").trim() || null;
@@ -1156,6 +1302,7 @@ async function main() {
   }
 
   let run;
+  let isNewRun = false;
   if (args.resume) {
     run = loadRun(args.resume);
     log(`Reanudando ${run.runId} desde estado ${run.status}`);
@@ -1182,16 +1329,28 @@ async function main() {
       process.exit(2);
     }
     const baseline = await captureCleanBaseline();
-    run = newRun(args.task, args.bothreadSession, baseline);
+    run = newRun(args.task, baseline);
     saveRun(run);
     log(`Run nuevo: ${run.runId}`);
+    isNewRun = true;
   }
 
   acquireWorktreeLock(run.runId);
   try {
+    if (isNewRun) await startBothreadWorkspace(run);
+    else await prepareBothreadWorkspace(run);
     await runOrchestration(run);
-    process.exitCode = run.status === "FAILED" ? 1 : 0;
+  } catch (e) {
+    if (!TERMINAL_STATES.has(run.status)) fail(run, e);
+    try {
+      await printFinalReport(run);
+    } catch (reportError) {
+      log(
+        `[bothread] no se pudo publicar el informe final: ${reportError.message}`,
+      );
+    }
   } finally {
+    process.exitCode = run.status === "FAILED" ? 1 : 0;
     releaseWorktreeLock();
   }
 }

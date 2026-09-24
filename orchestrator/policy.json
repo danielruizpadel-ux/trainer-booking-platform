@@ -15,9 +15,10 @@
   },
   "bothread": {
     "url": "http://127.0.0.1:4889/mcp",
+    "apiUrl": "http://127.0.0.1:4889/api",
+    "requiredForDevelopment": true,
     "agentName": "Orchestrator V1",
-    "brand": "orchestrator",
-    "sessionId": null
+    "brand": "orchestrator"
   },
   "worktree": {
     "lockFile": "orchestrator/runs/.active.lock",
