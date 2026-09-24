@@ -5,7 +5,7 @@ import { findBookableWindow, loadOpenWindows } from '@/lib/availability/booking'
 import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { isClassDuration } from '@/lib/availability/durations'
 import { addMinutes } from '@/lib/availability/windows'
-import { refreshWindowStatus } from '@/lib/reservations/slots'
+import { OVERLAP_MESSAGE, isOverlapError, refreshWindowStatus } from '@/lib/reservations/slots'
 
 interface Session {
   date: string
@@ -166,6 +166,13 @@ export async function POST(request: Request) {
       .from('reservations')
       .insert(reservationsToInsert)
       .select('id')
+
+    // Otra petición se quedó la franja entre la comprobación de arriba y este
+    // insert: lo rechaza la restricción de la 008. El insert es uno solo, así
+    // que no se ha creado ninguna de las sesiones.
+    if (isOverlapError(insertError)) {
+      return Response.json({ success: false, error: OVERLAP_MESSAGE }, { status: 409 })
+    }
 
     if (insertError || !reservations) {
       console.error('❌ Error creating reservations:', insertError)

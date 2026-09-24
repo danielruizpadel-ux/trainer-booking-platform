@@ -3,7 +3,7 @@ import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { RESERVATION_STATUS } from './status'
 import { calculateBookingPrice } from './pricing'
 import { parseDetails, type ReservationDetailsInput } from './edit'
-import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
 
 /**
  * Reserva creada a mano por el entrenador (Parte 4).
@@ -63,6 +63,7 @@ export async function createManualReservation(trainerId: string, input: ManualRe
     })
     .select('id')
     .single()
+  if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
   if (error || !data) return { ok: false, status: 500, message: error?.message ?? 'No se pudo crear la reserva' }
 
   await refreshWindowStatus(supabase, slotId, offered)
