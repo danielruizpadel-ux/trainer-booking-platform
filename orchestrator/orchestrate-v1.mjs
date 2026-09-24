@@ -32,7 +32,7 @@ const ALLOWED_TRANSITIONS = {
   RECEIVED: ["CLAUDE_ANALYSIS", "FAILED"],
   CLAUDE_ANALYSIS: ["CODEX_ANALYSIS", "FAILED"],
   CODEX_ANALYSIS: ["SYNTHESIS", "FAILED"],
-  SYNTHESIS: ["IMPLEMENTATION", "FAILED"],
+  SYNTHESIS: ["IMPLEMENTATION", "WAITING_FOR_DANI", "FAILED"],
   IMPLEMENTATION: ["CODEX_REVIEW", "FAILED"],
   CODEX_REVIEW: [
     "WAITING_FOR_DANI",
@@ -95,17 +95,54 @@ function redact(text) {
 // Estado del run — un único JSON por ejecución, escritura atómica
 // ---------------------------------------------------------------------------
 
-function newRun(task, baseline) {
+const MISSION_MODES = new Set(["IMPLEMENTATION", "READ_ONLY_AUDIT"]);
+
+export function normalizeMissionMode(mode) {
+  return MISSION_MODES.has(mode) ? mode : "IMPLEMENTATION";
+}
+
+export function nextStateAfterSynthesis(mode) {
+  return normalizeMissionMode(mode) === "READ_ONLY_AUDIT"
+    ? "WAITING_FOR_DANI"
+    : "IMPLEMENTATION";
+}
+
+export function phasePlanForMode(mode) {
+  const shared = ["RECEIVED", "CLAUDE_ANALYSIS", "CODEX_ANALYSIS", "SYNTHESIS"];
+  return normalizeMissionMode(mode) === "READ_ONLY_AUDIT"
+    ? [...shared, "WAITING_FOR_DANI"]
+    : [
+        ...shared,
+        "IMPLEMENTATION",
+        "CODEX_REVIEW",
+        "CLAUDE_FIX",
+        "WAITING_FOR_DANI",
+      ];
+}
+
+function newBothreadState() {
+  return {
+    roomCreated: false,
+    orchestratorJoined: false,
+    claude: { joinAttempted: false, joined: false, messagePublished: false },
+    codex: { joinAttempted: false, joined: false, messagePublished: false },
+    integration: "PENDING",
+    degradedReason: null,
+  };
+}
+
+function newRun(task, mode, baseline) {
   const runId = `run_${Date.now()}_${randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
   return {
     runId,
     task,
+    mode: normalizeMissionMode(mode),
     status: "RECEIVED",
     createdAt: now,
     updatedAt: now,
     bothreadRoomId: null,
-    bothreadSessionId: null,
+    bothread: newBothreadState(),
     claudeSessionId: null,
     codexThreadId: null,
     reviewIteration: 0,
@@ -200,7 +237,20 @@ function saveRun(run) {
   fs.mkdirSync(RUNS_DIR, { recursive: true });
   const target = runPath(run.runId);
   const tmp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(run, null, 2));
+  const roomSessionId = run._bothreadSessionId;
+  fs.writeFileSync(
+    tmp,
+    JSON.stringify(
+      run,
+      (key, value) => {
+        if (key === "bothreadSessionId") return undefined;
+        if (typeof value === "string" && roomSessionId)
+          return value.split(roomSessionId).join("[REDACTED]");
+        return value;
+      },
+      2,
+    ),
+  );
   fs.renameSync(tmp, target); // rename es atómico en el mismo filesystem
 }
 
@@ -422,8 +472,8 @@ async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
 
 // ---------------------------------------------------------------------------
 // Cliente Bothread mínimo — JSON-RPC crudo sobre HTTP, sin SDK de MCP.
-// Best-effort: un fallo aquí se registra y NUNCA bloquea el flujo principal
-// (Bothread es el bus de auditoría, no el motor de la tarea).
+// La coordinación es obligatoria para una misión de desarrollo, pero Node sigue
+// siendo la única autoridad de transiciones.
 // ---------------------------------------------------------------------------
 
 class BothreadClient {
@@ -552,13 +602,99 @@ async function createBothreadRoom(run) {
   if (!created?.room?.id || !created?.sessionId)
     throw new Error("Bothread devolvió una sala sin room.id o sessionId");
   run.bothreadRoomId = created.room.id;
-  run.bothreadSessionId = created.sessionId;
+  Object.defineProperty(run, "_bothreadSessionId", {
+    value: created.sessionId,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+  run.bothread ??= newBothreadState();
+  run.bothread.roomCreated = true;
   recordStep(run, "bothread_room_created", { roomId: created.room.id });
+}
+
+async function bothreadRoomSnapshot(run) {
+  if (!run.bothreadRoomId)
+    throw new Error("El run no tiene una sala Bothread persistida.");
+  const res = await fetch(
+    `${POLICY.bothread.apiUrl}/rooms/${run.bothreadRoomId}`,
+    {
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Bothread no pudo leer la sala (HTTP ${res.status}).`);
+  const body = await res.json();
+  if (!body?.sessionId)
+    throw new Error("Bothread devolvió una sala sin sessionId.");
+  Object.defineProperty(run, "_bothreadSessionId", {
+    value: body.sessionId,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+  return body;
+}
+
+async function bothreadSessionId(run) {
+  if (!run._bothreadSessionId) await bothreadRoomSnapshot(run);
+  return run._bothreadSessionId;
+}
+
+export function assessAgentParticipation(snapshot, agentName) {
+  const participants = snapshot?.participants ?? [];
+  const thread = snapshot?.snapshot?.thread ?? snapshot?.thread ?? [];
+  return {
+    joined: participants.some((participant) => participant.name === agentName),
+    messagePublished: thread.some((message) => message.author === agentName),
+  };
+}
+
+async function recordAgentBothreadParticipation(run, agent, agentName) {
+  try {
+    const snapshot = await bothreadRoomSnapshot(run);
+    const participation = assessAgentParticipation(snapshot, agentName);
+    Object.assign(run.bothread[agent], participation);
+    if (!participation.joined || !participation.messagePublished) {
+      run.bothread.integration = "DEGRADED";
+      run.bothread.degradedReason = `${agentName} no confirmó join y publicación en Bothread.`;
+    } else if (
+      run.bothread.claude.joined &&
+      run.bothread.claude.messagePublished &&
+      run.bothread.codex.joined &&
+      run.bothread.codex.messagePublished
+    ) {
+      run.bothread.integration = "HEALTHY";
+      run.bothread.degradedReason = null;
+    }
+    recordStep(run, "bothread_agent_participation", {
+      agent,
+      joined: participation.joined,
+      messagePublished: participation.messagePublished,
+      integration: run.bothread.integration,
+    });
+  } catch (error) {
+    run.bothread.integration = "DEGRADED";
+    run.bothread.degradedReason = redact(error.message).slice(0, 300);
+    recordStep(run, "bothread_agent_participation", {
+      agent,
+      joined: false,
+      messagePublished: false,
+      integration: "DEGRADED",
+      reason: run.bothread.degradedReason,
+    });
+  }
+}
+
+function markAgentBothreadAttempt(run, agent) {
+  run.bothread ??= newBothreadState();
+  run.bothread[agent].joinAttempted = true;
+  recordStep(run, "bothread_agent_join_attempted", { agent });
 }
 
 async function prepareBothreadWorkspace(run, { createRoom = false } = {}) {
   if (!POLICY.bothread.requiredForDevelopment) return;
-  if (!run.bothreadSessionId) {
+  if (!run.bothreadRoomId) {
     if (!createRoom)
       throw new Error(
         "El run no tiene una sala Bothread persistida; no se creará una segunda sala durante la recuperación.",
@@ -567,8 +703,11 @@ async function prepareBothreadWorkspace(run, { createRoom = false } = {}) {
   }
   const client = bothreadClient(run);
   if (!client.joined) {
-    await client.join(run.bothreadSessionId);
-    await client.getRoomState(run.bothreadSessionId);
+    const sessionId = await bothreadSessionId(run);
+    await client.join(sessionId);
+    await client.getRoomState(sessionId);
+    run.bothread ??= newBothreadState();
+    run.bothread.orchestratorJoined = true;
     recordStep(run, "bothread_joined", { roomId: run.bothreadRoomId ?? null });
   }
 }
@@ -576,13 +715,14 @@ async function prepareBothreadWorkspace(run, { createRoom = false } = {}) {
 async function startBothreadWorkspace(run) {
   await prepareBothreadWorkspace(run, { createRoom: true });
   const client = bothreadClient(run);
+  const sessionId = await bothreadSessionId(run);
   await client.sendMessage(
-    run.bothreadSessionId,
+    sessionId,
     `Orchestrator: misión iniciada para ${run.runId}.\n\nTarea de Dani:\n${redact(run.task).slice(0, 6000)}`,
     "steering",
   );
   await client.recordNote(
-    run.bothreadSessionId,
+    sessionId,
     "decision",
     `Misión iniciada: ${run.runId}`,
     redact(run.task).slice(0, 3900),
@@ -591,21 +731,17 @@ async function startBothreadWorkspace(run) {
 }
 
 async function bothreadNotify(run, text, { importance = "info", note } = {}) {
-  if (!run.bothreadSessionId)
+  if (!run.bothreadRoomId)
     throw new Error(
       "Bothread es obligatorio para desarrollo, pero este run no tiene una sala configurada.",
     );
   try {
     await prepareBothreadWorkspace(run);
     const client = bothreadClient(run);
-    await client.sendMessage(run.bothreadSessionId, text, importance);
+    const sessionId = await bothreadSessionId(run);
+    await client.sendMessage(sessionId, text, importance);
     if (note)
-      await client.recordNote(
-        run.bothreadSessionId,
-        note.kind,
-        note.title,
-        note.detail,
-      );
+      await client.recordNote(sessionId, note.kind, note.title, note.detail);
   } catch (e) {
     log(`[bothread] fallo obligatorio: ${e.message}`);
     recordStep(run, "bothread_warning", { message: redact(e.message) });
@@ -627,6 +763,66 @@ async function gitStatusShort() {
 async function gitDiff() {
   const r = await runProcess("git", ["diff"], { timeoutMs: 30000 });
   return r.stdout;
+}
+
+async function gitChangedPaths() {
+  const r = await runProcess("git", ["diff", "--name-only"], {
+    timeoutMs: 30000,
+  });
+  return r.stdout.split("\n").filter(Boolean);
+}
+
+function statusPath(line) {
+  return line.slice(3).trim().split(" -> ").at(-1);
+}
+
+function isApprovedBothreadRuntimePath(filePath) {
+  return filePath === ".bothread/" || filePath.startsWith(".bothread/");
+}
+
+export function readOnlyWorktreeChanges(baseline, status, diff, diffPaths) {
+  const baselineStatus = new Set(
+    (baseline.status ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .filter((line) => !isApprovedBothreadRuntimePath(statusPath(line))),
+  );
+  const currentStatus = status
+    .split("\n")
+    .filter(Boolean)
+    .filter((line) => !isApprovedBothreadRuntimePath(statusPath(line)));
+  const changedStatus = currentStatus.filter(
+    (line) => !baselineStatus.has(line),
+  );
+  const changedDiff =
+    diff === baseline.diff
+      ? []
+      : diffPaths.filter(
+          (filePath) => !isApprovedBothreadRuntimePath(filePath),
+        );
+  return [...new Set([...changedStatus.map(statusPath), ...changedDiff])];
+}
+
+async function enforceReadOnlyBaseline(run, phase) {
+  if (run.mode !== "READ_ONLY_AUDIT") return;
+  const status = await gitStatusShort();
+  const diff = await gitDiff();
+  const changedPaths = readOnlyWorktreeChanges(
+    run.baseline,
+    status,
+    diff,
+    await gitChangedPaths(),
+  );
+  recordStep(run, "read_only_worktree_check", {
+    phase,
+    clean: changedPaths.length === 0,
+    changedPaths,
+  });
+  if (changedPaths.length > 0) {
+    throw new Error(
+      `READ_ONLY_AUDIT detectó cambios no autorizados después de ${phase}: ${changedPaths.join(", ")}. No se revirtió ningún archivo.`,
+    );
+  }
 }
 
 async function runValidation() {
@@ -670,11 +866,11 @@ const SECRET_WARNING =
 function claudeBothreadInstructions(sessionId, phase) {
   return [
     `Bothread es obligatorio en esta misión. Sala: ${sessionId}. Tu rol en esta fase: ${phase}.`,
-    "Usa las herramientas MCP mcp__bothread__ para unirte con join_session, llama get_room_state antes de actuar y publica un mensaje útil con send_message.",
+    'Usa mcp__bothread__join_session con agentName "Claude" y brand "claude", luego mcp__bothread__get_room_state y mcp__bothread__send_message. Tu participación se verifica desde la sala; no afirmes que te uniste si una llamada falló.',
   ];
 }
 
-function claudeAnalysisPrompt(task, bothreadSessionId) {
+function claudeAnalysisPrompt(task, bothreadSessionId, mode) {
   return [
     "Eres un participante de un flujo automatizado de dos agentes (Claude + Codex) orquestado por un script Node, trabajando sobre el repositorio en el directorio actual.",
     "Este es un paso de ANÁLISIS INDEPENDIENTE y de solo lectura — no tienes herramientas de escritura en este turno (no puedes editar nada).",
@@ -682,25 +878,30 @@ function claudeAnalysisPrompt(task, bothreadSessionId) {
     `Tarea encargada por Dani (dueño del proyecto): "${task}"`,
     "",
     ...claudeBothreadInstructions(bothreadSessionId, "análisis independiente"),
-    "Lee lo que necesites (CLAUDE.md, docs/, código relevante) para entender la tarea en el contexto real de este proyecto concreto.",
+    "Inspecciona solo los archivos necesarios para responder a esta tarea; no hagas una inspección de todo el repositorio ni cargues documentación no relacionada.",
     "Escribe un análisis técnico conciso: qué hay que cambiar, por qué, qué archivos probablemente estén implicados, riesgos, y cualquier cosa ambigua que debería decidir un humano.",
     "Debes publicar en Bothread los hallazgos y riesgos útiles de tu análisis.",
     "",
-    "No implementes nada. No ejecutes comandos destructivos. Esto es solo análisis.",
+    mode === "READ_ONLY_AUDIT"
+      ? "Esta es una auditoría formal de solo lectura: no implementes, no ejecutes validaciones, tests, builds, instalaciones ni arranques la aplicación."
+      : "No implementes nada. No ejecutes comandos destructivos. Esto es solo análisis.",
     SECRET_WARNING,
   ].join("\n");
 }
 
-function codexAnalysisPrompt(task) {
+function codexAnalysisPrompt(task, bothreadSessionId, mode) {
   return [
     "Eres un participante de un flujo automatizado de dos agentes (Claude + Codex) orquestado por un script Node, trabajando sobre el repositorio en el directorio actual.",
     "Este es un paso de ANÁLISIS INDEPENDIENTE. Estás en sandbox read-only: no puedes escribir nada aunque lo intentaras.",
-    "No tienes acceso a Bothread en este modo — no intentes usarlo, nadie lo verá.",
+    `Bothread es obligatorio. Usa el servidor MCP Bothread ya configurado: únete con join_session usando la sala ${bothreadSessionId}, agentName "Codex" y brand "codex"; llama get_room_state y publica tu análisis con send_message. Tu participación se verifica desde la sala.`,
     "",
     `Tarea encargada por Dani (dueño del proyecto): "${task}"`,
     "",
-    "Lee lo que necesites del repositorio para entender la tarea en su contexto real.",
+    "Inspecciona solo los archivos necesarios para responder a esta tarea; no hagas una inspección de todo el repositorio ni cargues documentación no relacionada.",
     "Escribe un análisis técnico conciso e independiente (no has visto el análisis de Claude): qué hay que cambiar, por qué, archivos probablemente implicados, riesgos.",
+    mode === "READ_ONLY_AUDIT"
+      ? "Esta es una auditoría formal de solo lectura: no implementes, no ejecutes validaciones, tests, builds, instalaciones ni arranques la aplicación."
+      : "",
     SECRET_WARNING,
   ].join("\n");
 }
@@ -710,6 +911,7 @@ function synthesisPrompt(
   claudeAnalysis,
   codexAnalysis,
   bothreadSessionId,
+  mode,
 ) {
   return [
     "Sigues en modo de solo lectura (sin herramientas de escritura). Ahora tienes DOS análisis independientes de la misma tarea: el tuyo propio y el de Codex, un agente distinto que la analizó sin ver el tuyo.",
@@ -723,7 +925,9 @@ function synthesisPrompt(
     "--- Análisis de Codex ---",
     codexAnalysis,
     "",
-    "Produce una SÍNTESIS técnica: en qué coincidís, en qué discrepáis (si acaso), y UN plan de implementación concreto y acordado — el que se va a implementar literalmente a continuación, así que sé específico sobre archivos y cambios. Publica el plan en Bothread y registra una decisión relevante con record_note.",
+    mode === "READ_ONLY_AUDIT"
+      ? "Produce un INFORME DE AUDITORÍA sintetizado: hallazgos, evidencia, riesgos, decisiones que necesita Dani y posibles siguientes pasos. No propongas que se implemente ahora, no ejecutes validaciones y publica el informe en Bothread con send_message; registra una decisión relevante con record_note."
+      : "Produce una SÍNTESIS técnica: en qué coincidís, en qué discrepáis (si acaso), y UN plan de implementación concreto y acordado — el que se va a implementar literalmente a continuación, así que sé específico sobre archivos y cambios. Publica el plan en Bothread y registra una decisión relevante con record_note.",
     SECRET_WARNING,
   ].join("\n");
 }
@@ -753,12 +957,15 @@ function codexReviewPrompt(
   validationSummary,
   iteration,
   maxIterations,
+  bothreadSessionId,
 ) {
   return [
     `Eres el revisor de código de este flujo. Ronda de revisión ${iteration} de máximo ${maxIterations}.`,
     "Estás en sandbox read-only pero SÍ puedes ejecutar comandos de solo lectura (git diff, git status, cat, grep, etc.) para inspeccionar el estado real del repositorio — hazlo, no confíes solo en lo que se te cuenta aquí.",
     "",
     `Tarea original: "${task}"`,
+    "",
+    `Bothread es obligatorio. Usa el servidor MCP Bothread ya configurado: únete con join_session usando la sala ${bothreadSessionId}, agentName "Codex" y brand "codex"; llama get_room_state y publica tu revisión/veredicto con send_message. Tu participación se verifica desde la sala.`,
     "",
     "--- Plan que se suponía que se iba a implementar ---",
     plan,
@@ -813,8 +1020,10 @@ async function stepClaudeAnalysis(run) {
     run,
     `Orchestrator: empezando análisis independiente — "${run.task}"`,
   );
+  const sessionId = await bothreadSessionId(run);
+  markAgentBothreadAttempt(run, "claude");
   const res = await callClaude(
-    claudeAnalysisPrompt(run.task, run.bothreadSessionId),
+    claudeAnalysisPrompt(run.task, sessionId, run.mode),
     {
       tools: POLICY.claude.analysisTools,
     },
@@ -827,14 +1036,21 @@ async function stepClaudeAnalysis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
+  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await enforceReadOnlyBaseline(run, "CLAUDE_ANALYSIS");
   if (!res.ok) return fail(run, res.error);
   transition(run, "CODEX_ANALYSIS", "análisis de Claude completo");
 }
 
 async function stepCodexAnalysis(run) {
-  const res = await callCodex(codexAnalysisPrompt(run.task), {
-    sandbox: POLICY.codex.analysisSandbox,
-  });
+  const sessionId = await bothreadSessionId(run);
+  markAgentBothreadAttempt(run, "codex");
+  const res = await callCodex(
+    codexAnalysisPrompt(run.task, sessionId, run.mode),
+    {
+      sandbox: POLICY.codex.analysisSandbox,
+    },
+  );
   if (res.ok) run.codexThreadId = res.threadId ?? run.codexThreadId;
   recordStep(run, "codex_analysis", {
     ok: res.ok,
@@ -844,6 +1060,8 @@ async function stepCodexAnalysis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
+  await recordAgentBothreadParticipation(run, "codex", "Codex");
+  await enforceReadOnlyBaseline(run, "CODEX_ANALYSIS");
   if (!res.ok) return fail(run, res.error);
   await bothreadNotify(
     run,
@@ -862,8 +1080,10 @@ async function stepCodexAnalysis(run) {
 async function stepSynthesis(run) {
   const claudeText = lastStep(run, "claude_analysis").text;
   const codexText = lastStep(run, "codex_analysis").text;
+  const sessionId = await bothreadSessionId(run);
+  markAgentBothreadAttempt(run, "claude");
   const res = await callClaude(
-    synthesisPrompt(run.task, claudeText, codexText, run.bothreadSessionId),
+    synthesisPrompt(run.task, claudeText, codexText, sessionId, run.mode),
     { tools: POLICY.claude.analysisTools },
   );
   recordStep(run, "synthesis", {
@@ -874,6 +1094,8 @@ async function stepSynthesis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
+  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await enforceReadOnlyBaseline(run, "SYNTHESIS");
   if (!res.ok) return fail(run, res.error);
   await bothreadNotify(
     run,
@@ -886,6 +1108,10 @@ async function stepSynthesis(run) {
       },
     },
   );
+  if (nextStateAfterSynthesis(run.mode) === "WAITING_FOR_DANI") {
+    await publishAuditWaitingForDani(run);
+    return transition(run, "WAITING_FOR_DANI", "auditoría sintetizada");
+  }
   transition(run, "IMPLEMENTATION", "plan sintetizado");
 }
 
@@ -899,8 +1125,10 @@ async function stepImplementation(run) {
     run,
     "Orchestrator: implementando el plan acordado (Claude, sin Bash, sin git commit/push posible).",
   );
+  const sessionId = await bothreadSessionId(run);
+  markAgentBothreadAttempt(run, "claude");
   const res = await callClaude(
-    implementationPrompt(run.task, plan, run.bothreadSessionId),
+    implementationPrompt(run.task, plan, sessionId),
     {
       tools: POLICY.claude.implementationTools,
       permissionMode: "acceptEdits",
@@ -914,6 +1142,7 @@ async function stepImplementation(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
+  await recordAgentBothreadParticipation(run, "claude", "Claude");
   if (!res.ok) return fail(run, res.error);
   run.claudeSessionId = res.sessionId;
 
@@ -958,6 +1187,34 @@ function validationSummaryText(validation) {
         `${k}: ${v.passed ? "PASSED" : `FAILED (exit ${v.exitCode})`}\n${v.output.slice(-1500)}`,
     )
     .join("\n\n");
+}
+
+function bothreadSummary(run) {
+  const state = run.bothread ?? newBothreadState();
+  return [
+    `Room created: ${state.roomCreated ? "yes" : "no"}`,
+    `Orchestrator joined: ${state.orchestratorJoined ? "yes" : "no"}`,
+    `Claude: attempt ${state.claude.joinAttempted ? "yes" : "no"}, joined ${state.claude.joined ? "yes" : "no"}, published ${state.claude.messagePublished ? "yes" : "no"}`,
+    `Codex: attempt ${state.codex.joinAttempted ? "yes" : "no"}, joined ${state.codex.joined ? "yes" : "no"}, published ${state.codex.messagePublished ? "yes" : "no"}`,
+    `Integration: ${state.integration}${state.degradedReason ? ` (${state.degradedReason})` : ""}`,
+  ].join("\n");
+}
+
+async function publishAuditWaitingForDani(run) {
+  const synthesis = lastStep(run, "synthesis").text;
+  const worktree = lastStep(run, "read_only_worktree_check");
+  await bothreadNotify(
+    run,
+    `Orchestrator: estado final WAITING_FOR_DANI para READ_ONLY_AUDIT. Claude y Codex completaron análisis; Dani debe aprobar cualquier siguiente acción.\n\nWorktree limpio: ${worktree.clean ? "sí" : "no"}\n\n--- Informe de auditoría sintetizado ---\n${synthesis.slice(0, 5000)}\n\n--- Estado real de Bothread ---\n${bothreadSummary(run)}`,
+    {
+      importance: "steering",
+      note: {
+        kind: "verification",
+        title: "Auditoría finalizada: WAITING_FOR_DANI",
+        detail: `Worktree limpio: ${worktree.clean ? "sí" : "no"}.\n\n${bothreadSummary(run)}`,
+      },
+    },
+  );
 }
 
 async function publishWaitingForDani(run) {
@@ -1007,12 +1264,15 @@ async function stepCodexReview(run) {
     validationSummaryText(validation),
     run.reviewIteration,
     POLICY.maxReviewIterations,
+    await bothreadSessionId(run),
   );
 
+  markAgentBothreadAttempt(run, "codex");
   let res = await callCodex(prompt, {
     sandbox: POLICY.codex.reviewSandbox,
     resumeThreadId: run.codexThreadId,
   });
+  await recordAgentBothreadParticipation(run, "codex", "Codex");
   if (!res.ok) return fail(run, res.error);
   run.codexThreadId = res.threadId;
 
@@ -1084,14 +1344,13 @@ async function stepCodexReview(run) {
 async function stepClaudeFix(run) {
   const review = lastStep(run, "codex_review");
   recordStep(run, "claude_mutation_started", { phase: "claude_fix" });
-  const res = await callClaude(
-    claudeFixPrompt(review.text, run.bothreadSessionId),
-    {
-      tools: POLICY.claude.implementationTools,
-      resumeSessionId: run.claudeSessionId,
-      permissionMode: "acceptEdits",
-    },
-  );
+  const sessionId = await bothreadSessionId(run);
+  markAgentBothreadAttempt(run, "claude");
+  const res = await callClaude(claudeFixPrompt(review.text, sessionId), {
+    tools: POLICY.claude.implementationTools,
+    resumeSessionId: run.claudeSessionId,
+    permissionMode: "acceptEdits",
+  });
   recordStep(run, "claude_fix", {
     iteration: run.reviewIteration,
     ok: res.ok,
@@ -1101,6 +1360,7 @@ async function stepClaudeFix(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
+  await recordAgentBothreadParticipation(run, "claude", "Claude");
   if (!res.ok) return fail(run, res.error);
   run.claudeSessionId = res.sessionId ?? run.claudeSessionId;
 
@@ -1186,7 +1446,7 @@ async function runOrchestration(run) {
     }
   }
   await printFinalReport(run);
-  if (run._bothread) await run._bothread.leave(run.bothreadSessionId);
+  if (run._bothread) await run._bothread.leave(await bothreadSessionId(run));
 }
 
 // ---------------------------------------------------------------------------
@@ -1196,24 +1456,35 @@ async function runOrchestration(run) {
 async function printFinalReport(run) {
   const diff = await gitDiff();
   const status = await gitStatusShort();
+  const isAudit = run.mode === "READ_ONLY_AUDIT";
+  const synthesis = run.history.find((h) => h.kind === "synthesis");
+  const worktreeCheck = run.history
+    .filter((h) => h.kind === "read_only_worktree_check")
+    .at(-1);
   const lastReview = run.history
     .filter((h) => h.kind === "codex_review")
     .at(-1);
   const fixes = run.history.filter((h) => h.kind === "claude_fix");
-  const unverified = [
-    "No se ha ejecutado en navegador ni contra una app en marcha — solo análisis estático + type-check + format:check.",
-    "El orquestador no ha hecho commit, push, deploy, migraciones ni tocado credenciales — eso lo decide Dani.",
-  ];
+  const unverified = isAudit
+    ? [
+        "Auditoría de solo lectura: no se ejecutaron implementación, revisión de código, fixes, type-check, format-check, tests, builds ni aplicación.",
+        "El orquestador no ha hecho commit, push, deploy, migraciones ni tocado credenciales — eso lo decide Dani.",
+      ]
+    : [
+        "No se ha ejecutado en navegador ni contra una app en marcha — solo análisis estático + type-check + format:check.",
+        "El orquestador no ha hecho commit, push, deploy, migraciones ni tocado credenciales — eso lo decide Dani.",
+      ];
 
   const lines = [
     "=".repeat(70),
     `INFORME FINAL — ${run.runId}`,
     "=".repeat(70),
     `Tarea: ${run.task}`,
+    `Modo: ${run.mode ?? "IMPLEMENTATION"}`,
     `Estado final: ${run.status}`,
-    `Rondas de revisión usadas: ${run.reviewIteration} de ${POLICY.maxReviewIterations}`,
-    `Veredicto de Codex: ${lastReview?.verdict ?? "n/a"}`,
-    `Sala Bothread: ${run.bothreadRoomId ?? "n/a"}`,
+    `Sala Bothread: ${run.bothreadRoomId ? "present" : "none"}`,
+    "--- Estado de participación Bothread ---",
+    bothreadSummary(run),
     "",
     "--- git status --short ---",
     status || "(sin cambios)",
@@ -1221,20 +1492,27 @@ async function printFinalReport(run) {
     "--- git diff (resumen: primeras 4000 chars) ---",
     diff ? diff.slice(0, 4000) : "(sin diff)",
     "",
-    "--- Comprobaciones ejecutadas por el orquestador ---",
-    JSON.stringify(
-      fixes.at(-1)?.validation ??
-        run.history.find((h) => h.kind === "post_implementation_check")
-          ?.validation ??
-        {},
-      null,
-      2,
-    ),
-    "",
-    `--- Fixes aplicados (${fixes.length}) ---`,
-    fixes
-      .map((f) => `  #${f.iteration}: ${f.text.slice(0, 200)}...`)
-      .join("\n") || "  (ninguno, aceptado a la primera)",
+    isAudit
+      ? "--- Informe de auditoría sintetizado ---"
+      : "--- Comprobaciones ejecutadas por el orquestador ---",
+    isAudit
+      ? (synthesis?.text ?? "(síntesis no disponible)")
+      : JSON.stringify(
+          fixes.at(-1)?.validation ??
+            run.history.find((h) => h.kind === "post_implementation_check")
+              ?.validation ??
+            {},
+          null,
+          2,
+        ),
+    isAudit
+      ? `Worktree permaneció limpio: ${worktreeCheck?.clean ? "sí" : "no"}`
+      : `--- Fixes aplicados (${fixes.length}) ---`,
+    isAudit
+      ? `Claude completó análisis: ${run.history.find((h) => h.kind === "claude_analysis")?.ok ? "sí" : "no"}; Codex completó análisis: ${run.history.find((h) => h.kind === "codex_analysis")?.ok ? "sí" : "no"}`
+      : fixes
+          .map((f) => `  #${f.iteration}: ${f.text.slice(0, 200)}...`)
+          .join("\n") || "  (ninguno, aceptado a la primera)",
     "",
     "--- Qué falta por verificar / qué tiene que aprobar Dani ---",
     unverified.map((u) => `  - ${u}`).join("\n"),
@@ -1272,6 +1550,7 @@ function printUsage() {
     [
       "Usage:",
       '  New mission: node orchestrator/orchestrate-v1.mjs "TASK"',
+      '  Audit:       node orchestrator/orchestrate-v1.mjs --mode READ_ONLY_AUDIT "MISSION"',
       "  Resume:      node orchestrator/orchestrate-v1.mjs --resume RUN_ID",
       "  Help:        node orchestrator/orchestrate-v1.mjs --help",
     ].join("\n") + "\n",
@@ -1282,15 +1561,19 @@ function parseArgs(argv) {
   const args = {
     task: null,
     resume: null,
+    mode: "IMPLEMENTATION",
     help: false,
   };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
     else if (argv[i] === "--resume") args.resume = argv[++i];
+    else if (argv[i] === "--mode") args.mode = argv[++i];
     else rest.push(argv[i]);
   }
   args.task = rest.join(" ").trim() || null;
+  if (!MISSION_MODES.has(args.mode))
+    throw new Error(`Modo no válido: ${args.mode}`);
   return args;
 }
 
@@ -1305,6 +1588,8 @@ async function main() {
   let isNewRun = false;
   if (args.resume) {
     run = loadRun(args.resume);
+    run.mode = normalizeMissionMode(run.mode);
+    run.bothread ??= newBothreadState();
     log(`Reanudando ${run.runId} desde estado ${run.status}`);
     if (TERMINAL_STATES.has(run.status)) {
       log(
@@ -1329,7 +1614,7 @@ async function main() {
       process.exit(2);
     }
     const baseline = await captureCleanBaseline();
-    run = newRun(args.task, baseline);
+    run = newRun(args.task, args.mode, baseline);
     saveRun(run);
     log(`Run nuevo: ${run.runId}`);
     isNewRun = true;
@@ -1355,7 +1640,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  log(`[fatal] ${e.stack || e}`);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    log(`[fatal] ${e.stack || e}`);
+    process.exit(1);
+  });
+}

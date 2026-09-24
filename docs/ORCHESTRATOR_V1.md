@@ -18,6 +18,16 @@ RECEIVED
   -> WAITING_FOR_DANI | ESCALATED_TO_DANI | FAILED
 ```
 
+`READ_ONLY_AUDIT` uses a shorter, controller-enforced sequence:
+
+```text
+RECEIVED
+  -> Claude independent analysis
+  -> Codex independent analysis
+  -> Claude synthesis / audit report
+  -> WAITING_FOR_DANI | FAILED
+```
+
 `WAITING_FOR_DANI` is deliberately terminal. An accepted review never commits,
 pushes, merges, deploys, runs a migration, changes credentials, or starts a
 second task. Dani receives the final report and decides the next action.
@@ -32,12 +42,16 @@ second task. Dani receives the final report and decides the next action.
   agent cannot be mistaken for the current run.
 - Bothread running locally at the configured endpoint. Development missions
   create their own room automatically through the local Bothread API, persist
-  its room/session identifiers in the run record, and use its MCP endpoint for
+  only its room identifier in the run record, and resolve the room session ID
+  from the local API in memory when needed. The session ID is not written to a
+  run record or terminal output. The MCP endpoint is used for
   coordination. Bothread setup and relay failures fail the mission safely;
   Bothread never decides workflow transitions.
 
-No credential values belong in `policy.json`, a run record, a prompt, or a
-Bothread message.
+No API/auth credential values belong in `policy.json`, a run record, a prompt,
+or a Bothread message. The opaque room session ID is supplied only in memory to
+the participating agent process so it can join the room; it is not persisted or
+printed.
 
 ## Usage
 
@@ -61,6 +75,17 @@ startup command for it.
 ```bash
 npm run company -- "Describe one bounded task"
 ```
+
+### Read-only audit
+
+```bash
+npm run company:audit -- "Describe the bounded audit"
+```
+
+An audit never enters implementation, review or fix states. The controller
+checks the Git baseline after every agent phase and fails without reverting if
+any path outside `.bothread/` changes. It does not run type-check, formatting,
+tests, builds, installations or the application.
 
 ### Check status
 
@@ -106,10 +131,12 @@ PID check. Do not remove a live lock manually.
 review limit, Bothread endpoint metadata and validation commands. It contains
 no secret values.
 
-Claude receives only file-oriented tools during analysis and implementation;
-it receives no Bash tool. Codex runs in read-only sandbox for analysis and
-review. The Node controller invokes validation commands itself after an
-implementation or fix, records their output, and gives it to Codex.
+Claude receives only file-oriented tools plus the narrow Bothread MCP tools
+needed to join, read, publish, record notes, and (only while editing) claim or
+release files; it receives no Bash tool. Codex runs in read-only sandbox for
+analysis and review. The Node controller invokes validation commands itself
+only after an implementation or fix, records their output, and gives it to
+Codex. It runs none of those commands for `READ_ONLY_AUDIT`.
 
 The project currently has documented pre-existing TypeScript errors. A failed
 validation is therefore evidence for the reviewer and Dani, not an automatic
@@ -118,12 +145,20 @@ approval or an automatic claim that a change introduced every reported error.
 ## Bothread protocol
 
 Each development mission creates a dedicated local Bothread room before any
-agent runs. The controller persists the opaque room session ID used by
-`join_session` plus the separate API room ID; neither is the MCP transport
-session ID. It joins as `Orchestrator V1`, posts the task, relays bounded Codex
-analysis/review/validation output, records decisions and final verification
-notes, then leaves. Claude receives the room session ID in every phase prompt
-and must join/read/post; it claims files before edits and releases them after.
+agent runs. The controller persists the API room ID, not the opaque room
+session ID or the MCP transport session ID. It joins as `Orchestrator V1`,
+posts the task, relays bounded controller summaries, records decisions and
+final verification notes, then leaves. Claude and Codex receive the room
+session ID only in their process prompt and must join/read/post under their own
+participant identities; implementation phases claim files before edits and
+release them after.
+
+The controller reads the room snapshot after each agent phase and records
+separately whether the room was created, the controller joined, each agent
+attempted/joined/published, and whether the integration is `HEALTHY` or
+`DEGRADED`. A missing agent join is never reported as healthy. It degrades the
+coordination status rather than inventing participation; `company:status`
+shows those fields without exposing a session ID.
 
 Bothread is required coordination infrastructure in development mode, so a
 creation, join, or relay failure fails the run rather than silently continuing.

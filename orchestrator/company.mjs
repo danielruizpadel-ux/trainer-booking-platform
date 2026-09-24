@@ -230,10 +230,14 @@ function printStatus(runRecord) {
     return;
   }
   const recovery = recoveryAssessment(runRecord);
+  const bothread = runRecord.bothread ?? {};
+  const claudeBothread = bothread.claude ?? {};
+  const codexBothread = bothread.codex ?? {};
   process.stdout.write(
     [
       `Run ID:                 ${runRecord.runId}`,
       `Task:                   ${runRecord.task}`,
+      `Mission mode:           ${runRecord.mode ?? "IMPLEMENTATION"}`,
       `State:                  ${runRecord.status}`,
       `Created:                ${runRecord.createdAt ?? "unknown"}`,
       `Updated:                ${runRecord.updatedAt ?? "unknown"}`,
@@ -241,7 +245,11 @@ function printStatus(runRecord) {
       `Claude session:         ${runRecord.claudeSessionId ? "present" : "none"}`,
       `Codex thread:           ${runRecord.codexThreadId ? "present" : "none"}`,
       `Bothread room:          ${runRecord.bothreadRoomId ? "present" : "none"}`,
-      `Bothread session:       ${runRecord.bothreadSessionId ? "present" : "none"}`,
+      `Bothread session:       ${runRecord.bothreadRoomId ? "protected; resolved locally" : "none"}`,
+      `Bothread orchestrator:  ${bothread.orchestratorJoined ? "joined" : "not joined"}`,
+      `Bothread Claude:        attempted ${claudeBothread.joinAttempted ? "yes" : "no"}; joined ${claudeBothread.joined ? "yes" : "no"}; published ${claudeBothread.messagePublished ? "yes" : "no"}`,
+      `Bothread Codex:         attempted ${codexBothread.joinAttempted ? "yes" : "no"}; joined ${codexBothread.joined ? "yes" : "no"}; published ${codexBothread.messagePublished ? "yes" : "no"}`,
+      `Bothread integration:   ${bothread.integration ?? "unknown"}${bothread.degradedReason ? ` (${bothread.degradedReason})` : ""}`,
       `Last error:             ${runRecord.lastError ?? "none"}`,
       `Terminal:               ${TERMINAL_STATES.has(runRecord.status) ? "yes" : "no"}`,
       `Recovery/resume:        ${recovery.recoverable ? "possible" : `not automatic (${recovery.reason})`}`,
@@ -289,7 +297,7 @@ async function spawnOrchestrator(args) {
 
 function printUsage() {
   process.stdout.write(
-    'Usage: npm run company -- "TASK" | company:start | company:doctor | company:status | company:resume\n',
+    'Usage: npm run company -- "TASK" | npm run company:audit -- "MISSION" | company:start | company:doctor | company:status | company:resume\n',
   );
 }
 
@@ -358,6 +366,22 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
     process.exitCode = await spawnOrchestrator([task]);
+    return;
+  }
+  if (command === "audit") {
+    const task = rest.join(" ").trim();
+    if (!task) {
+      process.stderr.write(
+        'An audit mission is required: npm run company:audit -- "MISSION"\n',
+      );
+      process.exitCode = 2;
+      return;
+    }
+    process.exitCode = await spawnOrchestrator([
+      "--mode",
+      "READ_ONLY_AUDIT",
+      task,
+    ]);
     return;
   }
   printUsage();

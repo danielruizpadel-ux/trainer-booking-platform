@@ -4,8 +4,8 @@
   "claude": {
     "command": "claude",
     "timeoutMs": 900000,
-    "analysisTools": "Read,Grep,Glob",
-    "implementationTools": "Read,Edit,Write,Grep,Glob"
+    "analysisTools": "Read,Grep,Glob,mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__leave_session",
+    "implementationTools": "Read,Edit,Write,Grep,Glob,mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__claim_files,mcp__bothread__release_files,mcp__bothread__leave_session"
   },
   "codex": {
     "command": "codex",
