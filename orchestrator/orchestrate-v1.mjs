@@ -270,7 +270,10 @@ function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
 // Runner de Claude Code (headless, JSON, sin shell, sin Bash tool)
 // ---------------------------------------------------------------------------
 
-async function callClaude(prompt, { tools, resumeSessionId, timeoutMs } = {}) {
+async function callClaude(
+  prompt,
+  { tools, resumeSessionId, timeoutMs, permissionMode } = {},
+) {
   const args = [
     "-p",
     "--output-format",
@@ -278,6 +281,7 @@ async function callClaude(prompt, { tools, resumeSessionId, timeoutMs } = {}) {
     "--permission-prompts",
     "none",
   ];
+  if (permissionMode) args.push("--permission-mode", permissionMode);
   if (tools) args.push("--tools", tools);
   if (resumeSessionId) args.push("--resume", resumeSessionId);
   args.push("--", prompt);
@@ -739,6 +743,7 @@ async function stepCodexAnalysis(run) {
   const res = await callCodex(codexAnalysisPrompt(run.task), {
     sandbox: POLICY.codex.analysisSandbox,
   });
+  if (res.ok) run.codexThreadId = res.threadId ?? run.codexThreadId;
   recordStep(run, "codex_analysis", {
     ok: res.ok,
     text: res.text,
@@ -802,6 +807,7 @@ async function stepImplementation(run) {
   );
   const res = await callClaude(implementationPrompt(run.task, plan), {
     tools: POLICY.claude.implementationTools,
+    permissionMode: "acceptEdits",
   });
   recordStep(run, "implementation", {
     ok: res.ok,
@@ -945,6 +951,7 @@ async function stepClaudeFix(run) {
   const res = await callClaude(claudeFixPrompt(review.text), {
     tools: POLICY.claude.implementationTools,
     resumeSessionId: run.claudeSessionId,
+    permissionMode: "acceptEdits",
   });
   recordStep(run, "claude_fix", {
     iteration: run.reviewIteration,
