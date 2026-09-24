@@ -124,10 +124,21 @@ function newBothreadState() {
   return {
     roomCreated: false,
     orchestratorJoined: false,
-    claude: { joinAttempted: false, joined: false, messagePublished: false },
-    codex: { joinAttempted: false, joined: false, messagePublished: false },
+    claude: newAgentBothreadState(),
+    codex: newAgentBothreadState(),
     integration: "PENDING",
     degradedReason: null,
+  };
+}
+
+function newAgentBothreadState() {
+  return {
+    joinRequested: false,
+    mcpToolCallObserved: false,
+    joined: false,
+    messagePublished: false,
+    approvalDenied: false,
+    unsupported: false,
   };
 }
 
@@ -321,9 +332,14 @@ function runProcess(command, args, { timeoutMs, cwd = REPO_ROOT } = {}) {
 // Runner de Claude Code (headless, JSON, sin shell, sin Bash tool)
 // ---------------------------------------------------------------------------
 
-async function callClaude(
+export function buildClaudeArgs(
   prompt,
-  { tools, resumeSessionId, timeoutMs, permissionMode } = {},
+  {
+    tools,
+    allowedTools = POLICY.claude.bothreadCommunicationTools,
+    resumeSessionId,
+    permissionMode,
+  } = {},
 ) {
   const args = [
     "-p",
@@ -333,9 +349,33 @@ async function callClaude(
     "none",
   ];
   if (permissionMode) args.push("--permission-mode", permissionMode);
-  if (tools) args.push("--tools", tools);
   if (resumeSessionId) args.push("--resume", resumeSessionId);
+  if (allowedTools) args.push("--allowed-tools", allowedTools);
+  if (tools) args.push("--tools", tools);
   args.push("--", prompt);
+  return args;
+}
+
+function claudeBothreadObservation(parsed) {
+  const text = JSON.stringify(parsed ?? {});
+  return {
+    mcpToolCallObserved:
+      text.includes("mcp__bothread__") || text.includes('"join_session"'),
+    approvalDenied: /permission_denials?|approval (?:was )?denied/i.test(text),
+    unsupported: /unknown tool|not available|unsupported/i.test(text),
+  };
+}
+
+async function callClaude(
+  prompt,
+  { tools, resumeSessionId, timeoutMs, permissionMode } = {},
+) {
+  const args = buildClaudeArgs(prompt, {
+    tools,
+    allowedTools: POLICY.claude.bothreadCommunicationTools,
+    resumeSessionId,
+    permissionMode,
+  });
 
   const t0 = Date.now();
   const proc = await runProcess(POLICY.claude.command, args, {
@@ -351,6 +391,13 @@ async function callClaude(
       ok: false,
       error: `claude ${tag}: ${redact(proc.stderr || proc.stdout).slice(0, 2000)}`,
       durationMs,
+      bothreadObservation: {
+        mcpToolCallObserved: false,
+        approvalDenied: /approval.*denied|permission.*denied/i.test(
+          proc.stderr || proc.stdout,
+        ),
+        unsupported: false,
+      },
       raw: proc,
     };
   }
@@ -363,6 +410,13 @@ async function callClaude(
       ok: false,
       error: `salida de claude no es JSON válido: ${e.message}`,
       durationMs,
+      bothreadObservation: {
+        mcpToolCallObserved: false,
+        approvalDenied: /approval.*denied|permission.*denied/i.test(
+          proc.stderr || proc.stdout,
+        ),
+        unsupported: false,
+      },
       raw: proc,
     };
   }
@@ -373,6 +427,7 @@ async function callClaude(
       error: `claude reportó is_error: ${redact(parsed.result ?? "").slice(0, 2000)}`,
       durationMs,
       sessionId: parsed.session_id,
+      bothreadObservation: claudeBothreadObservation(parsed),
       raw: parsed,
     };
   }
@@ -383,21 +438,51 @@ async function callClaude(
     sessionId: parsed.session_id ?? null,
     costUsd: parsed.total_cost_usd ?? null,
     durationMs,
+    bothreadObservation: claudeBothreadObservation(parsed),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Runner de Codex CLI (headless, JSONL, sin shell). Bothread NO está
-// disponible aquí (verificado) — Codex nunca intenta hablar con la room.
+// Runner de Codex CLI (headless, JSONL, sin shell). Bothread receives only
+// narrowly scoped, per-process tool-approval overrides.
 // ---------------------------------------------------------------------------
 
-async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
+export function buildCodexArgs(prompt, { sandbox, resumeThreadId } = {}) {
   // `codex exec resume <id>` NO acepta --sandbox ni -C (verificado con
   // `codex exec resume --help`): el sandbox y el cwd son propiedad del
   // thread original, no se repiten al reanudar.
-  const args = resumeThreadId
+  const commandArgs = resumeThreadId
     ? ["exec", "resume", resumeThreadId, "--json", prompt]
     : ["exec", "--json", "--sandbox", sandbox, "-C", REPO_ROOT, prompt];
+  const bothreadTools = POLICY.codex.bothreadCommunicationTools;
+  const configArgs = [
+    "-c",
+    `mcp_servers.bothread.enabled_tools=${JSON.stringify(bothreadTools)}`,
+    ...bothreadTools.flatMap((tool) => [
+      "-c",
+      `mcp_servers.bothread.tools.${tool}.approval_mode=\"auto\"`,
+    ]),
+  ];
+  return [...configArgs, ...commandArgs];
+}
+
+function codexBothreadObservation(events) {
+  const mcpEvents = events.filter((event) => {
+    const type = `${event.type ?? ""} ${event.item?.type ?? ""}`.toLowerCase();
+    return type.includes("mcp");
+  });
+  const text = JSON.stringify(mcpEvents);
+  return {
+    mcpToolCallObserved:
+      text.includes("join_session") || text.includes("mcp__bothread__"),
+    approvalDenied:
+      /approval.*denied|denied.*approval|permission.*denied/i.test(text),
+    unsupported: /unknown tool|not available|unsupported/i.test(text),
+  };
+}
+
+async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
+  const args = buildCodexArgs(prompt, { sandbox, resumeThreadId });
 
   const t0 = Date.now();
   const effectiveTimeout = timeoutMs ?? POLICY.codex.timeoutMs;
@@ -414,6 +499,13 @@ async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
       ok: false,
       error: `codex ${tag}: ${redact(proc.stderr || proc.stdout).slice(0, 2000)}`,
       durationMs,
+      bothreadObservation: {
+        mcpToolCallObserved: false,
+        approvalDenied: /approval.*denied|permission.*denied/i.test(
+          proc.stderr || proc.stdout,
+        ),
+        unsupported: false,
+      },
       raw: proc,
     };
   }
@@ -456,6 +548,7 @@ async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
       error: `codex no devolvió ningún agent_message. Eventos de error: ${JSON.stringify(errorEvents).slice(0, 1000)}`,
       durationMs,
       threadId: threadStarted?.thread_id ?? resumeThreadId ?? null,
+      bothreadObservation: codexBothreadObservation(events),
       raw: events,
     };
   }
@@ -467,6 +560,7 @@ async function callCodex(prompt, { sandbox, resumeThreadId, timeoutMs } = {}) {
     commands,
     threadId: threadStarted?.thread_id ?? resumeThreadId ?? null,
     durationMs,
+    bothreadObservation: codexBothreadObservation(events),
   };
 }
 
@@ -650,46 +744,82 @@ export function assessAgentParticipation(snapshot, agentName) {
   };
 }
 
-async function recordAgentBothreadParticipation(run, agent, agentName) {
+function agentBothreadProblem(state, agentName) {
+  if (!state.joinRequested) return null;
+  if (state.approvalDenied) return `${agentName}: aprobación MCP denegada`;
+  if (state.unsupported) return `${agentName}: MCP no compatible`;
+  if (!state.mcpToolCallObserved)
+    return `${agentName}: no se observó llamada MCP`;
+  if (!state.joined) return `${agentName}: join no confirmado`;
+  if (!state.messagePublished) return `${agentName}: publicación no confirmada`;
+  return null;
+}
+
+export function assessBothreadIntegration(claude, codex) {
+  const problems = [
+    agentBothreadProblem(claude, "Claude"),
+    agentBothreadProblem(codex, "Codex"),
+  ].filter(Boolean);
+  const bothRequested = claude.joinRequested && codex.joinRequested;
+  if (problems.length > 0) {
+    return { integration: "DEGRADED", degradedReason: problems.join("; ") };
+  }
+  if (bothRequested) return { integration: "HEALTHY", degradedReason: null };
+  return { integration: "PENDING", degradedReason: null };
+}
+
+function refreshBothreadIntegration(run) {
+  Object.assign(
+    run.bothread,
+    assessBothreadIntegration(run.bothread.claude, run.bothread.codex),
+  );
+}
+
+async function recordAgentBothreadParticipation(
+  run,
+  agent,
+  agentName,
+  observation,
+) {
   try {
     const snapshot = await bothreadRoomSnapshot(run);
     const participation = assessAgentParticipation(snapshot, agentName);
-    Object.assign(run.bothread[agent], participation);
-    if (!participation.joined || !participation.messagePublished) {
-      run.bothread.integration = "DEGRADED";
-      run.bothread.degradedReason = `${agentName} no confirmó join y publicación en Bothread.`;
-    } else if (
-      run.bothread.claude.joined &&
-      run.bothread.claude.messagePublished &&
-      run.bothread.codex.joined &&
-      run.bothread.codex.messagePublished
-    ) {
-      run.bothread.integration = "HEALTHY";
-      run.bothread.degradedReason = null;
-    }
+    Object.assign(run.bothread[agent], observation, participation);
+    refreshBothreadIntegration(run);
     recordStep(run, "bothread_agent_participation", {
       agent,
+      mcpToolCallObserved: run.bothread[agent].mcpToolCallObserved,
       joined: participation.joined,
       messagePublished: participation.messagePublished,
+      approvalDenied: run.bothread[agent].approvalDenied,
+      unsupported: run.bothread[agent].unsupported,
       integration: run.bothread.integration,
     });
   } catch (error) {
-    run.bothread.integration = "DEGRADED";
-    run.bothread.degradedReason = redact(error.message).slice(0, 300);
-    recordStep(run, "bothread_agent_participation", {
-      agent,
+    Object.assign(run.bothread[agent], observation, {
       joined: false,
       messagePublished: false,
+    });
+    run.bothread.integration = "DEGRADED";
+    refreshBothreadIntegration(run);
+    run.bothread.degradedReason ??= redact(error.message).slice(0, 300);
+    recordStep(run, "bothread_agent_participation", {
+      agent,
+      mcpToolCallObserved: run.bothread[agent].mcpToolCallObserved,
+      joined: false,
+      messagePublished: false,
+      approvalDenied: run.bothread[agent].approvalDenied,
+      unsupported: run.bothread[agent].unsupported,
       integration: "DEGRADED",
       reason: run.bothread.degradedReason,
     });
   }
 }
 
-function markAgentBothreadAttempt(run, agent) {
+function markAgentBothreadJoinRequested(run, agent) {
   run.bothread ??= newBothreadState();
-  run.bothread[agent].joinAttempted = true;
-  recordStep(run, "bothread_agent_join_attempted", { agent });
+  run.bothread[agent].joinRequested = true;
+  recordStep(run, "bothread_agent_join_requested", { agent });
 }
 
 async function prepareBothreadWorkspace(run, { createRoom = false } = {}) {
@@ -940,7 +1070,7 @@ function implementationPrompt(task, plan, bothreadSessionId) {
     `Tarea original: "${task}"`,
     "",
     ...claudeBothreadInstructions(bothreadSessionId, "implementación"),
-    "Antes de editar, reclama con claim_files los archivos concretos que vayas a cambiar. Al terminar, publica el resumen y libera esas reclamaciones con release_files.",
+    "Before editing, read the shared room context. Publish an implementation summary when finished; file claims are intentionally unavailable in this non-interactive controller.",
     "--- Plan acordado a implementar ---",
     plan,
     "",
@@ -1000,7 +1130,7 @@ function claudeFixPrompt(codexReviewText, bothreadSessionId) {
       bothreadSessionId,
       "corrección solicitada por Codex",
     ),
-    "Lee en Bothread el feedback relayed de Codex. Antes de editar reclama los archivos afectados con claim_files; publica el resumen y libera las reclamaciones con release_files al terminar.",
+    "Lee en Bothread el feedback relayed de Codex y publica el resumen de la corrección al terminar; file claims are intentionally unavailable in this non-interactive controller.",
     "--- Revisión de Codex (texto exacto) ---",
     codexReviewText,
     "",
@@ -1021,7 +1151,7 @@ async function stepClaudeAnalysis(run) {
     `Orchestrator: empezando análisis independiente — "${run.task}"`,
   );
   const sessionId = await bothreadSessionId(run);
-  markAgentBothreadAttempt(run, "claude");
+  markAgentBothreadJoinRequested(run, "claude");
   const res = await callClaude(
     claudeAnalysisPrompt(run.task, sessionId, run.mode),
     {
@@ -1036,7 +1166,12 @@ async function stepClaudeAnalysis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
-  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await recordAgentBothreadParticipation(
+    run,
+    "claude",
+    "Claude",
+    res.bothreadObservation,
+  );
   await enforceReadOnlyBaseline(run, "CLAUDE_ANALYSIS");
   if (!res.ok) return fail(run, res.error);
   transition(run, "CODEX_ANALYSIS", "análisis de Claude completo");
@@ -1044,7 +1179,7 @@ async function stepClaudeAnalysis(run) {
 
 async function stepCodexAnalysis(run) {
   const sessionId = await bothreadSessionId(run);
-  markAgentBothreadAttempt(run, "codex");
+  markAgentBothreadJoinRequested(run, "codex");
   const res = await callCodex(
     codexAnalysisPrompt(run.task, sessionId, run.mode),
     {
@@ -1060,7 +1195,12 @@ async function stepCodexAnalysis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
-  await recordAgentBothreadParticipation(run, "codex", "Codex");
+  await recordAgentBothreadParticipation(
+    run,
+    "codex",
+    "Codex",
+    res.bothreadObservation,
+  );
   await enforceReadOnlyBaseline(run, "CODEX_ANALYSIS");
   if (!res.ok) return fail(run, res.error);
   await bothreadNotify(
@@ -1081,7 +1221,7 @@ async function stepSynthesis(run) {
   const claudeText = lastStep(run, "claude_analysis").text;
   const codexText = lastStep(run, "codex_analysis").text;
   const sessionId = await bothreadSessionId(run);
-  markAgentBothreadAttempt(run, "claude");
+  markAgentBothreadJoinRequested(run, "claude");
   const res = await callClaude(
     synthesisPrompt(run.task, claudeText, codexText, sessionId, run.mode),
     { tools: POLICY.claude.analysisTools },
@@ -1094,7 +1234,12 @@ async function stepSynthesis(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
-  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await recordAgentBothreadParticipation(
+    run,
+    "claude",
+    "Claude",
+    res.bothreadObservation,
+  );
   await enforceReadOnlyBaseline(run, "SYNTHESIS");
   if (!res.ok) return fail(run, res.error);
   await bothreadNotify(
@@ -1126,7 +1271,7 @@ async function stepImplementation(run) {
     "Orchestrator: implementando el plan acordado (Claude, sin Bash, sin git commit/push posible).",
   );
   const sessionId = await bothreadSessionId(run);
-  markAgentBothreadAttempt(run, "claude");
+  markAgentBothreadJoinRequested(run, "claude");
   const res = await callClaude(
     implementationPrompt(run.task, plan, sessionId),
     {
@@ -1142,7 +1287,12 @@ async function stepImplementation(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
-  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await recordAgentBothreadParticipation(
+    run,
+    "claude",
+    "Claude",
+    res.bothreadObservation,
+  );
   if (!res.ok) return fail(run, res.error);
   run.claudeSessionId = res.sessionId;
 
@@ -1194,8 +1344,8 @@ function bothreadSummary(run) {
   return [
     `Room created: ${state.roomCreated ? "yes" : "no"}`,
     `Orchestrator joined: ${state.orchestratorJoined ? "yes" : "no"}`,
-    `Claude: attempt ${state.claude.joinAttempted ? "yes" : "no"}, joined ${state.claude.joined ? "yes" : "no"}, published ${state.claude.messagePublished ? "yes" : "no"}`,
-    `Codex: attempt ${state.codex.joinAttempted ? "yes" : "no"}, joined ${state.codex.joined ? "yes" : "no"}, published ${state.codex.messagePublished ? "yes" : "no"}`,
+    `Claude: join requested ${state.claude.joinRequested ? "yes" : "no"}, MCP observed ${state.claude.mcpToolCallObserved ? "yes" : "no"}, joined ${state.claude.joined ? "yes" : "no"}, published ${state.claude.messagePublished ? "yes" : "no"}, approval denied ${state.claude.approvalDenied ? "yes" : "no"}, unsupported ${state.claude.unsupported ? "yes" : "no"}`,
+    `Codex: join requested ${state.codex.joinRequested ? "yes" : "no"}, MCP observed ${state.codex.mcpToolCallObserved ? "yes" : "no"}, joined ${state.codex.joined ? "yes" : "no"}, published ${state.codex.messagePublished ? "yes" : "no"}, approval denied ${state.codex.approvalDenied ? "yes" : "no"}, unsupported ${state.codex.unsupported ? "yes" : "no"}`,
     `Integration: ${state.integration}${state.degradedReason ? ` (${state.degradedReason})` : ""}`,
   ].join("\n");
 }
@@ -1267,12 +1417,17 @@ async function stepCodexReview(run) {
     await bothreadSessionId(run),
   );
 
-  markAgentBothreadAttempt(run, "codex");
+  markAgentBothreadJoinRequested(run, "codex");
   let res = await callCodex(prompt, {
     sandbox: POLICY.codex.reviewSandbox,
     resumeThreadId: run.codexThreadId,
   });
-  await recordAgentBothreadParticipation(run, "codex", "Codex");
+  await recordAgentBothreadParticipation(
+    run,
+    "codex",
+    "Codex",
+    res.bothreadObservation,
+  );
   if (!res.ok) return fail(run, res.error);
   run.codexThreadId = res.threadId;
 
@@ -1345,7 +1500,7 @@ async function stepClaudeFix(run) {
   const review = lastStep(run, "codex_review");
   recordStep(run, "claude_mutation_started", { phase: "claude_fix" });
   const sessionId = await bothreadSessionId(run);
-  markAgentBothreadAttempt(run, "claude");
+  markAgentBothreadJoinRequested(run, "claude");
   const res = await callClaude(claudeFixPrompt(review.text, sessionId), {
     tools: POLICY.claude.implementationTools,
     resumeSessionId: run.claudeSessionId,
@@ -1360,7 +1515,12 @@ async function stepClaudeFix(run) {
     durationMs: res.durationMs,
     error: res.error,
   });
-  await recordAgentBothreadParticipation(run, "claude", "Claude");
+  await recordAgentBothreadParticipation(
+    run,
+    "claude",
+    "Claude",
+    res.bothreadObservation,
+  );
   if (!res.ok) return fail(run, res.error);
   run.claudeSessionId = res.sessionId ?? run.claudeSessionId;
 

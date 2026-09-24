@@ -3,10 +3,21 @@ import test from "node:test";
 
 import {
   assessAgentParticipation,
+  assessBothreadIntegration,
+  buildClaudeArgs,
+  buildCodexArgs,
   nextStateAfterSynthesis,
   phasePlanForMode,
   readOnlyWorktreeChanges,
 } from "./orchestrate-v1.mjs";
+
+const COMMUNICATION_TOOLS = [
+  "join_session",
+  "get_room_state",
+  "send_message",
+  "record_note",
+  "leave_session",
+];
 
 test("implementation mode continues to implementation after synthesis", () => {
   assert.equal(nextStateAfterSynthesis("IMPLEMENTATION"), "IMPLEMENTATION");
@@ -77,4 +88,48 @@ test("agent participation requires independently observed join and message", () 
     ),
     { joined: false, messagePublished: false },
   );
+});
+
+test("Claude auto-approves only the explicit Bothread communication tools", () => {
+  const args = buildClaudeArgs("test", {
+    tools: "Read,Grep,Glob,mcp__bothread__join_session",
+  });
+  const allowed = args[args.indexOf("--allowed-tools") + 1];
+  assert.equal(
+    allowed,
+    "mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__leave_session",
+  );
+  assert.equal(allowed.includes("*"), false);
+  assert.equal(allowed.includes("claim_files"), false);
+  assert.deepEqual(args.slice(-2), ["--", "test"]);
+});
+
+test("Codex uses only per-process Bothread communication approvals", () => {
+  const args = buildCodexArgs("test", { sandbox: "read-only" });
+  const text = args.join("\n");
+  assert.match(text, /mcp_servers\.bothread\.enabled_tools=/);
+  for (const tool of COMMUNICATION_TOOLS) {
+    assert.match(
+      text,
+      new RegExp(
+        `mcp_servers\\.bothread\\.tools\\.${tool}\\.approval_mode=\\"auto\\"`,
+      ),
+    );
+  }
+  assert.doesNotMatch(text, /claim_files|release_files|bypass|dangerously/);
+});
+
+test("failed approvals remain degraded and name every affected agent", () => {
+  const denied = {
+    joinRequested: true,
+    mcpToolCallObserved: true,
+    joined: false,
+    messagePublished: false,
+    approvalDenied: true,
+    unsupported: false,
+  };
+  const result = assessBothreadIntegration(denied, denied);
+  assert.equal(result.integration, "DEGRADED");
+  assert.match(result.degradedReason, /Claude: aprobación MCP denegada/);
+  assert.match(result.degradedReason, /Codex: aprobación MCP denegada/);
 });

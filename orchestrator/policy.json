@@ -5,13 +5,21 @@
     "command": "claude",
     "timeoutMs": 900000,
     "analysisTools": "Read,Grep,Glob,mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__leave_session",
-    "implementationTools": "Read,Edit,Write,Grep,Glob,mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__claim_files,mcp__bothread__release_files,mcp__bothread__leave_session"
+    "implementationTools": "Read,Edit,Write,Grep,Glob,mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__leave_session",
+    "bothreadCommunicationTools": "mcp__bothread__join_session,mcp__bothread__get_room_state,mcp__bothread__send_message,mcp__bothread__record_note,mcp__bothread__leave_session"
   },
   "codex": {
     "command": "codex",
     "timeoutMs": 900000,
     "analysisSandbox": "read-only",
-    "reviewSandbox": "read-only"
+    "reviewSandbox": "read-only",
+    "bothreadCommunicationTools": [
+      "join_session",
+      "get_room_state",
+      "send_message",
+      "record_note",
+      "leave_session"
+    ]
   },
   "bothread": {
     "url": "http://127.0.0.1:4889/mcp",
