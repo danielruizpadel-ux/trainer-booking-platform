@@ -2,7 +2,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { notifyReservationCancelled, notifyReservationMoved } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isRescheduleProposed } from './status'
-import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
 
 /**
  * Edición directa desde el panel (Parte 3): el entrenador ya ha hablado con
@@ -125,6 +125,7 @@ export async function moveReservation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', reservation.id)
+  if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
   if (error) return { ok: false, status: 500, message: error.message }
 
   await refreshWindowStatus(supabase, reservation.availability_slot_id)
