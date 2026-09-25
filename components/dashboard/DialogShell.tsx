@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 interface DialogShellProps {
@@ -15,20 +15,115 @@ interface DialogShellProps {
   size?: 'md' | 'lg'
 }
 
-/** Diálogo modal del dashboard: hoja inferior en móvil, ventana centrada en sm+. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Diálogos abiertos, el último arriba. Solo el de arriba atiende Escape y Tab:
+ * con uno encima de otro (el selector de horas dentro de "Nueva reserva"),
+ * Escape cierra solo el de arriba.
+ */
+const openDialogs: HTMLElement[] = []
+/** A dónde devuelve el foco cada diálogo abierto (para encadenar, ver abajo). */
+const returnTargets = new WeakMap<HTMLElement, HTMLElement | null>()
+
+/**
+ * Diálogo modal del dashboard: hoja inferior en móvil, ventana centrada en sm+.
+ *
+ * Foco: al abrir va a lo marcado con `data-autofocus` o, si no hay, al primer
+ * control del contenido (si no tiene ninguno, al propio diálogo). Tab y
+ * Shift+Tab dan la vuelta dentro; Escape cierra (salvo `locked`). Al cerrar,
+ * el foco vuelve a lo que lo tenía al abrir (el botón que lo abrió; si venía
+ * de un ActionsMenu, su botón, porque el menú lo devuelve antes de abrir).
+ */
 export function DialogShell({ title, eyebrow, description, onClose, locked = false, footer, children, size = 'lg' }: DialogShellProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  // Se captura en el primer render, antes de mover el foco (y una sola vez,
+  // aunque StrictMode repita el efecto).
+  const [returnTo] = useState<HTMLElement | null>(() =>
+    typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null)
+  )
+  // Si se abre desde DENTRO de otro diálogo que se cierra a la vez (la
+  // rejilla de horas → "Nueva reserva"), el botón de origen desaparece:
+  // entonces se hereda el destino de ese diálogo. Se mira aquí, en el render,
+  // porque en el efecto el otro ya se ha desmontado.
+  const [inherited] = useState<HTMLElement | null>(() => {
+    const opener = openDialogs.find((d) => returnTo && d.contains(returnTo))
+    return opener ? (returnTargets.get(opener) ?? null) : null
+  })
+  // onClose suele ser una flecha nueva en cada render: se lee de un ref para
+  // que el efecto de montaje no se repita (y no robe el foco al escribir).
+  const latest = useRef({ onClose, locked })
+  useLayoutEffect(() => {
+    latest.current = { onClose, locked }
+  })
+
   useEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+    returnTargets.set(panel, returnTo?.isConnected ? returnTo : inherited)
+    openDialogs.push(panel)
+    const isTop = () => openDialogs[openDialogs.length - 1] === panel
+    const focusables = () => [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0)
+
+    const initial =
+      panel.querySelector<HTMLElement>('[data-autofocus]') ?? bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE) ?? panel
+    initial.focus()
+
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !locked) onClose()
+      if (!isTop()) return
+      if (event.key === 'Escape') {
+        if (latest.current.locked) return
+        event.preventDefault()
+        latest.current.onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusables()
+      const active = document.activeElement
+      if (items.length === 0) {
+        event.preventDefault()
+        panel!.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!panel!.contains(active)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (event.shiftKey && (active === first || active === panel)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
+    // Si algo saca el foco fuera (un clic en el fondo, un elemento que
+    // desaparece), vuelve dentro del diálogo de arriba.
+    function onFocusIn(event: FocusEvent) {
+      if (!isTop() || panel!.contains(event.target as Node)) return
+      ;(focusables()[0] ?? panel!).focus()
+    }
+
     document.addEventListener('keydown', onKey)
+    document.addEventListener('focusin', onFocusIn)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocusIn)
       document.body.style.overflow = previous
+      openDialogs.splice(openDialogs.indexOf(panel), 1)
+      // Devolver el foco solo si seguía dentro (o se perdió al desmontar).
+      const active = document.activeElement
+      const target = returnTo?.isConnected ? returnTo : inherited?.isConnected ? inherited : null
+      if (target && (!active || active === document.body || panel.contains(active))) target.focus()
     }
-  }, [onClose, locked])
+  }, [returnTo, inherited])
 
   // Portal a <body>: el diálogo se abre desde una celda de tabla y no debe
   // heredar su alineación ni quedar dentro de su contexto de apilamiento.
@@ -36,20 +131,23 @@ export function DialogShell({ title, eyebrow, description, onClose, locked = fal
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 text-left">
-      <button type="button" aria-label="Cerrar" onClick={() => !locked && onClose()} className="absolute inset-0 bg-gray-900/40" />
+      <button type="button" tabIndex={-1} aria-label="Cerrar" onClick={() => !locked && onClose()} className="absolute inset-0 bg-gray-900/40" />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dialog-title"
-        className={`relative w-full ${size === 'lg' ? 'sm:max-w-4xl' : 'sm:max-w-xl'} max-h-[92vh] bg-white rounded-t-2xl sm:rounded-2xl ring-1 ring-gray-200/70 flex flex-col`}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
+        className={`relative focus:outline-none w-full ${size === 'lg' ? 'sm:max-w-4xl' : 'sm:max-w-xl'} max-h-[92vh] bg-white rounded-t-2xl sm:rounded-2xl ring-1 ring-gray-200/70 flex flex-col`}
       >
         <div className="flex items-start justify-between gap-4 px-5 sm:px-6 pt-5 pb-4 border-b border-gray-100">
           <div className="min-w-0">
             {eyebrow && <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{eyebrow}</p>}
-            <h2 id="dialog-title" className="mt-1 text-base font-semibold text-gray-900">
+            <h2 id={titleId} className="mt-1 text-base font-semibold text-gray-900">
               {title}
             </h2>
-            {description && <p className="mt-1 text-sm text-gray-500">{description}</p>}
+            {description && <p id={descriptionId} className="mt-1 text-sm text-gray-500">{description}</p>}
           </div>
           <button
             type="button"
@@ -64,7 +162,7 @@ export function DialogShell({ title, eyebrow, description, onClose, locked = fal
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-4 overflow-y-auto">{children}</div>
+        <div ref={bodyRef} className="px-5 sm:px-6 py-4 overflow-y-auto">{children}</div>
 
         {footer && (
           <div className="px-5 sm:px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

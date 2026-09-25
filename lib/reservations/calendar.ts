@@ -25,6 +25,8 @@ export interface CalendarReservation {
   client_name: string
   status: string | null
   kind: CalendarReservationKind
+  /** Personas en la clase (1..4); null si la fila no lo trae */
+  player_count?: number | null
 }
 
 export interface CalendarData {

@@ -22,7 +22,7 @@ interface ActionsMenuProps {
  * Se pinta en un portal con `position: fixed`, así ningún contenedor con
  * overflow (la tabla tiene overflow-x-auto + overflow-hidden) lo recorta; si
  * no cabe debajo del botón, se abre hacia arriba. Se cierra al elegir una
- * opción (antes de que esta abra su diálogo), al hacer clic fuera, con Escape
+ * opción (antes de que esta abra su diálogo, devolviendo el foco al botón), al hacer clic fuera, con Escape
  * (devolviendo el foco al botón), al hacer scroll o al cambiar el tamaño.
  * Teclado: flechas, Inicio/Fin y Tab (Tab cierra, como un menú nativo).
  */
@@ -132,7 +132,9 @@ export function ActionsMenu({ label, items, buttonClassName }: ActionsMenuProps)
                 disabled={item.disabled}
                 onClick={() => {
                   // Cerrar ANTES de la acción: si abre un diálogo, el menú ya no está.
-                  close()
+                  // El foco vuelve al botón primero: el diálogo lo toma como
+                  // "de dónde vengo" y lo devuelve ahí al cerrarse.
+                  close(true)
                   item.onSelect()
                 }}
                 className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 focus-visible:ring-2 focus-visible:ring-blue-500 disabled:text-gray-400 disabled:cursor-not-allowed"

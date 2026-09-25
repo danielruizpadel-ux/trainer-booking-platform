@@ -16,17 +16,25 @@ interface NewReservationDialogProps {
   /** Duraciones que ofrece el entrenador (60/90) */
   durations: number[]
   onClose: () => void
+  /**
+   * Franja ya elegida (clic en un hueco libre del calendario del Resumen): se
+   * abre directamente en "Datos del cliente" con esa fecha, hora y duración.
+   * "Cambiar hueco" vuelve al selector en esa misma semana.
+   */
+  initialSlot?: SlotPick | null
+  /** Tras crear la reserva (p. ej. para recargar el calendario que la abrió) */
+  onCreated?: () => void
 }
 
 /**
  * "Nueva reserva" (Parte 4): hueco libre → datos del cliente → ¿ya tengo la
  * pista? Crea `confirmed` o `pending_confirmation` vía POST /api/dashboard/reservations.
  */
-export function NewReservationDialog({ durations, onClose }: NewReservationDialogProps) {
+export function NewReservationDialog({ durations, onClose, initialSlot = null, onCreated }: NewReservationDialogProps) {
   const router = useRouter()
-  const [step, setStep] = useState<'slot' | 'client'>('slot')
-  const [duration, setDuration] = useState<number>(durations[0] ?? 60)
-  const [slot, setSlot] = useState<SlotPick | null>(null)
+  const [step, setStep] = useState<'slot' | 'client'>(initialSlot ? 'client' : 'slot')
+  const [duration, setDuration] = useState<number>(initialSlot?.duration_minutes ?? durations[0] ?? 60)
+  const [slot, setSlot] = useState<SlotPick | null>(initialSlot)
   const [client, setClient] = useState<ClientFieldValues>({ client_name: '', client_email: '', client_phone: '', notes: '' })
   const [confirmed, setConfirmed] = useState(false)
   const [sending, setSending] = useState(false)
@@ -45,6 +53,7 @@ export function NewReservationDialog({ durations, onClose }: NewReservationDialo
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo crear la reserva')
       router.refresh()
+      onCreated?.()
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la reserva')
@@ -105,7 +114,7 @@ export function NewReservationDialog({ durations, onClose }: NewReservationDialo
               setSlot(null)
             }}
           />
-          <ReservationsCalendar mode="select" compact duration={duration} selected={slot} onSlotSelect={setSlot} />
+          <ReservationsCalendar mode="select" compact duration={duration} selected={slot} onSlotSelect={setSlot} initialDate={slot?.session_date ?? initialSlot?.session_date} />
         </div>
       ) : (
         <div className="flex flex-col gap-6">
