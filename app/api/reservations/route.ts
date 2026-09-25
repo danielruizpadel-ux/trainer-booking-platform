@@ -9,7 +9,7 @@ import { RESERVATION_STATUS } from '@/lib/reservations/status'
 import { findBookableWindow, loadOpenWindows } from '@/lib/availability/booking'
 import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { isClassDuration } from '@/lib/availability/durations'
-import { addMinutes } from '@/lib/availability/windows'
+import { addMinutes, findSelectionOverlap } from '@/lib/availability/windows'
 import { isOverlapError, refreshWindowStatus } from '@/lib/reservations/slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
@@ -150,6 +150,23 @@ export async function POST(request: Request) {
     const duration = body.duration_minutes === undefined ? offered[0] : Number(body.duration_minutes)
     if (!isClassDuration(duration) || !offered.includes(duration)) {
       return bad('That session length is not available with this coach.')
+    }
+
+    // Las sesiones de la MISMA petición no pueden pisarse entre sí (12:00 y
+    // 12:30 de 60 min). Se rechaza antes de tocar la base: nada de reservas
+    // parciales. Luego siguen el cálculo de ventanas y la restricción 008.
+    const clash = findSelectionOverlap(
+      sessions.map((s) => ({ date: s.date, time: normalizeTime(s.time) })),
+      duration
+    )
+    if (clash) {
+      const [a, b] = clash
+      if (normalizeTime(a.time) === normalizeTime(b.time)) {
+        return bad(`The session on ${a.date} ${normalizeTime(a.time)} is selected twice.`)
+      }
+      return bad(
+        `The sessions on ${a.date} at ${normalizeTime(a.time)} and ${normalizeTime(b.time)} overlap. Choose times at least ${duration} minutes apart.`
+      )
     }
 
     // Precio vigente del entrenador para esta duración y nº de jugadores.

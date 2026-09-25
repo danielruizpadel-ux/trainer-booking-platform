@@ -8,6 +8,7 @@ import DayView from './DayView'
 import CalendarNavbar from './CalendarNavbar'
 import TimePickerDropdown from './TimePickerDropdown'
 import { toDateStr, getMonday, isPastMalaysiaSession } from '@/lib/dateUtils'
+import { overlapsSelection } from '@/lib/availability/windows'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -136,12 +137,20 @@ export default function AvailabilityCalendar({
     [selectedSessions]
   )
 
+  const classMinutes = durationMinutes ?? 60
+
+  /** ¿Pisa esta hora otra clase ya elegida ese día? (lib/availability/windows, igual que el servidor) */
+  const blockedBySelection = (date: string, time: string) =>
+    overlapsSelection(selectedSessions, { date, time }, classMinutes)
+
   const handleToggleTime = (date: string, time: string) => {
     if (isPastMalaysiaSession(date, time)) return
     const exists = selectedSessions.some((s) => s.date === date && s.time === time)
     if (exists) {
       onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
     } else {
+      // Nunca dos clases que se pisen (12:00 y 12:30 de 60 min).
+      if (blockedBySelection(date, time)) return
       onSessionChange([...selectedSessions, { date, time }])
     }
   }
@@ -210,6 +219,7 @@ export default function AvailabilityCalendar({
               slots={visibleSlots}
               selectedTimes={selectedTimesFor(currentDateStr)}
               onTimeSelect={(time) => handleToggleTime(currentDateStr, time)}
+              isBlocked={(time) => blockedBySelection(currentDateStr, time)}
             />
           )}
 
@@ -229,6 +239,7 @@ export default function AvailabilityCalendar({
             slots={visibleSlots.filter((s) => s.session_date === pickerDate)}
             selectedTimes={selectedTimesFor(pickerDate)}
             onToggleTime={handleToggleTime}
+            isBlocked={(time) => blockedBySelection(pickerDate, time)}
             onClose={() => setPickerDate(null)}
           />
         )}

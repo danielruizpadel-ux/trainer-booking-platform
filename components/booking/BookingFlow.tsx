@@ -6,6 +6,7 @@ import { BookingCheckout, CheckoutError, type CheckoutSubmit } from './checkout/
 import type { SessionPriceRow } from '@/lib/reservations/pricing'
 import type { BookingAccount } from '@/lib/players/booking-contact'
 import type { BookingDraft } from '@/lib/booking/draft'
+import { overlapsSelection } from '@/lib/availability/windows'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -105,10 +106,15 @@ export default function BookingFlow({
       .then((data: { success?: boolean; data?: Array<{ session_date: string; start_time: string }> }) => {
         if (cancelled) return
         const slots = data?.success && Array.isArray(data.data) ? data.data : []
-        const still = restoredDraft.sessions.flatMap((s) => {
+        const available = restoredDraft.sessions.flatMap((s) => {
           const slot = slots.find((x) => x.session_date === s.date && x.start_time.slice(0, 5) === s.time)
           return slot ? [{ date: s.date, time: slot.start_time }] : []
         })
+        // Un borrador antiguo podría traer clases que se pisan: se queda la primera.
+        const still = available.reduce<Session[]>(
+          (kept, s) => (overlapsSelection(kept, s, restoredDraft.duration) ? kept : [...kept, s]),
+          []
+        )
         setDuration(restoredDraft.duration)
         setPlayerCount(restoredDraft.playerCount)
         setSelectedSessions(still)

@@ -16,6 +16,8 @@ interface TimePickerDropdownProps {
   slots: AvailabilitySlot[]
   selectedTimes: Set<string>
   onToggleTime: (date: string, time: string) => void
+  /** Horas que pisarían otra clase ya elegida (misma regla que el servidor). */
+  isBlocked?: (time: string) => boolean
   onClose: () => void
 }
 
@@ -24,6 +26,7 @@ export default function TimePickerDropdown({
   slots,
   selectedTimes,
   onToggleTime,
+  isBlocked,
   onClose,
 }: TimePickerDropdownProps) {
   const dateSlots = slots.filter((slot) => slot.session_date === date)
@@ -126,7 +129,8 @@ export default function TimePickerDropdown({
         <div className="grid grid-cols-3 gap-2 max-h-80 overflow-y-auto mb-6">
           {dateSlots.map((slot) => {
             const isSelected = selectedTimes.has(slot.start_time)
-            const isAvailable = slot.current_bookings < slot.max_capacity
+            const blocked = !isSelected && (isBlocked?.(slot.start_time) ?? false)
+            const isAvailable = slot.current_bookings < slot.max_capacity && !blocked
 
             return (
               <button
@@ -136,6 +140,7 @@ export default function TimePickerDropdown({
                 onClick={() => onToggleTime(date, slot.start_time)}
                 disabled={!isAvailable}
                 aria-pressed={isSelected}
+                title={blocked ? 'Se solapa con otra clase que ya has elegido' : undefined}
                 className={`h-12 rounded-xl text-sm font-semibold tabular-nums inline-flex items-center justify-center gap-1.5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                   isSelected
                     ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'

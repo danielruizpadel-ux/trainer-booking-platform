@@ -15,6 +15,8 @@ interface DayViewProps {
   slots: AvailabilitySlot[]
   selectedTimes?: Set<string>
   onTimeSelect: (time: string) => void
+  /** Horas que pisarían otra clase ya elegida (misma regla que el servidor). */
+  isBlocked?: (time: string) => boolean
 }
 
 export default function DayView({
@@ -22,6 +24,7 @@ export default function DayView({
   slots,
   selectedTimes = new Set(),
   onTimeSelect,
+  isBlocked,
 }: DayViewProps) {
   if (!selectedDate) {
     return (
@@ -60,8 +63,9 @@ export default function DayView({
 
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
         {daySlots.map((slot) => {
-          const isAvailable = slot.current_bookings < slot.max_capacity
           const isSelected = selectedTimes.has(slot.start_time)
+          const blocked = !isSelected && (isBlocked?.(slot.start_time) ?? false)
+          const isAvailable = slot.current_bookings < slot.max_capacity && !blocked
 
           return (
             <button
@@ -70,6 +74,7 @@ export default function DayView({
               onClick={() => isAvailable && onTimeSelect(slot.start_time)}
               disabled={!isAvailable}
               aria-pressed={isSelected}
+              title={blocked ? 'Se solapa con otra clase que ya has elegido' : undefined}
               className={[
                 'py-3 rounded-xl text-sm font-medium transition-all duration-150',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
