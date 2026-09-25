@@ -17,12 +17,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fakeSupabase, load, mock, read, root } from './lib/ts-harness.mjs'
+import { fakeSupabase, load, mock, read, require, root } from './lib/ts-harness.mjs'
 
 const SESSION_PLAYER = '11111111-1111-4111-8111-111111111111'
 const OTHER_PLAYER = '22222222-2222-4222-8222-222222222222'
 
-const state = { session: null, queries: [] }
+const state = { session: null, queries: [], rows: [] }
 mock('lib/auth/current-player.ts', {
   getPlayerSession: async () => ({ user: state.session ? { id: 'auth-a' } : null, player: state.session }),
 })
@@ -30,16 +30,17 @@ mock('lib/supabase/client.ts', {
   getSupabaseServerClient: () =>
     fakeSupabase((table, ops) => {
       state.queries.push({ table, ops })
-      return { data: [], error: null }
+      return { data: table === 'reservations' ? state.rows : [], error: null }
     }),
 })
 
 const { PlayerReservationsCard } = load('components/player/PlayerReservationsCard.tsx')
 const { listPlayerReservations, PLAYER_RESERVATION_COLUMNS } = load('lib/players/reservations.ts')
 
-const reset = (session) => {
+const reset = (session, rows = []) => {
   state.session = session
   state.queries = []
+  state.rows = rows
 }
 const playerFilter = () => {
   const q = state.queries.find((x) => x.table === 'reservations')
@@ -99,10 +100,12 @@ test("ningún componente ni página declara 'use server' (sería invocable desde
   assert.deepEqual(offenders, [])
 })
 
-test('la consulta solo pide columnas de la cuenta (nada de contacto, notas, precio ni token)', async () => {
-  for (const c of ['client_email', 'client_phone', 'client_name', 'notes', 'price', 'proposal_token', 'client_message']) {
+test('la consulta solo pide columnas de la cuenta (nada de contacto, notas ni token; sí el precio de la fila)', async () => {
+  for (const c of ['client_email', 'client_phone', 'client_name', 'notes', 'proposal_token', 'client_message']) {
     assert.doesNotMatch(PLAYER_RESERVATION_COLUMNS, new RegExp(`\\b${c}\\b`), c)
   }
+  // El precio se lee de la PROPIA fila (reservations.price), no de otra tabla.
+  assert.match(PLAYER_RESERVATION_COLUMNS, /(^|, )price(,|$)/)
   const ops = []
   const fake = { from: (t) => { const b = new Proxy({}, { get: (_, p) => (p === 'then' ? (res) => res({ data: [], error: null }) : (...a) => { ops.push({ t, p, a }); return b }) }); return b } }
   const r = await listPlayerReservations(fake, SESSION_PLAYER)
@@ -129,4 +132,44 @@ test('estados en la cuenta: todos los de status.ts, completed incluido; lo desco
   for (const value of Object.values(RESERVATION_STATUS).filter((v) => !['available', 'pending', 'full'].includes(v))) {
     assert.notEqual(statusLabel(value), 'Estado desconocido', `falta etiqueta para ${value}`)
   }
+})
+
+// ─── Precio de la sesión (reservations.price tal cual) ──────────────────────
+
+const { sessionPriceLabel } = load('components/player/PlayerReservationsCard.tsx')
+const { renderToStaticMarkup } = require('react-dom/server')
+
+const row = (id, price) => ({
+  id,
+  status: 'confirmed',
+  start_time: '10:00:00',
+  end_time: '11:00:00',
+  duration_minutes: 60,
+  price,
+  availability_slots: { session_date: '2099-01-01', start_time: '09:00:00', end_time: '13:00:00' },
+  trainers: { name: 'Coach', slug: 'coach' },
+})
+
+test('sessionPriceLabel: valor de la fila tal cual; NULL o no numérico → "Price unavailable"', () => {
+  assert.equal(sessionPriceLabel(300), 'Session price RM300')
+  assert.equal(sessionPriceLabel(382.5), 'Session price RM382.50')
+  assert.equal(sessionPriceLabel('270.00'), 'Session price RM270', 'numeric que llega como texto')
+  assert.equal(sessionPriceLabel(0), 'Session price RM0', 'un 0 editado por el entrenador se enseña, no se esconde')
+  for (const v of [null, undefined, '', '  ', 'abc']) assert.equal(sessionPriceLabel(v), 'Price unavailable', String(v))
+})
+
+test('la tarjeta pinta el precio de CADA fila y no consulta el precio vigente del entrenador', async () => {
+  reset({ id: SESSION_PLAYER }, [row('r1', 270), row('r2', null)])
+  const html = renderToStaticMarkup(await PlayerReservationsCard())
+  assert.match(html, /Session price RM270/)
+  assert.match(html, /Price unavailable/)
+  assert.deepEqual([...new Set(state.queries.map((q) => q.table))], ['reservations'], 'ni trainer_session_prices ni otra tabla')
+  assert.equal(playerFilter(), SESSION_PLAYER)
+  // Nada que no está guardado con fiabilidad.
+  assert.doesNotMatch(html, /Paid|Pagad|discount|descuento|%|saving|ahorr|total|original/i)
+})
+
+test('el código de la tarjeta no lee precios del entrenador ni calcula descuentos', () => {
+  const src = code('components/player/PlayerReservationsCard.tsx') + code('lib/players/reservations.ts')
+  assert.doesNotMatch(src, /trainer_session_prices|requireBasePrice|loadTrainerPrices|calculateBookingPrice|quoteBooking|discountPercent/)
 })
