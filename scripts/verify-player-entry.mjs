@@ -322,8 +322,10 @@ test('D/E. el widget con cuenta manda as_player sin datos de contacto; sin cuent
 test('WhatsApp de la reserva = avisos operativos, no tips', () => {
   const checkout = fs.readFileSync(path.join(root, 'components/booking/checkout/BookingCheckout.tsx'), 'utf8')
   assert.doesNotMatch(checkout, /tips/i)
-  assert.match(checkout, /Receive booking updates on WhatsApp/)
-  assert.match(checkout, /Confirmation and changes to this booking only\./)
+  // Preferencia de contacto, no un envío automático: notify.ts sigue siendo un stub.
+  assert.match(checkout, /Your coach can contact you on WhatsApp/)
+  assert.match(checkout, /About the confirmation and changes to this booking only\./)
+  assert.doesNotMatch(checkout, /WhatsApp updates on|Receive booking updates/)
 })
 
 test('/api/player/me es de solo lectura y no acepta parámetros', () => {

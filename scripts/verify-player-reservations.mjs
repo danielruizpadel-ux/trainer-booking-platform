@@ -115,3 +115,18 @@ test('si hay un build de desarrollo, el manifiesto de Server Actions no incluye 
   if (!fs.existsSync(manifest)) return
   assert.doesNotMatch(fs.readFileSync(manifest, 'utf8'), /PlayerReservationsCard/)
 })
+
+test('estados en la cuenta: todos los de status.ts, completed incluido; lo desconocido no pasa por pendiente', () => {
+  const { statusLabel } = load('components/player/PlayerReservationsCard.tsx')
+  assert.equal(statusLabel('completed'), 'Completada')
+  assert.equal(statusLabel('confirmed'), 'Confirmada')
+  assert.equal(statusLabel('pending_confirmation'), 'Pendiente de confirmar')
+  assert.equal(statusLabel('cancelled'), 'Cancelada')
+  assert.equal(statusLabel('needs_reschedule'), 'Sin pista: elige otra hora')
+  assert.equal(statusLabel('reschedule_proposed'), 'Nueva hora propuesta')
+  assert.notEqual(statusLabel('algo_nuevo'), 'Pendiente de confirmar')
+  const { RESERVATION_STATUS } = load('lib/reservations/status.ts')
+  for (const value of Object.values(RESERVATION_STATUS).filter((v) => !['available', 'pending', 'full'].includes(v))) {
+    assert.notEqual(statusLabel(value), 'Estado desconocido', `falta etiqueta para ${value}`)
+  }
+})

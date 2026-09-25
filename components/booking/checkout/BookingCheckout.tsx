@@ -323,8 +323,8 @@ export function BookingCheckout({
                           className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span>
-                          <span className="block text-sm font-semibold text-gray-900">Receive booking updates on WhatsApp</span>
-                          <span className="block text-xs text-gray-500">Confirmation and changes to this booking only.</span>
+                          <span className="block text-sm font-semibold text-gray-900">Your coach can contact you on WhatsApp</span>
+                          <span className="block text-xs text-gray-500">About the confirmation and changes to this booking only.</span>
                         </span>
                       </label>
                     </div>
@@ -424,7 +424,7 @@ function BookingAs({ player }: { player: BookingPlayer }) {
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             </span>
-            WhatsApp updates on
+            OK to contact on WhatsApp
           </>
         ) : (
           <>
@@ -433,7 +433,7 @@ function BookingAs({ player }: { player: BookingPlayer }) {
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
             </span>
-            WhatsApp updates off
+            No WhatsApp contact
           </>
         )}
       </p>

@@ -190,8 +190,8 @@ export function PlayerProfileForm({ mode, email, initial, returnTo = '/cuenta' }
             className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
           <span>
-            <span className="block text-sm font-semibold text-gray-900">Avisos por WhatsApp</span>
-            <span className="block text-xs text-gray-500">Confirmaciones y cambios de tus clases en este teléfono.</span>
+            <span className="block text-sm font-semibold text-gray-900">Contacto por WhatsApp</span>
+            <span className="block text-xs text-gray-500">Tu entrenador podrá escribirte a este teléfono para confirmar o cambiar tus clases.</span>
           </span>
         </label>
       </div>
