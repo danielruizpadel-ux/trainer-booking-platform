@@ -66,7 +66,8 @@ export default function TimePickerDropdown({
 
             return (
               <button
-                key={slot.id}
+                // slot.id es la VENTANA (migración 007): varios inicios la comparten.
+                key={`${slot.id}:${slot.start_time}`}
                 onClick={() => onToggleTime(date, slot.start_time)}
                 disabled={!isAvailable}
                 className={`p-3 rounded-lg font-semibold text-sm transition-all border-2 ${

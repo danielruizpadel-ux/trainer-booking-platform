@@ -65,7 +65,8 @@ export default function DayView({
 
           return (
             <button
-              key={slot.id}
+              // slot.id es la VENTANA (migración 007): varios inicios la comparten.
+              key={`${slot.id}:${slot.start_time}`}
               onClick={() => isAvailable && onTimeSelect(slot.start_time)}
               disabled={!isAvailable}
               aria-pressed={isSelected}
