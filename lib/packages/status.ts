@@ -44,6 +44,10 @@ export interface PackageSessionReservation {
   start_time: string | null
   end_time: string | null
   duration_minutes: number | null
+  /** Migración 010 (opcionales por si la fila viene sin ellas) */
+  player_count?: number | null
+  client_message?: string | null
+  whatsapp_opt_in?: boolean | null
   slot: { id: string; session_date: string; start_time: string; end_time: string; class_type: string } | null
 }
 

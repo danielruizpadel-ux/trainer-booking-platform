@@ -41,6 +41,12 @@ otro entrenador hace falta una fila en `trainers` (con su `slug`, que es lo que
 resuelve `getTrainerBySlug`) y sus filas en `availability_slots`. La landing
 genérica por slug ya existe en `app/[trainerSlug]/page.tsx`.
 
+**Precios (migración 010):** un entrenador nuevo no tiene filas en
+`trainer_session_prices` y, sin ellas, la reserva devuelve 409 ("This coach
+hasn't set a price…"). Se configuran en Dashboard → Disponibilidad → Precios
+(las 8 casillas: 60/90 min × 1..4 jugadores). No hay precio por defecto en
+código a propósito.
+
 ## Darle acceso al dashboard
 
 Requiere la migración `migrations/002_trainers_auth_user_id.sql` aplicada.

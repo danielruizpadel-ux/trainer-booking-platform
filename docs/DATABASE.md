@@ -60,7 +60,7 @@ No existen: `is_available`, `is_booked`, `price`.
 | `status` | text | `pending_confirmation` (default tras la migración 003) · `reschedule_proposed` (004) · `confirmed` · `needs_reschedule` · `cancelled` · `completed`. Ver `migrations/003_…` y `004_…` |
 | `rescheduled_from_id` | uuid | **migración 004**: reserva original de una propuesta de nueva fecha |
 | `proposal_token` | text | **migración 004**: token del enlace público `/propuesta/[token]`; NULL al responder |
-| `notes` | text | aquí se guarda la preferencia de WhatsApp |
+| `notes` | text | notas internas del entrenador. Antes de la 010 el widget guardaba aquí "WhatsApp: si/no" (solo se lee en reservas antiguas) |
 | `created_at`, `updated_at` | timestamptz | |
 
 **Restricción `reservations_no_overlap` (migración 008, pendiente de aplicar):**
@@ -120,6 +120,73 @@ Plantilla semanal y excepciones por fecha. `lib/availability/generate.ts` las
 traduce a ventanas de `availability_slots` de las próximas 8 semanas. Sin
 cambios en la 007: la duración no vive aquí (`class_type` es otra dimensión y
 sigue hardcodeada a `private`).
+
+## `players` y `player_trainers` (migración 009)
+
+Cuenta global de jugador (Fase A1). Aplicada el 24/09/2026. Detalle del
+flujo: [`PLAYER_ACCOUNTS.md`](PLAYER_ACCOUNTS.md).
+
+`players` — una fila por usuario de `auth.users` que entra por `/cuenta`:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK |
+| `auth_user_id` | uuid | NOT NULL, unique, FK a `auth.users(id)` on delete cascade |
+| `email` | text | NOT NULL. Copia del email de Auth; la app la resincroniza al entrar. No se edita desde el perfil |
+| `full_name` | text | 2–80 caracteres |
+| `phone` | text | 8–30 caracteres (la app exige 10+ dígitos, como el formulario de reserva) |
+| `whatsapp_opt_in` | bool | default false |
+| `onboarding_completed_at` | timestamptz | NULL = onboarding pendiente. CHECK: no puede estar puesto sin nombre y teléfono |
+| `created_at`, `updated_at` | timestamptz | |
+
+`player_trainers` — relación N:M jugador ↔ entrenador, unique `(player_id, trainer_id)`:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `player_id` | uuid | FK a `players` on delete cascade |
+| `trainer_id` | uuid | FK a `trainers` on delete cascade |
+| `status` | text | `active` · `archived` (se archiva, no se borra) |
+| `source` | text | `self_signup` (entró desde la página del entrenador) · `booking` (futuro) · `trainer_added` (futuro) |
+| `created_at`, `updated_at` | timestamptz | |
+
+RLS activo en las dos, solo lectura: el jugador lee su fila y sus relaciones;
+el entrenador lee las relaciones con él. No hay políticas de escritura: todo
+pasa por el servidor con la service role key tras `requirePlayer()`.
+`reservations` **no** tiene todavía `player_id`.
+
+## Migración 010 — checkout A2 (aplicada el 25/09/2026)
+
+Columnas nuevas en `reservations` (sin backfill; las reservas anteriores
+quedan con `player_id` NULL, `client_message` NULL, `player_count` 1,
+`whatsapp_opt_in` NULL):
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `player_id` | uuid NULL | FK `players(id)` ON DELETE SET NULL. Solo desde la sesión (reserva pública con cuenta). Invitado, manual y paquete: NULL. Índice parcial `reservations_player_idx (player_id, created_at desc) where player_id is not null` |
+| `client_message` | text NULL | ≤ 500 (CHECK). Mensaje del cliente al entrenador. **No** son las notas internas (`notes`) |
+| `player_count` | smallint NOT NULL default 1 | 1..4 (CHECK). Personas en esa clase privada; no es `max_capacity`. Mismo valor en todas las filas de un checkout |
+| `whatsapp_opt_in` | boolean NULL | Avisos operativos. Toda reserva nueva lo escribe true/false; NULL = reserva antigua (se lee "WhatsApp: si/no" de `notes`) |
+
+`trainer_session_prices` — precio VIGENTE por entrenador:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `trainer_id` | uuid | FK `trainers` ON DELETE CASCADE |
+| `duration_minutes` | smallint | 60 o 90 |
+| `player_count` | smallint | 1..4 |
+| `price_rm` | numeric(10,2) | > 0 y ≤ 100 000 |
+| `created_at`, `updated_at` | timestamptz | |
+
+PK `(trainer_id, duration_minutes, player_count)`. Precargada para los
+entrenadores existentes con 60 min → 300/300/350/350 y 90 min →
+450/450/525/525. **Un entrenador nuevo no tiene filas**: hasta que las
+configure (Disponibilidad → Precios) la reserva devuelve 409. Lo cobrado es
+el snapshot de `reservations.price`; cambiar la tabla no toca reservas hechas.
+
+Seguridad (010): RLS activo sin políticas en las dos tablas, y anon /
+authenticated **sin** INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ni
+TRIGGER (solo conservan SELECT, que sin política no devuelve filas). Toda
+escritura va por el servidor con la service role.
 
 ## `email_logs` y `whatsapp_logs`
 

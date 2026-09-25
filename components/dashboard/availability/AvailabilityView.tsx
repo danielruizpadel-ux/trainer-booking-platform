@@ -7,6 +7,8 @@ import type { AvailabilityOverride } from '@/lib/availability/overrides'
 import { WeeklySchedule } from './WeeklySchedule'
 import { DateOverridesPanel } from './DateOverridesPanel'
 import { DurationsCard } from './DurationsCard'
+import { PricingCard } from './PricingCard'
+import { useTrainerPricing } from '@/components/dashboard/useTrainerPricing'
 import { SyncAvailabilityButton } from './SyncAvailabilityButton'
 
 /**
@@ -21,6 +23,8 @@ export function AvailabilityView() {
   const [overrides, setOverrides] = useState<AvailabilityOverride[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const pricing = useTrainerPricing()
+  const [offered, setOffered] = useState<number[] | null>(null)
 
   const loadSchedule = useCallback(() => {
     setLoading(true)
@@ -58,8 +62,9 @@ export function AvailabilityView() {
         </p>
       )}
 
-      <div className="mb-6">
-        <DurationsCard />
+      <div className="mb-6 flex flex-col gap-6">
+        <DurationsCard prices={pricing.rows} onDurationsChange={setOffered} />
+        <PricingCard pricing={pricing} offered={offered} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-start">

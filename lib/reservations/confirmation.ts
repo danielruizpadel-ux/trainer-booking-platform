@@ -32,6 +32,7 @@ export interface DecidableReservation {
   start_time?: string | null
   end_time?: string | null
   duration_minutes?: number | null
+  whatsapp_opt_in?: boolean | null
 }
 
 export type DecisionResult =

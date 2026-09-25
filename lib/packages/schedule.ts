@@ -94,6 +94,10 @@ export async function schedulePackageSession(
       client_phone: pkg.client_phone,
       notes: pkg.notes ? `${label} · ${pkg.notes}` : label,
       price: pkg.price_per_session_discounted,
+      // Migración 010: el paquete aún no tiene jugador (player_id NULL), sin
+      // mensaje del cliente, 1 jugador y sin WhatsApp (no se pidió).
+      player_count: 1,
+      whatsapp_opt_in: false,
       start_time: lookup.range.start_time,
       end_time: lookup.range.end_time,
       duration_minutes: duration,

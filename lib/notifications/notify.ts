@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { whatsappPreference } from '@/lib/reservations/whatsapp'
 
 /**
  * Notificaciones al cliente. Por ahora son un STUB: no hay proveedor de email
@@ -22,6 +23,8 @@ export interface NotifiableReservation {
   client_email: string
   client_phone?: string | null
   notes?: string | null
+  /** Migración 010. NULL/ausente = reserva antigua: se mira "WhatsApp: si/no" en notes */
+  whatsapp_opt_in?: boolean | null
   /** YYYY-MM-DD */
   session_date?: string | null
   /** HH:MM o HH:MM:SS */
@@ -89,16 +92,17 @@ function sessionLabel(reservation: NotifiableReservation): string {
   return [reservation.session_date, time].filter(Boolean).join(' ') || 'tu sesión'
 }
 
-/** El widget guarda "WhatsApp: si" / "WhatsApp: no" en `notes`. */
-function wantsWhatsApp(reservation: NotifiableReservation): boolean {
-  return /whatsapp:\s*si/i.test(reservation.notes ?? '') && Boolean(reservation.client_phone)
+/** Avisos por WhatsApp: la regla vive en lib/reservations/whatsapp.ts. Sin teléfono, nunca. */
+export function wantsWhatsApp(reservation: Pick<NotifiableReservation, 'whatsapp_opt_in' | 'notes' | 'client_phone'>): boolean {
+  return Boolean(reservation.client_phone) && whatsappPreference(reservation)
 }
 
 async function record(
   reservation: NotifiableReservation,
   content: { subject: string; whatsapp: string }
 ) {
-  console.log(`[notify:stub] email → ${reservation.client_email}: "${content.subject}"`)
+  // Sin datos de contacto en los logs: solo la reserva.
+  console.log(`[notify:stub] email · reserva ${reservation.id}`)
 
   try {
     const supabase = getSupabaseServerClient()
@@ -113,7 +117,7 @@ async function record(
     if (emailError) console.warn('[notify:stub] no se pudo registrar en email_logs:', emailError.message)
 
     if (wantsWhatsApp(reservation)) {
-      console.log(`[notify:stub] whatsapp → ${reservation.client_phone}`)
+      console.log(`[notify:stub] whatsapp · reserva ${reservation.id}`)
       const { error: waError } = await supabase.from('whatsapp_logs').insert({
         reservation_id: reservation.id,
         phone_number: reservation.client_phone,

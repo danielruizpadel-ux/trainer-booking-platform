@@ -13,6 +13,7 @@ import {
 } from '@/lib/reservations/format'
 import { StatusBadge } from './StatusBadge'
 import { formatRM } from '@/lib/reservations/pricing'
+import { playersLabel } from './ReservationClientInfo'
 import { ReservationRowActions } from './ReservationRowActions'
 import { ReservationMobileCard } from './ReservationMobileCard'
 
@@ -170,7 +171,20 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
                         highlightId === r.id ? 'bg-blue-50/70' : 'hover:bg-gray-50/50'
                       }`}
                     >
-                      <Td className="font-medium text-gray-900 whitespace-nowrap">{r.client_name}</Td>
+                      <Td>
+                        <p className="font-medium text-gray-900 whitespace-nowrap">{r.client_name}</p>
+                        <p className="mt-0.5 text-xs text-gray-500 whitespace-nowrap">
+                          {playersLabel(r.player_count)}
+                          {r.client_message && (
+                            <span title="Tiene mensaje del cliente (ábrelo en Editar)" className="ml-1.5 inline-flex items-center gap-1 text-blue-600">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                              </svg>
+                              Mensaje
+                            </span>
+                          )}
+                        </p>
+                      </Td>
                       <Td>
                         <div className="flex flex-col gap-0.5 text-gray-600">
                           <a

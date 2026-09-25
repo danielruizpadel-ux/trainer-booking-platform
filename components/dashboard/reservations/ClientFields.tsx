@@ -17,7 +17,11 @@ interface ClientFieldsProps {
   idPrefix?: string
 }
 
-/** Nombre, email, teléfono y notas del cliente. Lo usan editar y nueva reserva. */
+/**
+ * Nombre, email, teléfono y notas internas. Lo usan editar y nueva reserva.
+ * Las notas son del entrenador; el mensaje que escribe el cliente al reservar
+ * (client_message) va aparte y no se edita aquí.
+ */
 export function ClientFields({ values, onChange, disabled = false, idPrefix = 'client' }: ClientFieldsProps) {
   const set = (key: keyof ClientFieldValues) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     onChange({ ...values, [key]: event.target.value })
@@ -44,9 +48,9 @@ export function ClientFields({ values, onChange, disabled = false, idPrefix = 'c
       </div>
       <div className="flex flex-col gap-1.5 sm:col-span-2">
         <label htmlFor={`${idPrefix}-notes`} className={labelClass}>
-          Notas
+          Notas internas
         </label>
-        <textarea id={`${idPrefix}-notes`} rows={2} value={values.notes} onChange={set('notes')} disabled={disabled} className={`${fieldClass} h-auto py-2.5`} />
+        <textarea id={`${idPrefix}-notes`} placeholder="Solo las ves tú" rows={2} value={values.notes} onChange={set('notes')} disabled={disabled} className={`${fieldClass} h-auto py-2.5`} />
       </div>
     </div>
   )

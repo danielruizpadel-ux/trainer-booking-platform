@@ -19,6 +19,20 @@ Existing documentation and the actual codebase remain the source of truth for de
 - Resolve known issues before production deployment.
 - Keep security constraints visible.
 
+### Player accounts
+- Phase A1 (24/09/2026, branch `emdash/player-login-yhk1z`): global player
+  account at `/cuenta` — login, onboarding, profile editing, player↔trainer
+  relationship (migration 009). Code done; migration not applied and not
+  verified end-to-end yet. See `docs/PLAYER_ACCOUNTS.md`.
+- Phase A2 (25/09/2026, same branch): English checkout (players 1–4,
+  booking as / guest details, message to coach), editable per-trainer pricing
+  (`trainer_session_prices`), `player_id` / `client_message` /
+  `player_count` / `whatsapp_opt_in` on reservations, direct writes to
+  `reservations` closed (migration 010, applied). Pending Dani's manual
+  browser test and Codex review.
+- Next: My Bookings, secure guest → account linking (per-reservation token),
+  rate limiting on POST /api/reservations before production.
+
 ### Product
 - Continue developing the trainer booking platform.
 - Improve the trainer booking experience.

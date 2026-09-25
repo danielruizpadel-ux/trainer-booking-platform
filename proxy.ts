@@ -1,27 +1,48 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { loggedInEntryRedirect } from '@/lib/players/entry'
 
 /**
- * Protege /dashboard/**.
+ * Protege /dashboard/** (entrenadores) y /cuenta/** (jugadores).
  *
  * - Refresca la sesión de Supabase en cada petición (las cookies de sesión
  *   caducan y solo aquí se pueden reescribir antes de que se rendericen las páginas).
- * - Sin sesión → /dashboard/login?next=<ruta pedida>.
- * - Con sesión en /dashboard/login → /dashboard.
+ * - Sin sesión → /dashboard/login?next=<ruta pedida> (o /cuenta/entrar?next=…).
+ * - Con sesión en /dashboard/login → /dashboard (y /cuenta/entrar → /cuenta).
+ *   Excepción: /cuenta/entrar?trainer=<slug> con sesión va a
+ *   /cuenta/auth/vincular, que crea la relación con ese entrenador (si no,
+ *   se perdería el entrenador al saltarse el login).
  *
  * Lo que NO hace: comprobar si el usuario está vinculado a un `trainers.auth_user_id`.
  * Eso lo hace `app/dashboard/(protected)/layout.tsx`, que es quien puede pintar
- * la pantalla de "cuenta no vinculada". Aquí solo hay redirecciones.
+ * la pantalla de "cuenta no vinculada". Igual en /cuenta: crear la fila de
+ * `players` y exigir el onboarding lo hace app/cuenta/(protected). Aquí solo
+ * hay redirecciones.
  *
  * (En Next 16 este fichero se llama proxy.ts; es lo que antes era middleware.ts.)
  */
 
-const PUBLIC_DASHBOARD_PATHS = ['/dashboard/login', '/dashboard/auth']
+interface ProtectedArea {
+  root: string
+  login: string
+  publicPaths: string[]
+  /** Adónde va quien ya tiene sesión y abre el login. Por defecto, `root`. */
+  loggedInRedirect?: (request: NextRequest) => string
+}
 
-function isPublicDashboardPath(pathname: string) {
-  return PUBLIC_DASHBOARD_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`)
-  )
+const AREAS: ProtectedArea[] = [
+  { root: '/dashboard', login: '/dashboard/login', publicPaths: ['/dashboard/login', '/dashboard/auth'] },
+  {
+    root: '/cuenta',
+    login: '/cuenta/entrar',
+    publicPaths: ['/cuenta/entrar', '/cuenta/auth'],
+    loggedInRedirect: (request) =>
+      loggedInEntryRedirect(request.nextUrl.searchParams.get('trainer'), request.nextUrl.searchParams.get('draft')),
+  },
+]
+
+function matchesPath(pathname: string, path: string) {
+  return pathname === path || pathname.startsWith(`${path}/`)
 }
 
 export async function proxy(request: NextRequest) {
@@ -53,28 +74,29 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname, search } = request.nextUrl
-  const isPublic = isPublicDashboardPath(pathname)
+  const area = AREAS.find((candidate) => matchesPath(pathname, candidate.root))
+  if (!area) return response
+
+  const isPublic = area.publicPaths.some((path) => matchesPath(pathname, path))
 
   if (!user && !isPublic) {
     const loginUrl = request.nextUrl.clone()
-    loginUrl.pathname = '/dashboard/login'
+    loginUrl.pathname = area.login
     loginUrl.search = ''
-    if (pathname !== '/dashboard') {
+    if (pathname !== area.root) {
       loginUrl.searchParams.set('next', `${pathname}${search}`)
     }
     return NextResponse.redirect(loginUrl)
   }
 
-  if (user && pathname === '/dashboard/login') {
-    const dashboardUrl = request.nextUrl.clone()
-    dashboardUrl.pathname = '/dashboard'
-    dashboardUrl.search = ''
-    return NextResponse.redirect(dashboardUrl)
+  if (user && pathname === area.login) {
+    const target = area.loggedInRedirect?.(request) ?? area.root
+    return NextResponse.redirect(new URL(target, request.nextUrl.origin))
   }
 
   return response
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/cuenta/:path*'],
 }

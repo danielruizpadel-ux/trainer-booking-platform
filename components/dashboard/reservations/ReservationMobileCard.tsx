@@ -49,6 +49,14 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
             </dd>
           </>
         )}
+        <dt className="text-gray-400">Jugadores</dt>
+        <dd className="text-gray-900 tabular-nums">{r.player_count}</dd>
+        {r.client_message && (
+          <>
+            <dt className="text-gray-400">Mensaje</dt>
+            <dd className="min-w-0 text-gray-900 whitespace-pre-line break-words line-clamp-4">{r.client_message}</dd>
+          </>
+        )}
         <dt className="text-gray-400">Precio</dt>
         <dd className="font-semibold text-gray-900 tabular-nums">
           {r.price !== null && r.price !== undefined ? formatRM(r.price) : <span className="text-gray-400 font-medium">—</span>}

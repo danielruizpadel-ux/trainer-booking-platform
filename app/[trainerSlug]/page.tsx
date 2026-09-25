@@ -6,7 +6,11 @@
 import { notFound } from 'next/navigation'
 import { getTrainerBySlug } from '@/lib/services/trainers-data.service'
 import TrainerHero from '@/components/trainer/TrainerHero'
-import BookingSection from '@/components/trainer/BookingSection'
+// El MISMO widget de reserva A2 que /mauri (checkout, cuenta de jugador,
+// precios del entrenador). Es genérico: todo le llega por props. El antiguo
+// components/trainer/BookingSection ($99, POST con date/time) ya no se usa.
+import BookingSection from '@/components/mauri/BookingSection'
+import { normalizeDurations } from '@/lib/availability/durations'
 
 interface TrainerPageProps {
   params: Promise<{
@@ -43,13 +47,13 @@ export default async function TrainerPage(props: TrainerPageProps) {
       {/* Trainer Hero Section */}
       <TrainerHero trainer={trainer} />
 
-      {/* Booking Section - Client Component */}
+      {/* Reserva A2 con los datos de ESTE entrenador (sin valores por defecto de Mauri) */}
       <BookingSection
         trainerId={trainer.id}
         trainerName={trainer.name}
-        trainerPrice={trainer.price}
-        trainerEmail={trainer.email}
-        trainerPhone={trainer.phone}
+        trainerSlug={trainer.slug}
+        trainerImageUrl={trainer.image_url ?? null}
+        classDurations={normalizeDurations(trainer.class_durations)}
       />
     </div>
   )
