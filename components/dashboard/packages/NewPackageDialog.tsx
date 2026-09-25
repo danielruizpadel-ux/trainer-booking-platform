@@ -71,7 +71,7 @@ export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) 
                 {quote.discountPercent > 0 && <span className="text-emerald-600"> · {quote.discountPercent} % de descuento</span>}
               </>
             ) : pricing.rows ? (
-              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Disponibilidad → Precios.</span>
+              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Perfil → Public pricing.</span>
             ) : (
               'Cargando precios…'
             )}

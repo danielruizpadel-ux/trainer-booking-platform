@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { CLASS_DURATIONS, durationLabel } from '@/lib/availability/durations'
-import { basePriceFor, formatRM, type SessionPriceRow } from '@/lib/reservations/pricing'
+import Link from 'next/link'
 
 /**
  * Qué duraciones de clase ofrece el entrenador (1 h, 1 h 30 min o ambas).
@@ -10,19 +10,8 @@ import { basePriceFor, formatRM, type SessionPriceRow } from '@/lib/reservations
  * el widget público, la reserva manual y los paquetes. No es por día ni por
  * franja.
  */
-interface DurationsCardProps {
-  /** Precios del entrenador (tarjeta Precios), para enseñar el de 1 jugador */
-  prices?: SessionPriceRow[] | null
-  /** Avisa de las duraciones ofrecidas (la tarjeta Precios las marca) */
-  onDurationsChange?: (durations: number[]) => void
-}
-
-export function DurationsCard({ prices = null, onDurationsChange }: DurationsCardProps = {}) {
-  const [durations, setDurationsState] = useState<number[] | null>(null)
-  const setDurations = (value: number[]) => {
-    setDurationsState(value)
-    onDurationsChange?.(value)
-  }
+export function DurationsCard() {
+  const [durations, setDurations] = useState<number[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -69,14 +58,16 @@ export function DurationsCard({ prices = null, onDurationsChange }: DurationsCar
         <div>
           <h2 className="text-base font-semibold text-gray-900">Duración de las clases</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Lo que tus clientes pueden elegir al reservar. El precio de cada duración y nº de jugadores lo pones en
-            Precios; los descuentos por volumen se aplican igual.
+            Lo que tus clientes pueden elegir al reservar. Los precios de cada duración se configuran en{' '}
+            <Link href="/dashboard/perfil" className="font-medium text-blue-600 hover:text-blue-700">
+              Perfil
+            </Link>
+            .
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {CLASS_DURATIONS.map((d) => {
             const on = durations?.includes(d) ?? false
-            const price = prices ? basePriceFor(prices, d, 1) : null
             return (
               <label
                 key={d}
@@ -91,12 +82,7 @@ export function DurationsCard({ prices = null, onDurationsChange }: DurationsCar
                   onChange={() => toggle(d)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span>
-                  <span className="block text-sm font-semibold text-gray-900">{durationLabel(d)}</span>
-                  <span className="block text-xs text-gray-500 tabular-nums">
-                    {prices === null ? '…' : price === null ? 'Sin precio' : `${formatRM(price)} · 1 jugador`}
-                  </span>
-                </span>
+                <span className="block text-sm font-semibold text-gray-900">{durationLabel(d)}</span>
               </label>
             )
           })}

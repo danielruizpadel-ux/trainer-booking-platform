@@ -53,7 +53,7 @@ export async function createManualReservation(trainerId: string, input: ManualRe
     return {
       ok: false,
       status: base.status,
-      message: base.status === 409 ? `No tienes precio para una clase de ${duration} min (1 jugador). Configúralo en Disponibilidad → Precios.` : base.message,
+      message: base.status === 409 ? `No tienes precio para una clase de ${duration} min (1 jugador). Configúralo en Perfil → Public pricing.` : base.message,
     }
   }
 

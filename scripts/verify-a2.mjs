@@ -356,7 +356,7 @@ test('reserva manual / paquete sin precio de 1 jugador → 409 claro, sin insert
   const manual = await createManualReservation(T, { slot_id: W, start_time: '10:00', duration_minutes: 60, client_name: 'Ana', client_email: 'ana@example.com' })
   assert.equal(manual.ok, false)
   assert.equal(manual.status, 409)
-  assert.match(manual.message, /Precios/)
+  assert.match(manual.message, /Perfil → Public pricing/)
   const pkg = await createClientPackage(T, { sessions_total: 5, duration_minutes: 60, client_name: 'Ana', client_email: 'ana@example.com' })
   assert.equal(pkg.ok, false)
   assert.equal(pkg.status, 409)
