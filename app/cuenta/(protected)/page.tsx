@@ -7,6 +7,7 @@ import { listPlayerTrainers } from '@/lib/players/trainers'
 import { PageHeader } from '@/components/dashboard/PageHeader'
 import { PlayerProfileForm } from '@/components/player/PlayerProfileForm'
 import { PlayerTrainersCard } from '@/components/player/PlayerTrainersCard'
+import { PlayerReservationsCard } from '@/components/player/PlayerReservationsCard'
 
 export const metadata: Metadata = { title: 'Perfil' }
 
@@ -36,6 +37,7 @@ export default async function CuentaPage() {
             whatsapp_opt_in: player.whatsapp_opt_in,
           }}
         />
+        <PlayerReservationsCard playerKey={player.id} />
         <PlayerTrainersCard trainers={trainers} />
       </div>
     </>

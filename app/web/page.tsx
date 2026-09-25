@@ -5,16 +5,18 @@
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { button, surface, text } from '@/components/ui/styles'
+import { getSupabaseServerClient } from '@/lib/supabase/client'
 
-const FEATURES = ['Professional trainers', 'Flexible scheduling', 'Instant confirmation', 'Secure bookings']
+const FEATURES = ['Professional trainers', 'Flexible scheduling', 'Coach-reviewed bookings', 'Secure bookings']
 
 const STEPS = [
   { title: 'Browse Trainers', body: 'Explore our network of certified fitness trainers with various specializations.' },
   { title: 'Select Time', body: 'Check availability and pick a time that works best for your schedule.' },
-  { title: 'Confirm Booking', body: 'Complete your booking and receive instant confirmation via email.' },
+  { title: 'Request your booking', body: 'Complete your booking and your coach will confirm once the court is booked.' },
 ]
 
-export default function WebHome() {
+export default async function WebHome() {
+  const { data: { user } } = await getSupabaseServerClient().auth.getUser()
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col">
       <header className="bg-white border-b border-gray-100">
@@ -28,9 +30,16 @@ export default function WebHome() {
             </span>
             <span className="text-sm font-semibold text-gray-900 truncate">Trainer Booking Platform</span>
           </Link>
-          <Link href="/admin/login" className={button.ghost}>
-            Admin Login
-          </Link>
+          <nav aria-label="Account" className="flex items-center gap-2">
+            {user ? (
+              <Link href="/cuenta" className={button.ghost}>My account</Link>
+            ) : (
+              <>
+                <Link href="/cuenta/entrar" className={button.ghost}>Log in</Link>
+                <Link href="/cuenta/entrar" className={button.primary}>Sign up</Link>
+              </>
+            )}
+          </nav>
         </div>
       </header>
 

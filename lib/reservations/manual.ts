@@ -5,6 +5,7 @@ import { calculateBookingPrice } from './pricing'
 import { requireBasePrice } from './trainer-prices'
 import { parseDetails, type ReservationDetailsInput } from './edit'
 import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * Reserva creada a mano por el entrenador (Parte 4).
@@ -59,6 +60,11 @@ export async function createManualReservation(trainerId: string, input: ManualRe
 
   const lookup = await loadOwnedOpenWindow(supabase, slotId, trainerId, startTime, duration)
   if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+  // El dashboard puede mostrar huecos antiguos en rangos ya generados; nunca
+  // permitimos convertir uno de ellos en una reserva nueva.
+  if (isPastMalaysiaSession(lookup.window.session_date, lookup.range.start_time)) {
+    return { ok: false, status: 400, message: 'No se puede crear una reserva en el pasado' }
+  }
 
   const confirmed = input.confirmed === true
   const status = confirmed ? RESERVATION_STATUS.CONFIRMED : RESERVATION_STATUS.PENDING_CONFIRMATION

@@ -26,11 +26,11 @@ export function ReservationRowActions({ reservation, size = 'md', stacked = fals
   return (
     <div className={`flex ${stacked ? 'flex-col items-stretch' : 'flex-col sm:flex-row sm:flex-wrap'} gap-2`}>
       {isAwaitingConfirmation(reservation.status) && (
-        <ReservationActions reservationId={reservation.id} clientName={reservation.client_name} durationMinutes={reservation.duration_minutes ?? 60} size={size} stacked={stacked} />
+        <ReservationActions reservationId={reservation.id} clientName={reservation.client_name} durationMinutes={reservation.duration_minutes ?? 60} size={size} stacked={stacked} compact={stacked} />
       )}
       {isRescheduleProposed(reservation.status) && <ProposalLink token={reservation.proposal_token} size={size} />}
 
-      <button
+      {stacked ? <details className="relative"><summary className={`${height} list-none cursor-pointer rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors inline-flex items-center justify-center px-3 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 [&::-webkit-details-marker]:hidden`}>Edit</summary><div className="absolute right-0 top-full z-20 mt-2 min-w-[13rem] rounded-xl bg-white p-2 ring-1 ring-gray-200/70"><button type="button" onClick={() => setEditing(true)} className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Edit reservation</button></div></details> : <button
         type="button"
         onClick={() => setEditing(true)}
         className={`${height} rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
@@ -39,7 +39,7 @@ export function ReservationRowActions({ reservation, size = 'md', stacked = fals
           <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
         Editar
-      </button>
+      </button>}
 
       {editing && <EditReservationDialog reservation={reservation} onClose={() => setEditing(false)} />}
     </div>

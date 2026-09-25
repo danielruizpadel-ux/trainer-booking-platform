@@ -12,6 +12,8 @@ interface ReservationActionsProps {
   size?: 'sm' | 'md'
   /** En la tabla: uno debajo del otro, para que la fila no desborde */
   stacked?: boolean
+  /** En la tabla: deja la decisión principal visible y agrupa las secundarias. */
+  compact?: boolean
 }
 
 type Pending = 'confirm' | 'needs_reschedule' | null
@@ -24,7 +26,7 @@ type Pending = 'confirm' | 'needs_reschedule' | null
  *   Proponer otra fecha    abre el calendario en modo selector (ProposeRescheduleDialog)
  * Al terminar se refresca la página (Server Component) y la fila cambia de pestaña.
  */
-export function ReservationActions({ reservationId, clientName, durationMinutes, size = 'md', stacked = false }: ReservationActionsProps) {
+export function ReservationActions({ reservationId, clientName, durationMinutes, size = 'md', stacked = false, compact = false }: ReservationActionsProps) {
   const router = useRouter()
   const [pending, setPending] = useState<Pending>(null)
   const [error, setError] = useState<string | null>(null)
@@ -58,26 +60,37 @@ export function ReservationActions({ reservationId, clientName, durationMinutes,
 
   return (
     <div className="flex flex-col gap-2">
-      <div className={`flex ${layout} gap-2`}>
+      <div className={`flex ${compact ? 'flex-row' : layout} gap-2`}>
         <button type="button" onClick={() => decide('confirm')} disabled={busy} className={primary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="m5 12 5 5L20 7" />
           </svg>
           {pending === 'confirm' ? 'Confirmando…' : 'Confirmar clase'}
         </button>
-        <button type="button" onClick={() => decide('needs_reschedule')} disabled={busy} className={secondary}>
+        {!compact && <button type="button" onClick={() => decide('needs_reschedule')} disabled={busy} className={secondary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
           {pending === 'needs_reschedule' ? 'Guardando…' : 'No conseguí pista'}
-        </button>
-        <button type="button" onClick={() => setProposing(true)} disabled={busy} className={secondary}>
+        </button>}
+        {!compact && <button type="button" onClick={() => setProposing(true)} disabled={busy} className={secondary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="4" width="18" height="17" rx="2" />
             <path d="M16 2v4M8 2v4M3 10h18M12 14v4M10 16h4" />
           </svg>
           Proponer otra fecha
-        </button>
+        </button>}
+        {compact && (
+          <details className="relative">
+            <summary className={`${height} list-none cursor-pointer rounded-xl bg-white px-3 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 [&::-webkit-details-marker]:hidden`}>
+              More actions
+            </summary>
+            <div className="absolute right-0 top-full z-20 mt-2 min-w-[13rem] rounded-xl bg-white p-2 ring-1 ring-gray-200/70">
+              <button type="button" onClick={() => decide('needs_reschedule')} disabled={busy} className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">No conseguí pista</button>
+              <button type="button" onClick={() => setProposing(true)} disabled={busy} className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Proponer otra fecha</button>
+            </div>
+          </details>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-sm text-red-600">
@@ -100,4 +113,3 @@ export function ReservationActions({ reservationId, clientName, durationMinutes,
     </div>
   )
 }
-

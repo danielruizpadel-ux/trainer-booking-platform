@@ -46,7 +46,7 @@ export function DaySlotPickerDialog({
       {starts.length === 0 ? (
         <p className="text-sm text-gray-500">No cabe ninguna clase de esta duración en este tramo.</p>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-1">
           {starts.map((s) => {
             const isSelected = s === selectedStart
             if (!interactive) {

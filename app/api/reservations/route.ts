@@ -11,6 +11,7 @@ import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { isClassDuration } from '@/lib/availability/durations'
 import { addMinutes } from '@/lib/availability/windows'
 import { isOverlapError, refreshWindowStatus } from '@/lib/reservations/slots'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * POST /api/reservations — checkout público (widget de reserva).
@@ -176,6 +177,7 @@ export async function POST(request: Request) {
     for (const session of sessions) {
       const wanted = normalizeTime(session.time)
       const key = `${session.date} ${wanted}`
+      if (isPastMalaysiaSession(session.date, wanted)) return bad('Choose a future date and time.')
       if (seen.has(key)) return bad(`The session on ${key} is selected twice.`)
       seen.add(key)
 
@@ -263,7 +265,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       success: true,
-      message: "Booking request received. We'll confirm by email once the court is booked.",
+      message: "Booking request received. Your coach will review it and confirm once the court is booked.",
       status: RESERVATION_STATUS.PENDING_CONFIRMATION,
       reservationIds,
       count: sessions.length,

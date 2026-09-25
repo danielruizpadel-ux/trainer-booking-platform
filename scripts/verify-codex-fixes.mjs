@@ -98,6 +98,21 @@ test('MiniCalendar: diálogo no modal etiquetado, foco gestionado, Escape y tecl
 
 // ─── 3. Borrador que sobrevive al refresco ───────────────────────────────────
 
+const dates = load('lib/dateUtils.ts')
+
+test('fechas: el pasado se compara en Asia/Kuala_Lumpur, no en UTC del servidor', () => {
+  const now = Date.UTC(2099, 0, 1, 10, 0)
+  assert.equal(dates.isPastMalaysiaSession('2099-01-01', '17:59', now), true)
+  assert.equal(dates.isPastMalaysiaSession('2099-01-01', '18:00', now), false)
+  assert.equal(dates.isPastMalaysiaSession('2099-01-02', '09:00', now), false)
+})
+
+test('reservas: el POST público y el manual aplican el bloqueo de fechas pasadas', () => {
+  assert.match(read('app/api/reservations/route.ts'), /isPastMalaysiaSession\(session\.date, wanted\)/)
+  assert.match(read('lib/reservations/manual.ts'), /isPastMalaysiaSession\(lookup\.window\.session_date, lookup\.range\.start_time\)/)
+  assert.match(read('app/api/availability/route.ts'), /isPastMalaysiaSession\(slot\.session_date, slot\.start_time\)/)
+})
+
 const draft = load('lib/booking/draft.ts')
 const NOW = Date.UTC(2099, 0, 1, 10)
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e'

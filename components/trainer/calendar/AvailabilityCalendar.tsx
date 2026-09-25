@@ -7,7 +7,7 @@ import WeekView from './WeekView'
 import DayView from './DayView'
 import CalendarNavbar from './CalendarNavbar'
 import TimePickerDropdown from './TimePickerDropdown'
-import { toDateStr, getMonday } from '@/lib/dateUtils'
+import { toDateStr, getMonday, isPastMalaysiaSession } from '@/lib/dateUtils'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -116,7 +116,11 @@ export default function AvailabilityCalendar({
     }
   }, [trainerId, range.start, range.end, durationMinutes])
 
-  const availableDates = useMemo(() => new Set(slots.map((s) => s.session_date)), [slots])
+  const visibleSlots = useMemo(
+    () => slots.filter((slot) => !isPastMalaysiaSession(slot.session_date, slot.start_time)),
+    [slots]
+  )
+  const availableDates = useMemo(() => new Set(visibleSlots.map((s) => s.session_date)), [visibleSlots])
 
   const selectedDates = useMemo(
     () => new Set(selectedSessions.map((s) => s.date)),
@@ -133,6 +137,7 @@ export default function AvailabilityCalendar({
   )
 
   const handleToggleTime = (date: string, time: string) => {
+    if (isPastMalaysiaSession(date, time)) return
     const exists = selectedSessions.some((s) => s.date === date && s.time === time)
     if (exists) {
       onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
@@ -180,7 +185,7 @@ export default function AvailabilityCalendar({
           {currentView === 'month' && (
             <MonthView
               currentDate={currentDate}
-              slots={slots}
+              slots={visibleSlots}
               selectedDates={selectedDates}
               sessionCountByDate={sessionCountByDate}
               onDateToggle={openPickerFor}
@@ -191,7 +196,7 @@ export default function AvailabilityCalendar({
           {currentView === 'week' && (
             <WeekView
               currentDate={currentDate}
-              slots={slots}
+              slots={visibleSlots}
               selectedDates={selectedDates}
               sessionCountByDate={sessionCountByDate}
               onDateToggle={openPickerFor}
@@ -202,7 +207,7 @@ export default function AvailabilityCalendar({
           {currentView === 'day' && (
             <DayView
               selectedDate={currentDateStr}
-              slots={slots}
+              slots={visibleSlots}
               selectedTimes={selectedTimesFor(currentDateStr)}
               onTimeSelect={(time) => handleToggleTime(currentDateStr, time)}
             />
@@ -221,7 +226,7 @@ export default function AvailabilityCalendar({
         {pickerDate && (
           <TimePickerDropdown
             date={pickerDate}
-            slots={slots.filter((s) => s.session_date === pickerDate)}
+            slots={visibleSlots.filter((s) => s.session_date === pickerDate)}
             selectedTimes={selectedTimesFor(pickerDate)}
             onToggleTime={handleToggleTime}
             onClose={() => setPickerDate(null)}

@@ -529,7 +529,7 @@ function CheckoutSuccess({
           </div>
           <h2 className="mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Booking request received</h2>
           <p className="mt-1.5 text-gray-500">
-            {trainerName} will confirm by email once the court is booked. If it isn&apos;t available, you&apos;ll be asked to pick another time.
+            {trainerName} will review your request and confirm once the court is booked. If it isn&apos;t available, you&apos;ll be asked to pick another time.
           </p>
           <ul className="mt-6 divide-y divide-gray-100 border-y border-gray-100 text-left">
             {sessions.map((s) => (

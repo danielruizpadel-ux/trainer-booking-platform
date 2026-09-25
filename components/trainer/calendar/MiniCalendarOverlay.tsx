@@ -203,7 +203,7 @@ export default function MiniCalendarOverlay({
           aria-labelledby={titleId}
           aria-describedby={hintId}
           onBlur={handleBlur}
-          className="absolute top-full left-0 mt-2 z-50 bg-white rounded-2xl ring-1 ring-gray-200 p-4"
+          className="absolute top-full left-0 mt-2 z-50 w-[19rem] max-w-[calc(100vw-2rem)] bg-white rounded-2xl ring-1 ring-gray-200 p-4 overflow-visible"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
@@ -252,7 +252,7 @@ export default function MiniCalendarOverlay({
                 currentDate.getDate() === day && currentDate.getMonth() === month && currentDate.getFullYear() === year
 
               return (
-                <button
+            <button
                   key={day}
                   type="button"
                   data-day={day}
@@ -262,7 +262,7 @@ export default function MiniCalendarOverlay({
                   tabIndex={day === activeDay ? 0 : -1}
                   aria-label={`${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${available ? '' : ', sin disponibilidad'}`}
                   aria-current={isSelected ? 'date' : undefined}
-                  className={`w-8 h-8 text-xs rounded-lg transition-all flex items-center justify-center tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  className={`w-9 h-9 text-xs rounded-lg transition-all flex items-center justify-center tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isSelected
                       ? 'bg-blue-600 text-white font-bold'
                       : available

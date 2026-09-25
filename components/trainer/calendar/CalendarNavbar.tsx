@@ -88,6 +88,7 @@ export default function CalendarNavbar({
             currentDate={currentDate}
             onDateSelect={(d) => {
               onDateChange(d)
+              onViewChange('day')
               setShowMiniCalendar(false)
             }}
             availableDates={availableDates}

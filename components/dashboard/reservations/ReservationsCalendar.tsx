@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getMonday, parseDateStr, toDateStr } from '@/lib/dateUtils'
+import { getMonday, isPastMalaysiaSession, parseDateStr, toDateStr } from '@/lib/dateUtils'
 import type { CalendarData, CalendarReservation, CalendarWindow, SlotPick } from '@/lib/reservations/calendar'
 import { bookableStarts, toMinutes, type TimeRange } from '@/lib/availability/windows'
 import { durationLabel } from '@/lib/availability/durations'
@@ -85,8 +85,8 @@ export function ReservationsCalendar({
 
   // En pantallas estrechas se arranca en Día; el usuario puede cambiarlo.
   useEffect(() => {
-    if (window.matchMedia('(max-width: 639px)').matches) setScale('day')
-  }, [])
+    if (compact || window.matchMedia('(max-width: 639px)').matches) setScale('day')
+  }, [compact])
 
   useEffect(() => {
     cache.current.clear()
@@ -193,7 +193,7 @@ export function ReservationsCalendar({
             <DurationPicker durations={data.durations} value={viewDuration} onChange={setViewDuration} />
           )}
 
-          <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
+          {!compact && <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
             {(['day', 'week'] as Scale[]).map((value) => (
               <button
                 key={value}
@@ -207,7 +207,7 @@ export function ReservationsCalendar({
                 {value === 'day' ? 'Día' : 'Semana'}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -348,7 +348,9 @@ function WindowBlock({
 }) {
   const taken: TimeRange[] = reservations.map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
   // Mismo cálculo que el widget público: rejilla desde el inicio de la ventana.
-  const starts = bookableStarts(w, taken, duration, step)
+  const starts = bookableStarts(w, taken, duration, step).filter(
+    (start) => mode !== 'select' || !isPastMalaysiaSession(w.session_date, start)
+  )
 
   return (
     <>
