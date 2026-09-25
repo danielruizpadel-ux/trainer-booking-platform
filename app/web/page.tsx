@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icon'
 import { button, surface, text } from '@/components/ui/styles'
-import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { createSessionClient } from '@/lib/supabase/server'
 
 const FEATURES = ['Professional trainers', 'Flexible scheduling', 'Coach-reviewed bookings', 'Secure bookings']
 
@@ -16,7 +16,8 @@ const STEPS = [
 ]
 
 export default async function WebHome() {
-  const { data: { user } } = await getSupabaseServerClient().auth.getUser()
+  const session = await createSessionClient()
+  const { data: { user } } = await session.auth.getUser()
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col">
       <header className="bg-white border-b border-gray-100">
