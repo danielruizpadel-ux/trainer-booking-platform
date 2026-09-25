@@ -1,17 +1,13 @@
-'use server'
-
+import { getPlayerSession } from '@/lib/auth/current-player'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { formatDurationEn, formatSessionDateEn, formatSessionTimeEn } from '@/lib/booking/format-en'
+import { listPlayerReservations, type PlayerReservationRow as PlayerReservation } from '@/lib/players/reservations'
 
-interface PlayerReservation {
-  id: string
-  status: string | null
-  start_time: string | null
-  end_time: string | null
-  duration_minutes: number | null
-  availability_slots: { session_date: string; start_time: string; end_time: string } | { session_date: string; start_time: string; end_time: string }[] | null
-  trainers: { name: string; slug: string } | { name: string; slug: string }[] | null
-}
+/*
+ * Server Component (SIN 'use server': esa directiva convertiría la función en
+ * una Server Action invocable desde el navegador con argumentos del llamador).
+ * No recibe props: el jugador sale SOLO de la sesión de esta petición.
+ */
 
 function one<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
@@ -24,18 +20,18 @@ function statusLabel(status: string | null): string {
   return 'Pending confirmation'
 }
 
-export async function PlayerReservationsCard({ playerKey }: { playerKey: string }) {
-  const { data, error } = await getSupabaseServerClient()
-    .from('reservations')
-    .select('id, status, start_time, end_time, duration_minutes, availability_slots ( session_date, start_time, end_time ), trainers ( name, slug )')
-    .eq('player_id', playerKey)
-    .order('start_time', { ascending: true })
+export async function PlayerReservationsCard() {
+  // getPlayerSession() está en cache(): es la misma sesión que ya resolvió la página.
+  const { player } = await getPlayerSession()
+  if (!player) return null
 
-  if (error) {
+  const result = await listPlayerReservations(getSupabaseServerClient(), player.id)
+
+  if (!result.ok) {
     return <section className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-5 sm:p-6"><h2 className="text-base font-semibold text-gray-900">Your bookings</h2><p className="mt-2 text-sm text-gray-500">Bookings are temporarily unavailable.</p></section>
   }
 
-  const rows = (data ?? []) as unknown as PlayerReservation[]
+  const rows = result.rows
   const now = Date.now()
   const upcoming = rows.filter((row) => {
     const slot = one(row.availability_slots)

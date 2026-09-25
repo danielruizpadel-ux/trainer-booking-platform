@@ -37,7 +37,8 @@ export default async function CuentaPage() {
             whatsapp_opt_in: player.whatsapp_opt_in,
           }}
         />
-        <PlayerReservationsCard playerKey={player.id} />
+        {/* Sin props: la tarjeta saca el jugador de la sesión, nunca de un argumento. */}
+        <PlayerReservationsCard />
         <PlayerTrainersCard trainers={trainers} />
       </div>
     </>
