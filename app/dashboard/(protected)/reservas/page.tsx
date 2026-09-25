@@ -6,7 +6,7 @@ import { isAwaitingConfirmation } from '@/lib/reservations/status'
 import { PageHeader } from '@/components/dashboard/PageHeader'
 import { ReservationsView } from '@/components/dashboard/reservations/ReservationsView'
 
-export const metadata: Metadata = { title: 'Reservas' }
+export const metadata: Metadata = { title: 'Bookings' }
 
 // Siempre datos frescos: las decisiones cambian de pestaña al instante.
 export const dynamic = 'force-dynamic'
@@ -33,12 +33,12 @@ export default async function ReservasPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Reservas"
-        title="Reservas"
+        eyebrow="Bookings"
+        title="Bookings"
         description={
           pendingCount > 0
-            ? `${pendingCount} ${pendingCount === 1 ? 'reserva requiere' : 'reservas requieren'} tu confirmación. Reserva la pista y confirma la clase; si no consigues pista, avisa al cliente para que elija otra hora.`
-            : 'Las sesiones que han reservado tus clientes.'
+            ? `${pendingCount} ${pendingCount === 1 ? 'booking needs' : 'bookings need'} your confirmation. Book the court and confirm the class; if there's no court, let the client pick another time.`
+            : 'The sessions your clients have booked.'
         }
       />
 

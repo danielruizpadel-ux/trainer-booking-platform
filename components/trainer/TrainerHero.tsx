@@ -97,7 +97,7 @@ export default function TrainerHero({ trainer }: TrainerHeroProps) {
             </div>
           )}
 
-          <a href="#booking-section" className={`mt-8 ${button.primary}`}>
+          <a href="#booking-section" className={`mt-8 ${button.primary} max-sm:whitespace-normal max-sm:h-auto max-sm:py-3 text-center`}>
             Scroll down to book your session
             <Icon name="arrow-down" size={18} />
           </a>

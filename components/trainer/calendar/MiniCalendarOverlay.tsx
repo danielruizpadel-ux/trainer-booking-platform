@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { mondayFirstIndex, toDateStr } from '@/lib/dateUtils'
 
@@ -85,6 +85,27 @@ export default function MiniCalendarOverlay({
   }
 
   const returnFocus = () => triggerRef?.current?.focus()
+
+  // Desplazamiento horizontal para que el desplegable no se salga de la
+  // pantalla (en móvil el botón que lo abre no está pegado al borde izquierdo).
+  const [shiftX, setShiftX] = useState(0)
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    const place = () => {
+      const pop = popoverRef.current
+      const parent = pop?.offsetParent as HTMLElement | null
+      if (!pop || !parent) return
+      const margin = 16
+      const parentLeft = parent.getBoundingClientRect().left
+      const width = pop.offsetWidth
+      let shift = Math.min(0, window.innerWidth - margin - (parentLeft + width))
+      shift = Math.max(shift, margin - parentLeft)
+      setShiftX(Math.round(shift))
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [isOpen])
 
   // Al abrir: el mes del calendario grande y el foco dentro.
   useEffect(() => {
@@ -203,7 +224,8 @@ export default function MiniCalendarOverlay({
           aria-labelledby={titleId}
           aria-describedby={hintId}
           onBlur={handleBlur}
-          className="absolute top-full left-0 mt-2 z-50 w-[19rem] max-w-[calc(100vw-2rem)] bg-white rounded-2xl ring-1 ring-gray-200 p-4 overflow-visible"
+          style={{ left: shiftX }}
+          className="absolute top-full left-0 mt-2 z-50 w-[min(19rem,calc(100vw-2rem))] bg-white rounded-2xl ring-1 ring-gray-200 p-3 sm:p-4"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
@@ -231,7 +253,7 @@ export default function MiniCalendarOverlay({
 
           <div className="grid grid-cols-7 gap-1 mb-1" aria-hidden="true">
             {WEEKDAYS.map(([short, full]) => (
-              <abbr key={short} title={full} className="no-underline text-center text-xs font-bold text-gray-500 w-8 h-6 flex items-center justify-center">
+              <abbr key={short} title={full} className="no-underline text-center text-xs font-bold text-gray-500 h-6 flex items-center justify-center">
                 {short}
               </abbr>
             ))}
@@ -244,7 +266,7 @@ export default function MiniCalendarOverlay({
             onKeyDown={handleGridKeyDown}
           >
             {cells.map((day, index) => {
-              if (day === null) return <div key={`empty-${index}`} className="w-8 h-8" />
+              if (day === null) return <div key={`empty-${index}`} className="aspect-square" />
 
               const date = new Date(year, month, day)
               const available = isAvailable(day)
@@ -262,7 +284,7 @@ export default function MiniCalendarOverlay({
                   tabIndex={day === activeDay ? 0 : -1}
                   aria-label={`${date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${available ? '' : ', sin disponibilidad'}`}
                   aria-current={isSelected ? 'date' : undefined}
-                  className={`w-9 h-9 text-xs rounded-lg transition-all flex items-center justify-center tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  className={`w-full aspect-square min-w-0 text-xs rounded-lg transition-all flex items-center justify-center tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isSelected
                       ? 'bg-blue-600 text-white font-bold'
                       : available

@@ -21,7 +21,7 @@ export function ProposalLink({ token, size = 'md' }: ProposalLinkProps) {
   }, [token])
 
   if (!token) {
-    return <p className="text-xs text-gray-400">Enlace no disponible</p>
+    return <p className="text-xs text-gray-400">Link unavailable</p>
   }
 
   async function copy() {
@@ -31,7 +31,7 @@ export function ProposalLink({ token, size = 'md' }: ProposalLinkProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      window.prompt('Copia el enlace:', href)
+      window.prompt('Copy the link:', href)
     }
   }
 
@@ -39,7 +39,7 @@ export function ProposalLink({ token, size = 'md' }: ProposalLinkProps) {
 
   return (
     <div className={`flex flex-col gap-1.5 ${size === 'sm' ? 'items-end' : ''}`}>
-      <p className="text-xs text-gray-500">Esperando la respuesta del cliente</p>
+      <p className="text-xs text-gray-500">Waiting for the client&apos;s reply</p>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -50,7 +50,7 @@ export function ProposalLink({ token, size = 'md' }: ProposalLinkProps) {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             {copied ? <path d="m5 12 5 5L20 7" /> : <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></>}
           </svg>
-          {copied ? 'Copiado' : 'Copiar enlace'}
+          {copied ? 'Copied' : 'Copy link'}
         </button>
         {href && (
           <a

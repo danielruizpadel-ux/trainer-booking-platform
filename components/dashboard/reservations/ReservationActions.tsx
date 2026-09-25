@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ProposeRescheduleDialog } from './ProposeRescheduleDialog'
+import { ActionsMenu, type ActionsMenuItem } from './ActionsMenu'
 
 interface ReservationActionsProps {
   reservationId: string
@@ -14,6 +15,8 @@ interface ReservationActionsProps {
   stacked?: boolean
   /** En la tabla: deja la decisión principal visible y agrupa las secundarias. */
   compact?: boolean
+  /** En modo compacto: opciones extra al final del menú (p. ej. Edit). */
+  extraMenuItems?: ActionsMenuItem[]
 }
 
 type Pending = 'confirm' | 'needs_reschedule' | null
@@ -21,12 +24,13 @@ type Pending = 'confirm' | 'needs_reschedule' | null
 
 /**
  * Las tres opciones sobre una reserva pendiente:
- *   Confirmar clase        PATCH { action: 'confirm' }
- *   No conseguí pista      PATCH { action: 'needs_reschedule' }
- *   Proponer otra fecha    abre el calendario en modo selector (ProposeRescheduleDialog)
+ *   Confirm class            PATCH { action: 'confirm' }
+ *   No court available       PATCH { action: 'needs_reschedule' }
+ *   Propose another time     abre el calendario en modo selector (ProposeRescheduleDialog)
+ * En la tabla (compact) solo Confirm queda a la vista; el resto va en "More actions".
  * Al terminar se refresca la página (Server Component) y la fila cambia de pestaña.
  */
-export function ReservationActions({ reservationId, clientName, durationMinutes, size = 'md', stacked = false, compact = false }: ReservationActionsProps) {
+export function ReservationActions({ reservationId, clientName, durationMinutes, size = 'md', stacked = false, compact = false, extraMenuItems = [] }: ReservationActionsProps) {
   const router = useRouter()
   const [pending, setPending] = useState<Pending>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,11 +47,11 @@ export function ReservationActions({ reservationId, clientName, durationMinutes,
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'No se pudo guardar la decisión')
+        throw new Error(data.error || 'Could not save the decision.')
       }
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar la decisión')
+      setError(err instanceof Error ? err.message : 'Could not save the decision.')
       setPending(null)
     }
   }
@@ -60,36 +64,36 @@ export function ReservationActions({ reservationId, clientName, durationMinutes,
 
   return (
     <div className="flex flex-col gap-2">
-      <div className={`flex ${compact ? 'flex-row' : layout} gap-2`}>
+      <div className={`flex ${compact ? 'flex-col items-stretch' : layout} gap-2`}>
         <button type="button" onClick={() => decide('confirm')} disabled={busy} className={primary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="m5 12 5 5L20 7" />
           </svg>
-          {pending === 'confirm' ? 'Confirmando…' : 'Confirmar clase'}
+          {pending === 'confirm' ? 'Confirming…' : 'Confirm class'}
         </button>
         {!compact && <button type="button" onClick={() => decide('needs_reschedule')} disabled={busy} className={secondary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
-          {pending === 'needs_reschedule' ? 'Guardando…' : 'No conseguí pista'}
+          {pending === 'needs_reschedule' ? 'Saving…' : 'No court available'}
         </button>}
         {!compact && <button type="button" onClick={() => setProposing(true)} disabled={busy} className={secondary}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="4" width="18" height="17" rx="2" />
             <path d="M16 2v4M8 2v4M3 10h18M12 14v4M10 16h4" />
           </svg>
-          Proponer otra fecha
+          Propose another time
         </button>}
         {compact && (
-          <details className="relative">
-            <summary className={`${height} list-none cursor-pointer rounded-xl bg-white px-3 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200 inline-flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 [&::-webkit-details-marker]:hidden`}>
-              More actions
-            </summary>
-            <div className="absolute right-0 top-full z-20 mt-2 min-w-[13rem] rounded-xl bg-white p-2 ring-1 ring-gray-200/70">
-              <button type="button" onClick={() => decide('needs_reschedule')} disabled={busy} className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">No conseguí pista</button>
-              <button type="button" onClick={() => setProposing(true)} disabled={busy} className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Proponer otra fecha</button>
-            </div>
-          </details>
+          <ActionsMenu
+            label={pending === 'needs_reschedule' ? 'Saving…' : 'More actions'}
+            buttonClassName={`${secondary} text-gray-700`}
+            items={[
+              { label: 'No court available', onSelect: () => decide('needs_reschedule'), disabled: busy },
+              { label: 'Propose another time', onSelect: () => setProposing(true), disabled: busy },
+              ...extraMenuItems,
+            ]}
+          />
         )}
       </div>
       {error && (

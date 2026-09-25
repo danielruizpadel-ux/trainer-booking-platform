@@ -3,8 +3,9 @@ import { whatsappPreference } from '@/lib/reservations/whatsapp'
 
 type Info = Pick<TrainerReservation, 'player_count' | 'client_message' | 'whatsapp_opt_in' | 'notes'>
 
+/** Tabla del dashboard (en inglés): "1 player" / "3 players". */
 export function playersLabel(count: number): string {
-  return `${count} ${count === 1 ? 'jugador' : 'jugadores'}`
+  return `${count} ${count === 1 ? 'player' : 'players'}`
 }
 
 /**

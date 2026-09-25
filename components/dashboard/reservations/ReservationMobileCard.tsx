@@ -1,5 +1,6 @@
 import type { TrainerReservation } from '@/lib/reservations/queries'
-import { formatDayShort, formatDuration, formatTime, reservationRangeOf } from '@/lib/reservations/format'
+import { formatDuration, formatTime, reservationRangeOf } from '@/lib/reservations/format'
+import { formatDayShortEn } from '@/lib/booking/format-en'
 import { formatRM } from '@/lib/reservations/pricing'
 import { StatusBadge } from './StatusBadge'
 import { ReservationRowActions } from './ReservationRowActions'
@@ -25,11 +26,11 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
         <div className="min-w-0">
           <p className="text-base font-semibold text-gray-900">{r.client_name}</p>
           <p className="mt-1 text-sm text-gray-900">
-            {r.slot && range ? `${formatDayShort(r.slot.session_date)} · ${formatTime(range.start_time)}` : 'Hueco no disponible'}
+            {r.slot && range ? `${formatDayShortEn(r.slot.session_date)} · ${formatTime(range.start_time)}` : 'Slot unavailable'}
             {duration && <span className="text-gray-500"> · {duration}</span>}
           </p>
         </div>
-        <StatusBadge status={r.status} />
+        <StatusBadge status={r.status} locale="en" />
       </div>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -41,7 +42,7 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
         </dd>
         {r.client_phone && (
           <>
-            <dt className="text-gray-400">Teléfono</dt>
+            <dt className="text-gray-400">Phone</dt>
             <dd>
               <a href={`tel:${r.client_phone}`} className="text-gray-600 hover:text-gray-900 underline-offset-2 hover:underline">
                 {r.client_phone}
@@ -49,15 +50,15 @@ export function ReservationMobileCard({ reservation: r, highlighted = false }: R
             </dd>
           </>
         )}
-        <dt className="text-gray-400">Jugadores</dt>
+        <dt className="text-gray-400">Players</dt>
         <dd className="text-gray-900 tabular-nums">{r.player_count}</dd>
         {r.client_message && (
           <>
-            <dt className="text-gray-400">Mensaje</dt>
+            <dt className="text-gray-400">Message</dt>
             <dd className="min-w-0 text-gray-900 whitespace-pre-line break-words line-clamp-4">{r.client_message}</dd>
           </>
         )}
-        <dt className="text-gray-400">Precio</dt>
+        <dt className="text-gray-400">Price</dt>
         <dd className="font-semibold text-gray-900 tabular-nums">
           {r.price !== null && r.price !== undefined ? formatRM(r.price) : <span className="text-gray-400 font-medium">—</span>}
         </dd>
