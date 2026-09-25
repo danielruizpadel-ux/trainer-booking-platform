@@ -49,3 +49,19 @@
   dashboard siguen en español.
 - Integrar un proveedor real de email antes de prometer confirmaciones por email;
   `lib/notifications/notify.ts` sigue siendo un stub.
+
+## FUTURO (no implementado)
+
+- **«Nueva reserva» vinculada a una cuenta existente.** El entrenador podrá
+  buscar por nombre o email y **seleccionar explícitamente** una cuenta de
+  jugador; la reserva guardará el `player_id` de esa selección (el ID elegido,
+  no un texto) para que la clase aparezca en `/cuenta` de ese jugador.
+  - Nunca vincular por coincidencia de nombre (ni de email escrito a mano): solo
+    con la cuenta que el entrenador elige en la lista.
+  - El servidor debe comprobar que ese `player_id` existe y que el entrenador
+    puede verlo (relación en `player_trainers`), y no aceptarlo de ningún otro
+    sitio. Hoy la reserva manual crea `player_id` NULL
+    (`lib/reservations/manual.ts`).
+  - La búsqueda no debe exponer más datos de los necesarios para distinguir
+    cuentas (nombre y email parcial, por ejemplo).
+  - Registrado el 25/09/2026; sin fecha de implementación.

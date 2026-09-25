@@ -26,6 +26,35 @@ export function futureBookableStarts(
   return bookableStarts(window, taken, duration, step).filter((start) => !isPastMalaysiaSession(window.session_date, start, now))
 }
 
+/**
+ * Duración con la que el calendario del Resumen decide qué parece reservable
+ * (ya no hay selector global): la más corta que ofrece el entrenador. Un
+ * inicio sale como reservable si cabe al menos esa clase; las más largas se
+ * eligen después en "Nueva reserva", solo entre las que caben
+ * (`durationsFittingAt`).
+ */
+export function shortestDuration(durations: number[]): number {
+  const valid = durations.filter((d) => Number.isFinite(d) && d > 0)
+  return valid.length > 0 ? Math.min(...valid) : 60
+}
+
+/**
+ * Duraciones del entrenador que caben empezando en `start` en esa ventana
+ * (sin pisar reservas, sin salirse, sin ser pasado), de menor a mayor.
+ */
+export function durationsFittingAt(
+  window: TimeRange & { session_date: string },
+  taken: TimeRange[],
+  durations: number[],
+  step: number,
+  start: string,
+  now: Date = new Date()
+): number[] {
+  return [...durations]
+    .sort((a, b) => a - b)
+    .filter((d) => futureBookableStarts(window, taken, d, step, now).includes(start))
+}
+
 /** Los inicios cuya clase entera cabe dentro del tramo libre `range`. */
 export function startsInRange(starts: string[], range: TimeRange, duration: number): string[] {
   const from = toMinutes(range.start_time)

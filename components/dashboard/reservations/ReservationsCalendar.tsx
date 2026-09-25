@@ -6,7 +6,9 @@ import { getMonday, parseDateStr, toDateStr } from '@/lib/dateUtils'
 import type { CalendarData, CalendarReservation, CalendarWindow, SlotPick } from '@/lib/reservations/calendar'
 import { toMinutes, type TimeRange } from '@/lib/availability/windows'
 import {
+  durationsFittingAt,
   futureBookableStarts,
+  shortestDuration,
   rangeState,
   reservationKindLabel,
   reservationSummary,
@@ -15,7 +17,7 @@ import {
 } from '@/lib/reservations/calendar-slots'
 import { durationLabel } from '@/lib/availability/durations'
 import { formatTime } from '@/lib/reservations/format'
-import { DurationPicker } from './DurationPicker'
+import MiniCalendarOverlay from '@/components/trainer/calendar/MiniCalendarOverlay'
 import { DaySlotPickerDialog } from './DaySlotPickerDialog'
 
 type Scale = 'week' | 'day'
@@ -29,8 +31,10 @@ interface ReservationsCalendarProps {
    * view: clic o toque en un hueco libre → franja con la hora bajo el puntero
    * (solo inicios reservables: cabe la duración, no pisa reservas, no es
    * pasado). Con teclado, Intro sobre el tramo abre la rejilla de horas.
+   * La franja lleva la duración más corta del entrenador; `fittingDurations`
+   * son las suyas que caben a esa hora (para elegir en "Nueva reserva").
    */
-  onCreateAt?: (pick: SlotPick) => void
+  onCreateAt?: (pick: SlotPick, fittingDurations: number[]) => void
   /** select: duración de la clase a colocar (60/90). Obligatoria en modo select. */
   duration?: number
   /** select: clic en una hora de inicio dentro de un tramo libre */
@@ -79,11 +83,17 @@ interface OpenPicker {
  *
  * En modo `select` la duración la controla el diálogo padre (prop
  * `duration`) y elegir una hora en el modal llama a `onSlotSelect`. En
- * modo `view` la duración la elige el propio entrenador con un
- * `DurationPicker` en la cabecera (si ofrece más de una). Con `onCreateAt`
+ * modo `view` no hay selector de duración: lo reservable se calcula con la
+ * más corta que ofrece el entrenador (si no cabe ni esa, no se ofrece), y la
+ * duración se elige después en "Nueva reserva". Con `onCreateAt`
  * (Resumen), un clic o toque en un tramo libre crea una clase a la hora bajo
  * el puntero, y con teclado el modal de horas deja elegir; sin él, el modal
  * es solo informativo.
+ *
+ * El texto del periodo abre un mini calendario (MiniCalendarOverlay, el del
+ * calendario de referencia): elegir un día lleva a su semana (o a ese día en
+ * la escala Día) y lo resalta en la cabecera, desplazándolo a la vista si la
+ * semana no cabe a lo ancho (móvil).
  *
  * Las reglas (qué inicios son reservables, qué hora corresponde a un clic, el
  * resumen de una reserva) viven en lib/reservations/calendar-slots.ts.
@@ -106,8 +116,11 @@ export function ReservationsCalendar({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const cache = useRef(new Map<string, CalendarData>())
-  // Duración que el entrenador elige para FILTRAR su propio calendario en modo view.
-  const [viewDuration, setViewDuration] = useState<number>(60)
+  // Mini calendario del periodo y el día elegido en él (resaltado)
+  const [miniOpen, setMiniOpen] = useState(false)
+  const [picked, setPicked] = useState<string | null>(null)
+  const miniTriggerRef = useRef<HTMLButtonElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [openPicker, setOpenPicker] = useState<OpenPicker | null>(null)
   const [summary, setSummary] = useState<OpenSummary | null>(null)
   const hideTimer = useRef<number | undefined>(undefined)
@@ -180,12 +193,17 @@ export function ReservationsCalendar({
     }
   }, [rangeStart, rangeEnd, refreshKey])
 
-  // Si la duración vista deja de estar entre las que ofrece el entrenador, usa la primera disponible.
+  // El día elegido en el mini calendario, a la vista: si la semana no cabe a
+  // lo ancho (columnas de 6.5rem en móvil), se centra su columna.
   useEffect(() => {
-    if (data.durations.length > 0 && !data.durations.includes(viewDuration)) {
-      setViewDuration(data.durations[0])
-    }
-  }, [data.durations, viewDuration])
+    const container = scrollRef.current
+    if (!picked || !container) return
+    const cell = container.querySelector<HTMLElement>(`[data-day="${picked}"]`)
+    if (!cell) return
+    const c = container.getBoundingClientRect()
+    const r = cell.getBoundingClientRect()
+    container.scrollLeft += r.left - c.left - (c.width - r.width) / 2
+  }, [picked, days])
 
   // Rejilla horaria: de 8 a 21 salvo que haya ventanas fuera.
   const [gridStart, gridEnd] = useMemo(() => {
@@ -201,6 +219,7 @@ export function ReservationsCalendar({
   const bodyHeight = hours.length * HOUR_PX
 
   function move(delta: number) {
+    setPicked(null)
     const d = parseDateStr(anchor)
     d.setDate(d.getDate() + delta * (scale === 'week' ? 7 : 1))
     setAnchor(toDateStr(d))
@@ -208,16 +227,24 @@ export function ReservationsCalendar({
 
   const windowsByDay = useMemo(() => groupBy(data.windows, (w) => w.session_date), [data.windows])
   const reservationsByDay = useMemo(() => groupBy(data.reservations, (r) => r.session_date), [data.reservations])
-  // En select la duración la manda el diálogo padre; en view la elige aquí el entrenador.
-  const effectiveDuration = mode === 'select' ? duration : viewDuration
+  // En select la duración la manda el diálogo padre; en view, la más corta
+  // del entrenador (lo que no admite ni esa no se presenta como reservable).
+  const effectiveDuration = mode === 'select' ? duration : shortestDuration(data.durations)
   // En view, un hueco libre crea una clase si quien usa el calendario lo permite.
   const canCreate = mode === 'view' && Boolean(onCreateAt)
+  const label = rangeLabel(days, scale)
+
+  function createAt(w: CalendarWindow, start: string) {
+    const taken = (reservationsByDay.get(w.session_date) ?? []).map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
+    const fitting = durationsFittingAt(w, taken, data.durations, data.step, start)
+    onCreateAt?.(pickOf(w, start, effectiveDuration), fitting.length > 0 ? fitting : [effectiveDuration])
+  }
 
   return (
     <div className="flex flex-col gap-4">
       {/* Navegación */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 max-w-full items-center gap-2">
           <div className="inline-flex rounded-xl ring-1 ring-inset ring-gray-200 bg-white overflow-hidden">
             <NavButton label={scale === 'week' ? 'Semana anterior' : 'Día anterior'} onClick={() => move(-1)}>
               <path d="m15 18-6-6 6-6" />
@@ -228,19 +255,53 @@ export function ReservationsCalendar({
           </div>
           <button
             type="button"
-            onClick={() => setAnchor(today)}
+            onClick={() => {
+              setPicked(null)
+              setAnchor(today)
+            }}
             className="h-9 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
             Hoy
           </button>
-          <p className="text-sm font-semibold text-gray-900">{rangeLabel(days, scale)}</p>
+          {compact ? (
+            <p className="text-sm font-semibold text-gray-900">{label}</p>
+          ) : (
+            <div className="relative min-w-0 shrink">
+              <button
+                ref={miniTriggerRef}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={miniOpen}
+                aria-label={`${label}. Elegir fecha`}
+                onClick={() => setMiniOpen((open) => !open)}
+                className="min-h-9 max-w-full px-2 -mx-2 py-1 rounded-lg text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 inline-flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                {/* En móvil (escala Día) la fecha larga pasa a dos líneas en vez de desbordar. */}
+                <span className="min-w-0">{label}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 text-gray-400 transition-transform ${miniOpen ? 'rotate-180' : ''}`}>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <MiniCalendarOverlay
+                isOpen={miniOpen}
+                onClose={() => setMiniOpen(false)}
+                triggerRef={miniTriggerRef}
+                currentDate={parseDateStr(picked ?? anchor)}
+                onDateSelect={(d) => {
+                  const day = toDateStr(d)
+                  setAnchor(day)
+                  setPicked(day)
+                }}
+              />
+            </div>
+          )}
+          {/* Para lectores de pantalla: el periodo que se ve tras navegar */}
+          <p className="sr-only" aria-live="polite">
+            {picked ? `${label}. Día elegido: ${dayLabelOf(picked)}` : label}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {mode === 'view' && data.durations.length > 1 && (
-            <DurationPicker durations={data.durations} value={viewDuration} onChange={setViewDuration} />
-          )}
-
           {!compact && <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
             {(['day', 'week'] as Scale[]).map((value) => (
               <button
@@ -270,7 +331,7 @@ export function ReservationsCalendar({
         className={`bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden ${loading ? 'opacity-60' : ''} transition-opacity`}
         aria-busy={loading}
       >
-        <div className={`${compact ? 'max-h-[26rem]' : 'max-h-[34rem]'} overflow-auto`}>
+        <div ref={scrollRef} className={`${compact ? 'max-h-[26rem]' : 'max-h-[34rem]'} overflow-auto`}>
           <div
             className="grid min-w-0"
             style={{ gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(${scale === 'week' ? '6.5rem' : '0'}, 1fr))` }}
@@ -279,9 +340,14 @@ export function ReservationsCalendar({
             <div className="sticky top-0 z-10 bg-white border-b border-gray-100" />
             {days.map((day, i) => {
               const isToday = day === today
+              const isPicked = day === picked
               const d = parseDateStr(day)
               return (
-                <div key={day} className="sticky top-0 z-10 bg-white border-b border-l border-gray-100 px-2 py-2 text-center">
+                <div
+                  key={day}
+                  data-day={day}
+                  className={`sticky top-0 z-10 border-b border-l border-gray-100 px-2 py-2 text-center ${isPicked ? 'bg-blue-50 ring-2 ring-inset ring-blue-500' : 'bg-white'}`}
+                >
                   <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-blue-600' : 'text-gray-400'}`}>
                     {scale === 'week' ? DAY_NAMES[i] : DAY_NAMES[(d.getDay() + 6) % 7]}
                   </p>
@@ -327,7 +393,7 @@ export function ReservationsCalendar({
                     selected={selected}
                     canCreate={canCreate}
                     onOpenPicker={(range, starts) => setOpenPicker({ window: w, range, starts })}
-                    onCreateAt={(start) => onCreateAt?.(pickOf(w, start, effectiveDuration))}
+                    onCreateAt={(start) => createAt(w, start)}
                   />
                 ))}
                 {(reservationsByDay.get(day) ?? []).map((r) => (
@@ -378,15 +444,14 @@ export function ReservationsCalendar({
         <DaySlotPickerDialog
           dayLabel={dayLabelOf(openPicker.window.session_date)}
           rangeLabel={`${openPicker.range.start_time} – ${openPicker.range.end_time}`}
-          durationLabel={durationLabel(effectiveDuration)}
+          durationLabel={mode === 'view' && data.durations.length > 1 ? `${durationLabel(effectiveDuration)} o más` : durationLabel(effectiveDuration)}
           starts={openPicker.starts}
           selectedStart={mode === 'select' ? (selected?.start_time ?? null) : null}
           interactive={mode === 'select' || canCreate}
           onSelect={(s) => {
-            const pick = pickOf(openPicker.window, s, effectiveDuration)
             setOpenPicker(null)
-            if (mode === 'select') onSlotSelect?.(pick)
-            else onCreateAt?.(pick)
+            if (mode === 'select') onSlotSelect?.(pickOf(openPicker.window, s, effectiveDuration))
+            else createAt(openPicker.window, s)
           }}
           onClose={() => setOpenPicker(null)}
         />

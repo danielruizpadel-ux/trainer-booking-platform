@@ -11,6 +11,7 @@ import { DurationPicker } from './DurationPicker'
 import { DialogShell, dialogButton } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from './ClientFields'
 import { ReservationsCalendar } from './ReservationsCalendar'
+import { addMinutes } from '@/lib/availability/windows'
 
 interface NewReservationDialogProps {
   /** Duraciones que ofrece el entrenador (60/90) */
@@ -22,6 +23,12 @@ interface NewReservationDialogProps {
    * "Cambiar hueco" vuelve al selector en esa misma semana.
    */
   initialSlot?: SlotPick | null
+  /**
+   * Con `initialSlot`: duraciones del entrenador que caben a esa hora. Si hay
+   * más de una, se elige en "Datos del cliente" (solo entre esas). El
+   * servidor vuelve a validar al guardar.
+   */
+  initialDurations?: number[]
   /** Tras crear la reserva (p. ej. para recargar el calendario que la abrió) */
   onCreated?: () => void
 }
@@ -30,11 +37,15 @@ interface NewReservationDialogProps {
  * "Nueva reserva" (Parte 4): hueco libre → datos del cliente → ¿ya tengo la
  * pista? Crea `confirmed` o `pending_confirmation` vía POST /api/dashboard/reservations.
  */
-export function NewReservationDialog({ durations, onClose, initialSlot = null, onCreated }: NewReservationDialogProps) {
+export function NewReservationDialog({ durations, onClose, initialSlot = null, initialDurations, onCreated }: NewReservationDialogProps) {
   const router = useRouter()
   const [step, setStep] = useState<'slot' | 'client'>(initialSlot ? 'client' : 'slot')
   const [duration, setDuration] = useState<number>(initialSlot?.duration_minutes ?? durations[0] ?? 60)
   const [slot, setSlot] = useState<SlotPick | null>(initialSlot)
+  // ¿La franja es la precargada? Solo entonces se elige la duración aquí;
+  // elegida en el calendario del paso 1, la duración ya va con ella.
+  const [preloaded, setPreloaded] = useState(Boolean(initialSlot))
+  const fittingDurations = (initialDurations ?? (initialSlot ? [initialSlot.duration_minutes] : [])).filter((d) => durations.includes(d))
   const [client, setClient] = useState<ClientFieldValues>({ client_name: '', client_email: '', client_phone: '', notes: '' })
   const [confirmed, setConfirmed] = useState(false)
   const [sending, setSending] = useState(false)
@@ -114,10 +125,43 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, o
               setSlot(null)
             }}
           />
-          <ReservationsCalendar mode="select" compact duration={duration} selected={slot} onSlotSelect={setSlot} initialDate={slot?.session_date ?? initialSlot?.session_date} />
+          <ReservationsCalendar
+            mode="select"
+            compact
+            duration={duration}
+            selected={slot}
+            onSlotSelect={(pick) => {
+              setSlot(pick)
+              setPreloaded(false)
+            }}
+            initialDate={slot?.session_date ?? initialSlot?.session_date}
+          />
         </div>
       ) : (
         <div className="flex flex-col gap-6">
+          {preloaded && slot && durations.length > 1 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-gray-900">Duración</span>
+              <DurationPicker
+                durations={fittingDurations}
+                value={duration}
+                disabled={sending}
+                onChange={(value) => {
+                  setDuration(value)
+                  setSlot({ ...slot, duration_minutes: value, end_time: addMinutes(slot.start_time, value) })
+                }}
+              />
+              {durations.some((d) => !fittingDurations.includes(d)) && (
+                <p className="text-xs text-gray-500">
+                  {durations
+                    .filter((d) => !fittingDurations.includes(d))
+                    .map((d) => durationLabel(d))
+                    .join(', ')}{' '}
+                  no cabe a esta hora.
+                </p>
+              )}
+            </div>
+          )}
           <ClientFields values={client} onChange={setClient} disabled={sending} idPrefix="new" />
 
           <label className="flex items-start gap-3 rounded-xl ring-1 ring-inset ring-gray-200 hover:ring-gray-300 p-4 cursor-pointer transition-all duration-150">

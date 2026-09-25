@@ -119,8 +119,8 @@ test('calendario: usa las reglas compartidas y el Resumen abre "Nueva reserva" p
   assert.match(cal, /if \(state !== 'bookable'\)/, 'un tramo sin inicios no es un botón')
   assert.doesNotMatch(cal, /\bbookableStarts\(/, 'no recalcula los inicios por su cuenta')
   const home = code('components/dashboard/home/HomeCalendarSection.tsx')
-  assert.match(home, /onCreateAt=\{setCreating\}/)
-  assert.match(home, /initialSlot=\{creating\}/)
+  assert.match(home, /onCreateAt=\{\(pick, fitting\) => setCreating\(\{ pick, fitting \}\)\}/)
+  assert.match(home, /initialSlot=\{creating\.pick\}/)
   const dialog = code('components/dashboard/reservations/NewReservationDialog.tsx')
   assert.match(dialog, /useState<'slot' \| 'client'>\(initialSlot \? 'client' : 'slot'\)/)
   assert.match(dialog, /initialSlot\?\.duration_minutes/)
@@ -141,4 +141,95 @@ test('DialogShell: al cerrar (fondo, Escape o X) devuelve el foco si estaba en e
   assert.equal(focusWasInDialog(trigger, root, body), false, 'si el foco ya está en la página, no se roba')
   const code = read('components/dashboard/DialogShell.tsx')
   assert.match(code, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/, 'el fondo no toma el foco al pulsarlo')
+})
+
+// ─── Sin selector global de duración (Resumen) ───────────────────────────────
+
+test('duración de referencia: la más corta del entrenador; y qué duraciones caben en un inicio', () => {
+  assert.equal(slots.shortestDuration([90, 60]), 60)
+  assert.equal(slots.shortestDuration([90]), 90)
+  assert.equal(slots.shortestDuration([]), 60)
+  // 09:00–13:00 con una reserva 10:00–11:00 (BOOKED), rejilla 30
+  const fits = (start, durations = [60, 90]) => slots.durationsFittingAt(W, BOOKED, durations, 30, start, LATER)
+  assert.deepEqual(fits('12:00'), [60], 'a las 12:00 solo queda 1 h')
+  assert.deepEqual(fits('09:00'), [60], '09:00 de 90 pisaría la de las 10:00')
+  assert.deepEqual(fits('09:30'), [], 'pisa la reserva de las 10:00 incluso con 1 h')
+  assert.deepEqual(fits('11:30'), [60, 90])
+  assert.deepEqual(fits('12:00', [90]), [], 'un entrenador solo de 90: no cabe')
+  // Un entrenador solo de 90 no ve como reservable un tramo de 60 libres
+  const onlyNinety = slots.futureBookableStarts(W, BOOKED, slots.shortestDuration([90]), 30, LATER)
+  assert.deepEqual(slots.startsInRange(onlyNinety, { start_time: '12:00', end_time: '13:00' }, 90), [])
+  assert.equal(slots.rangeState(DAY, { start_time: '12:00', end_time: '13:00' }, [], 90, LATER), 'too-short')
+})
+
+test('al guardar, el servidor vuelve a validar duración y hueco (reserva manual, sin insertar si no vale)', async () => {
+  const T = '11111111-1111-4111-8111-111111111111'
+  const WIN = '22222222-2222-4222-8222-222222222222'
+  const state = { inserts: 0, offered: [60, 90] }
+  const row = {
+    id: WIN, trainer_id: T, session_date: DAY, start_time: '09:00:00', end_time: '13:00:00', class_type: 'private',
+    status: 'available', current_bookings: 1, max_capacity: 1,
+    reservations: [{ id: 'r1', status: 'confirmed', start_time: '11:00:00', end_time: '12:00:00' }],
+  }
+  mock('lib/supabase/client.ts', {
+    getSupabaseServerClient: () =>
+      fakeSupabase((table, ops) => {
+        const has = (op) => ops.some((o) => o.op === op)
+        if (table === 'reservations' && has('insert')) {
+          state.inserts += 1
+          return { data: { id: 'new' }, error: null }
+        }
+        if (table === 'availability_slots') return { data: has('maybeSingle') || has('single') ? row : [row], error: null }
+        if (table === 'trainer_session_prices') {
+          return { data: [60, 90].map((d) => ({ duration_minutes: d, player_count: 1, price_rm: d === 60 ? 300 : 450 })), error: null }
+        }
+        return { data: null, error: null }
+      }),
+  })
+  mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () => state.offered })
+  const { createManualReservation } = load('lib/reservations/manual.ts')
+  const input = (start, duration) => ({ slot_id: WIN, start_time: start, duration_minutes: duration, client_name: 'Ana Test', client_email: 'ana@example.com' })
+
+  // 12:00 de 90 acabaría 13:30, fuera de la ventana
+  let r = await createManualReservation(T, input('12:00', 90))
+  assert.equal(r.ok, false)
+  assert.equal(state.inserts, 0)
+  // 10:30 de 90 pisaría la de las 11:00
+  r = await createManualReservation(T, input('10:30', 90))
+  assert.equal(r.ok, false)
+  assert.equal(state.inserts, 0)
+  // Duración que no ofrece
+  state.offered = [60]
+  r = await createManualReservation(T, input('09:00', 90))
+  assert.equal(r.ok, false)
+  assert.equal(r.status, 400)
+  assert.equal(state.inserts, 0)
+  // Lo que sí cabe se crea (en el doble)
+  state.offered = [60, 90]
+  r = await createManualReservation(T, input('12:00', 60))
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(state.inserts, 1)
+})
+
+test('Resumen: sin selector global; "Nueva reserva" precargada elige solo entre las duraciones que caben', () => {
+  const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  const cal = code('components/dashboard/reservations/ReservationsCalendar.tsx')
+  assert.doesNotMatch(cal, /DurationPicker/, 'el calendario ya no tiene selector de duración')
+  assert.match(cal, /mode === 'select' \? duration : shortestDuration\(data\.durations\)/)
+  assert.match(cal, /durationsFittingAt\(w, taken, data\.durations, data\.step, start\)/)
+  const dialog = code('components/dashboard/reservations/NewReservationDialog.tsx')
+  assert.match(dialog, /<DurationPicker\s+durations=\{fittingDurations\}/)
+  assert.match(dialog, /filter\(\(d\) => durations\.includes\(d\)\)/, 'nunca una duración que el entrenador no ofrece')
+  const home = code('components/dashboard/home/HomeCalendarSection.tsx')
+  assert.match(home, /initialDurations=\{creating\.fitting\}/)
+})
+
+test('mini calendario del periodo: el de referencia, sin modificarlo, y resalta el día elegido', () => {
+  const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  const cal = code('components/dashboard/reservations/ReservationsCalendar.tsx')
+  assert.match(cal, /import MiniCalendarOverlay from '@\/components\/trainer\/calendar\/MiniCalendarOverlay'/)
+  assert.match(cal, /aria-haspopup="dialog"/)
+  assert.match(cal, /aria-expanded=\{miniOpen\}/)
+  assert.match(cal, /setAnchor\(day\)\s+setPicked\(day\)/)
+  assert.match(cal, /data-day=\{day\}/)
 })
