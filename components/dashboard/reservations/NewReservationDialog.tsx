@@ -131,7 +131,7 @@ export function NewReservationDialog({ durations, onClose }: NewReservationDialo
             {price !== null ? (
               <>Precio: {formatRM(price)} (clase de {durationLabel(duration)}, 1 jugador). Se puede cambiar después desde Editar.</>
             ) : pricing.rows ? (
-              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Disponibilidad → Precios.</span>
+              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Perfil → Public pricing.</span>
             ) : (
               'Cargando precio…'
             )}

@@ -101,7 +101,7 @@ mensaje al entrenador **no** se guarda en el borrador: se vuelve a escribir.
 `/cuenta/entrar?trainer=<slug>`. La reserva NO se asocia a la cuenta
 (el enlace seguro invitado → cuenta, con token por reserva, es otra fase).
 
-**Precios editables:** Dashboard → Disponibilidad → **Precios**
+**Precios editables:** Dashboard → Perfil → **Public pricing**
 (`PricingCard`, `GET/PUT /api/dashboard/pricing`, entrenador de la sesión;
 todo o nada, importes > 0 con 2 decimales como mucho). Vista previa pública:
 `GET /api/pricing?trainer_id=`. Descuentos por volumen no editables todavía.

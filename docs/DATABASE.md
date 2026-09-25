@@ -180,7 +180,7 @@ quedan con `player_id` NULL, `client_message` NULL, `player_count` 1,
 PK `(trainer_id, duration_minutes, player_count)`. Precargada para los
 entrenadores existentes con 60 min → 300/300/350/350 y 90 min →
 450/450/525/525. **Un entrenador nuevo no tiene filas**: hasta que las
-configure (Disponibilidad → Precios) la reserva devuelve 409. Lo cobrado es
+configure (Perfil → Public pricing) la reserva devuelve 409. Lo cobrado es
 el snapshot de `reservations.price`; cambiar la tabla no toca reservas hechas.
 
 Seguridad (010): RLS activo sin políticas en las dos tablas, y anon /

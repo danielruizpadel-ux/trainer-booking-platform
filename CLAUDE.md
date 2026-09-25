@@ -67,7 +67,7 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
   (confirmar / sin pista) vive solo en `lib/reservations/confirmation.ts`.
 - El precio lo calcula el servidor; nunca aceptar un total del navegador.
   Precio base = `trainer_session_prices` (entrenador × duración × nº de
-  jugadores, migración 010, editable en Disponibilidad → Precios), leído con
+  jugadores, migración 010, editable en Perfil → Public pricing), leído con
   `lib/reservations/trainer-prices.ts`; el cálculo puro (descuento 5+/10+,
   redondeo) está en `lib/reservations/pricing.ts`. Sin precio configurado se
   falla con un error claro: **nunca** volver a un RM300 fijo en código.

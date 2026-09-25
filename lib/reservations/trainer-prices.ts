@@ -44,7 +44,7 @@ export type BasePriceResult =
 
 /**
  * Precio base de UNA combinación para cobrar. 409 si el entrenador no lo tiene
- * configurado (se arregla desde Disponibilidad → Precios), 500 si falla la BD.
+ * configurado (se arregla desde Perfil → Public pricing), 500 si falla la BD.
  */
 export async function requireBasePrice(
   supabase: SupabaseClient,
