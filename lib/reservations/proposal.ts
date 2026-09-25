@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { notifyProposalResponded, notifyRescheduleProposed } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
-import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
+import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
 
 /**
  * Propuesta de nueva fecha (migración 004).
@@ -61,6 +61,34 @@ export async function proposeReschedule(
   const token = randomBytes(24).toString('base64url')
   const now = new Date().toISOString()
 
+  // Primero se libera la original y DESPUÉS se inserta la propuesta. Al revés,
+  // la restricción reservations_no_overlap (migración 008) rechazaría toda
+  // propuesta que solape con la original mientras esta sigue viva (p. ej. la
+  // misma ventana media hora más tarde), aunque la app la haya dado por buena
+  // con ignoreReservationId.
+  const { data: released, error: originalError } = await supabase
+    .from('reservations')
+    .update({ status: RESERVATION_STATUS.NEEDS_RESCHEDULE, updated_at: now })
+    .eq('id', original.id)
+    .in('status', [RESERVATION_STATUS.PENDING_CONFIRMATION, 'pending'])
+    .select('id')
+  if (originalError) return { ok: false, status: 500, message: originalError.message }
+  if (!released || released.length === 0) {
+    return { ok: false, status: 409, message: 'Solo se puede proponer otra fecha sobre una reserva pendiente' }
+  }
+
+  // Si la propuesta no se crea, la original vuelve a como estaba. Si entre
+  // tanto alguien ha cogido su franja, la restricción impide devolverla y se
+  // queda en needs_reschedule, que es lo que refleja la realidad.
+  const restoreOriginal = async () => {
+    const { error } = await supabase
+      .from('reservations')
+      .update({ status: original.status, updated_at: new Date().toISOString() })
+      .eq('id', original.id)
+      .eq('status', RESERVATION_STATUS.NEEDS_RESCHEDULE)
+    if (error) console.warn('No se pudo devolver la reserva original a su estado:', error.message)
+  }
+
   const { data: proposal, error: insertError } = await supabase
     .from('reservations')
     .insert({
@@ -83,6 +111,8 @@ export async function proposeReschedule(
     .single()
 
   if (insertError || !proposal) {
+    await restoreOriginal()
+    if (isOverlapError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
     const missing = insertError?.code === '42703' || /rescheduled_from_id|proposal_token/.test(insertError?.message ?? '')
     return {
       ok: false,
@@ -92,14 +122,6 @@ export async function proposeReschedule(
         : `No se pudo crear la propuesta: ${insertError?.message}`,
     }
   }
-
-  // La original deja de esperar pista y libera su hueco.
-  const { error: originalError } = await supabase
-    .from('reservations')
-    .update({ status: RESERVATION_STATUS.NEEDS_RESCHEDULE, updated_at: now })
-    .eq('id', original.id)
-    .in('status', [RESERVATION_STATUS.PENDING_CONFIRMATION, 'pending'])
-  if (originalError) console.warn('No se pudo actualizar la reserva original:', originalError.message)
 
   await refreshWindowStatus(supabase, original.availability_slot_id)
   if (slotId !== original.availability_slot_id) await refreshWindowStatus(supabase, slotId)

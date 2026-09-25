@@ -56,13 +56,20 @@ No existen: `is_available`, `is_booked`, `price`.
 | `price` | numérico | lo calcula el servidor al crear (`lib/reservations/pricing.ts`): precio por sesión ya con descuento; 1 h 30 = precio de 1 h × 1,5 |
 | `start_time`, `end_time` | time | **migración 007**: rango real de la clase dentro de su ventana. NULL solo en reservas anteriores (se leen como ventana.start_time + 60 min) |
 | `duration_minutes` | smallint | **migración 007**: 60 o 90 |
+| `session_date` | date | **migración 008 (pendiente de aplicar)**: fecha de su ventana. La rellena el trigger `reservations_set_session_date` al crear y al cambiar `availability_slot_id`; la app no la escribe |
 | `status` | text | `pending_confirmation` (default tras la migración 003) · `reschedule_proposed` (004) · `confirmed` · `needs_reschedule` · `cancelled` · `completed`. Ver `migrations/003_…` y `004_…` |
 | `rescheduled_from_id` | uuid | **migración 004**: reserva original de una propuesta de nueva fecha |
 | `proposal_token` | text | **migración 004**: token del enlace público `/propuesta/[token]`; NULL al responder |
 | `notes` | text | aquí se guarda la preferencia de WhatsApp |
 | `created_at`, `updated_at` | timestamptz | |
 
-No existen: `client_id`, `session_date`, `session_time`, `class_type`,
+**Restricción `reservations_no_overlap` (migración 008, pendiente de aplicar):**
+dos reservas vivas (`reservationHoldsSlot`: todo menos `cancelled`,
+`canceled`, `needs_reschedule`) del mismo entrenador no pueden solaparse
+(rango `[inicio, fin)`). Postgres responde `23P01`; la app lo traduce a 409
+con `isOverlapError` (`lib/reservations/slots.ts`).
+
+No existen: `client_id`, `session_time`, `class_type`,
 `client_whatsapp_opt_in`, `total_price`, `discount_percent`.
 
 ## `clients`
