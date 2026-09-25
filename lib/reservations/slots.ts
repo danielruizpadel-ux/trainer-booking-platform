@@ -100,8 +100,18 @@ async function loadTakenForDate(supabase: SupabaseClient, trainerId: string, dat
  */
 export const OVERLAP_MESSAGE = 'Esa franja se acaba de ocupar. Elige otra hora.'
 
-export function isOverlapError(error: { code?: string } | null | undefined): boolean {
-  return error?.code === '23P01'
+export const OVERLAP_CONSTRAINT = 'reservations_no_overlap'
+
+/**
+ * Solo el 23P01 de ESA restricción es "franja ocupada" (409). Otro 23P01
+ * (una exclusión que se añada en el futuro) o cualquier otro error sigue
+ * siendo un fallo de verdad (500) y se registra como tal.
+ */
+export function isOverlapError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23P01') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(OVERLAP_CONSTRAINT)
 }
 
 export type WindowLookup =

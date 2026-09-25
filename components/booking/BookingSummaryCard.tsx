@@ -9,9 +9,11 @@ interface Session {
 
 interface BookingSummaryCardProps {
   sessions: Session[]
-  total: number
+  /** null: el entrenador no tiene precio para esta duración (o aún carga) */
+  total: number | null
   discount: number
-  pricePerSession?: number
+  /** Precio base de 1 jugador (la vista previa); null si no hay precio */
+  pricePerSession: number | null
   durationMinutes?: number
   onRemove?: (date: string, time: string) => void
   onConfirm?: () => void
@@ -21,14 +23,14 @@ export default function BookingSummaryCard({
   sessions,
   total,
   discount,
-  pricePerSession = 300,
+  pricePerSession,
   durationMinutes = 60,
   onRemove,
   onConfirm,
 }: BookingSummaryCardProps) {
   const count = sessions.length
-  const subtotal = count * pricePerSession
-  const discountAmount = Math.round((subtotal * discount) / 100)
+  const subtotal = pricePerSession === null ? null : Math.round(count * pricePerSession * 100) / 100
+  const discountAmount = subtotal === null || total === null ? 0 : Math.round((subtotal - total) * 100) / 100
 
   const nextTier = count < 5 ? { need: 5 - count, pct: 10 } : count < 10 ? { need: 10 - count, pct: 15 } : null
 
@@ -55,6 +57,9 @@ export default function BookingSummaryCard({
             <SessionSelector sessions={sessions} onRemove={onRemove || (() => {})} />
           </div>
 
+          {pricePerSession === null || total === null ? (
+            <p className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-500">Precio no disponible ahora mismo.</p>
+          ) : (
           <div className="mt-5 pt-5 border-t border-gray-100 space-y-2.5">
             <div className="flex justify-between text-sm text-gray-600">
               <span>
@@ -74,7 +79,9 @@ export default function BookingSummaryCard({
               <span className="text-sm font-medium text-gray-900">Total</span>
               <span className="text-2xl font-bold text-gray-900 tabular-nums">RM {total}</span>
             </div>
+            <p className="text-xs text-gray-400">Precio con 1 jugador. Eliges cuántos venís en el siguiente paso.</p>
           </div>
+          )}
 
           {nextTier && (
             <div className="mt-4 rounded-lg bg-blue-50 px-3 py-2.5">

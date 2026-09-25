@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import BookingStep1_SelectSessions from './BookingStep1_SelectSessions'
-import BookingStep2_ContactForm from './BookingStep2_ContactForm'
-import { calculateBookingPrice } from '@/lib/reservations/pricing'
+import { BookingCheckout, CheckoutError, type CheckoutSubmit } from './checkout/BookingCheckout'
+import type { SessionPriceRow } from '@/lib/reservations/pricing'
+import type { BookingAccount } from '@/lib/players/booking-contact'
+import type { BookingDraft } from '@/lib/booking/draft'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -12,76 +14,145 @@ interface Session {
   time: string
 }
 
-interface ContactFormData {
-  name: string
-  email: string
-  phone: string
-  whatsapp: boolean
-}
-
 interface BookingFlowProps {
   trainerId: string
   trainerName: string
+  /** Slug público: habilita "Continue with my account" y el borrador */
+  trainerSlug?: string
+  trainerImageUrl?: string | null
   /** Duraciones de clase que ofrece el entrenador (60/90); la primera es la inicial */
   classDurations?: number[]
+  /**
+   * Cuenta de jugador (ver BookingAccount). Con `player`, el checkout enseña
+   * sus datos y el servidor toma identidad y contacto de la sesión
+   * (`as_player`). Sin la prop, reserva como invitado.
+   */
+  account?: BookingAccount
+  /**
+   * Borrador recuperado al volver del login (lib/booking/draft.ts). NO es de
+   * fiar: aquí solo se usa para rellenar la selección tras comprobar la
+   * disponibilidad; el servidor revalida todo al confirmar.
+   */
+  restoredDraft?: BookingDraft | null
 }
 
-export default function BookingFlow({ trainerId, trainerName, classDurations = [60] }: BookingFlowProps) {
+export default function BookingFlow({
+  trainerId,
+  trainerName,
+  trainerSlug,
+  trainerImageUrl = null,
+  classDurations = [60],
+  account = { kind: 'anonymous' },
+  restoredDraft = null,
+}: BookingFlowProps) {
   const [step, setStep] = useState<'selection' | 'contact'>('selection')
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
   const [duration, setDuration] = useState<number>(classDurations[0] ?? 60)
-  const [totalPrice, setTotalPrice] = useState(0)
-  const [discountPercent, setDiscountPercent] = useState(0)
+  const [playerCount, setPlayerCount] = useState(1)
   const [currentView, setCurrentView] = useState<ViewType>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [prices, setPrices] = useState<SessionPriceRow[] | null>(null)
+  const [pricesError, setPricesError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // Tabla de precios vigente del entrenador: solo vista previa.
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/pricing?trainer_id=${encodeURIComponent(trainerId)}`, { cache: 'no-store' })
+      .then(async (r) => {
+        const data = await r.json().catch(() => null)
+        if (!r.ok || !data?.success) throw new Error('Pricing is unavailable right now.')
+        if (!cancelled) setPrices(data.prices)
+      })
+      .catch((err) => {
+        if (!cancelled) setPricesError(err instanceof Error ? err.message : 'Pricing is unavailable right now.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [trainerId])
+
+  // Borrador al volver del login: se quedan solo las sesiones que SIGUEN
+  // siendo reservables (misma API que el calendario), con la hora tal como la
+  // devuelve la API para que el calendario las reconozca.
+  useEffect(() => {
+    if (!restoredDraft) return
+    let cancelled = false
+    const dates = restoredDraft.sessions.map((s) => s.date).sort()
+    const params = new URLSearchParams({
+      trainer_id: trainerId,
+      start_date: dates[0],
+      end_date: dates[dates.length - 1],
+      duration: String(restoredDraft.duration),
+    })
+    fetch(`/api/availability?${params.toString()}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data: { success?: boolean; data?: Array<{ session_date: string; start_time: string }> }) => {
+        if (cancelled) return
+        const slots = data?.success && Array.isArray(data.data) ? data.data : []
+        const still = restoredDraft.sessions.flatMap((s) => {
+          const slot = slots.find((x) => x.session_date === s.date && x.start_time.slice(0, 5) === s.time)
+          return slot ? [{ date: s.date, time: slot.start_time }] : []
+        })
+        setDuration(restoredDraft.duration)
+        setPlayerCount(restoredDraft.playerCount)
+        setSelectedSessions(still)
+        const removed = restoredDraft.sessions.length - still.length
+        if (still.length === 0) {
+          setNotice(null)
+          setStep('selection')
+          return
+        }
+        setNotice(
+          removed > 0
+            ? `${removed} of your selected ${removed === 1 ? 'session is' : 'sessions are'} no longer available and ${removed === 1 ? 'was' : 'were'} removed.`
+            : null
+        )
+        setStep('contact')
+      })
+      .catch(() => {
+        // Sin disponibilidad no se restaura nada: se vuelve a elegir.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [restoredDraft, trainerId])
 
   const handleConfirmSessions = (sessions: Session[]) => {
     setSelectedSessions(sessions)
-
-    // Totales: la misma regla que el servidor (lib/reservations/pricing.ts),
-    // solo informativa; el precio real lo fija POST /api/reservations.
-    const price = calculateBookingPrice(sessions.length, duration)
-    setTotalPrice(price.total)
-    setDiscountPercent(price.discountPercent)
+    setNotice(null)
     setStep('contact')
   }
 
-  const handleBack = () => {
-    setStep('selection')
-  }
+  // Un único sitio construye la petición. Sin precio, sin player_id: los
+  // pone el servidor. Con cuenta no se mandan datos de contacto.
+  const handleConfirmReservation = async ({ playerCount: players, clientMessage, guest }: CheckoutSubmit) => {
+    const common = {
+      trainer_id: trainerId,
+      sessions: selectedSessions,
+      duration_minutes: duration,
+      player_count: players,
+      client_message: clientMessage,
+    }
+    const body =
+      account.kind === 'player'
+        ? { ...common, as_player: true }
+        : {
+            ...common,
+            client_name: guest?.name ?? '',
+            client_email: guest?.email ?? '',
+            client_phone: guest?.phone ?? '',
+            client_whatsapp_opt_in: guest?.whatsapp ?? false,
+          }
 
-  const handleConfirmReservation = async (formData: ContactFormData) => {
-    try {
-      const response = await fetch('/api/reservations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trainer_id: trainerId,
-          sessions: selectedSessions,
-          duration_minutes: duration,
-          client_name: formData.name,
-          client_email: formData.email,
-          client_phone: formData.phone,
-          client_whatsapp_opt_in: formData.whatsapp,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Error al crear reserva')
-      }
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error al crear reserva')
-      }
-
-      console.log('Solicitud de reserva registrada (pendiente de confirmar):', data.reservationIds)
-      // Success - component will handle showing confirmation
-    } catch (error) {
-      console.error('❌ Error:', error)
-      throw error
+    const response = await fetch('/api/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.success) {
+      throw new CheckoutError(data.error || "We couldn't create your booking. Please try again.", response.status)
     }
   }
 
@@ -93,6 +164,7 @@ export default function BookingFlow({ trainerId, trainerName, classDurations = [
           trainerId={trainerId}
           duration={duration}
           classDurations={classDurations}
+          prices={prices}
           onDurationChange={(value) => {
             // Las horas libres dependen de la duración: se vacía la selección.
             setDuration(value)
@@ -109,13 +181,19 @@ export default function BookingFlow({ trainerId, trainerName, classDurations = [
       )}
 
       {step === 'contact' && (
-        <BookingStep2_ContactForm
-          selectedSessions={selectedSessions}
-          totalPrice={totalPrice}
-          discountPercent={discountPercent}
-          durationMinutes={duration}
-          trainerId={trainerId}
-          onBack={handleBack}
+        <BookingCheckout
+          trainerName={trainerName}
+          trainerSlug={trainerSlug}
+          trainerImageUrl={trainerImageUrl}
+          sessions={selectedSessions}
+          duration={duration}
+          prices={prices}
+          pricesError={pricesError}
+          playerCount={playerCount}
+          onPlayerCountChange={setPlayerCount}
+          account={account}
+          notice={notice}
+          onBack={() => setStep('selection')}
           onSubmit={handleConfirmReservation}
         />
       )}

@@ -87,6 +87,10 @@ ofrece). El entrenador, desde `/dashboard/reservas`, o la confirma (→
 hueco `available` otra vez). Detalle en `docs/estado-desarrollo.md` y
 `migrations/003_reservation_confirmation_flow.sql`.
 
-`reservations.price` lo calcula el servidor en `lib/reservations/pricing.ts`
-(misma regla que el widget). El total que muestra el navegador es informativo;
-lo que se guarda no depende de él.
+`reservations.price` lo calcula el servidor: precio base de
+`trainer_session_prices` (duración × nº de jugadores, migración 010) → %
+de descuento por nº de sesiones (5+ −10 %, 10+ −15 %) → precio por sesión
+(`round2`, es lo que se guarda en cada fila) → total = sesiones × precio por
+sesión. El total que muestra el navegador (checkout) es una vista previa con
+`GET /api/pricing`; lo que se guarda no depende de él. Checkout, cuenta e
+invitado: `docs/PLAYER_ACCOUNTS.md`.

@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import type { SlotPick } from '@/lib/reservations/calendar'
 import { formatDayShort, formatTime } from '@/lib/reservations/format'
 import { durationLabel } from '@/lib/availability/durations'
-import { calculateBookingPrice, formatRM } from '@/lib/reservations/pricing'
+import { basePriceFor, formatRM } from '@/lib/reservations/pricing'
+import { useTrainerPricing } from '@/components/dashboard/useTrainerPricing'
 import { DurationPicker } from './DurationPicker'
 import { DialogShell, dialogButton } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from './ClientFields'
@@ -54,7 +55,9 @@ export function NewReservationDialog({ durations, onClose }: NewReservationDialo
   const slotLabel = slot
     ? `${formatDayShort(slot.session_date)} · ${formatTime(slot.start_time)} – ${formatTime(slot.end_time)} · ${durationLabel(duration)}`
     : null
-  const price = calculateBookingPrice(1, duration)
+  // Precio de 1 jugador del entrenador: solo para enseñarlo; lo fija el servidor.
+  const pricing = useTrainerPricing()
+  const price = pricing.rows ? basePriceFor(pricing.rows, duration, 1) : null
 
   return (
     <DialogShell
@@ -125,7 +128,13 @@ export function NewReservationDialog({ durations, onClose }: NewReservationDialo
           </label>
 
           <p className="text-sm text-gray-500">
-            Precio: {formatRM(price.pricePerSession)} (clase de {durationLabel(duration)}, tarifa habitual). Se puede cambiar después desde Editar.
+            {price !== null ? (
+              <>Precio: {formatRM(price)} (clase de {durationLabel(duration)}, 1 jugador). Se puede cambiar después desde Editar.</>
+            ) : pricing.rows ? (
+              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Disponibilidad → Precios.</span>
+            ) : (
+              'Cargando precio…'
+            )}
           </p>
 
           {error && (

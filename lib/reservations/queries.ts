@@ -18,6 +18,12 @@ export interface TrainerReservation {
   proposal_token: string | null
   /** Reserva original si esta es una propuesta de nueva fecha */
   rescheduled_from_id: string | null
+  /** Migración 010: personas en la clase (1..4). 1 en reservas anteriores */
+  player_count: number
+  /** Migración 010: mensaje del cliente (solo lectura). No son las notas internas (`notes`) */
+  client_message: string | null
+  /** Migración 010: avisos por WhatsApp; null = reserva antigua (ver `notes`) */
+  whatsapp_opt_in: boolean | null
   slot: {
     id: string
     session_date: string
@@ -39,8 +45,9 @@ const BASE_COLUMNS =
   'id, status, client_name, client_email, client_phone, notes, price, created_at, ' +
   'availability_slots ( id, session_date, start_time, end_time, class_type )'
 
-/** Columnas de las migraciones 004 y 007. Si aún no están aplicadas se piden sin ellas. */
-const PROPOSAL_COLUMNS = 'proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, '
+/** Columnas de las migraciones 004, 007 y 010. Si aún no están aplicadas se piden sin ellas. */
+const PROPOSAL_COLUMNS =
+  'proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, player_count, client_message, whatsapp_opt_in, '
 
 export async function listTrainerReservations(trainerId: string): Promise<TrainerReservation[]> {
   const supabase = getSupabaseServerClient()
@@ -57,7 +64,7 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
   if (error?.code === '42703') {
     // migrations/004 o 007 sin aplicar: la página sigue funcionando, sin
     // propuestas de nueva fecha ni rangos propios (se usa la hora de la ventana).
-    console.warn('reservations: faltan columnas de las migraciones 004/007; se cargan sin ellas')
+    console.warn('reservations: faltan columnas de las migraciones 004/007/010; se cargan sin ellas')
     ;({ data, error } = await fetchWith(BASE_COLUMNS))
   }
 
@@ -66,7 +73,13 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
   }
 
   const rows = (data ?? []) as unknown as Array<
-    Omit<TrainerReservation, 'slot' | 'proposal_token' | 'rescheduled_from_id' | 'start_time' | 'end_time' | 'duration_minutes'> & {
+    Omit<
+      TrainerReservation,
+      'slot' | 'proposal_token' | 'rescheduled_from_id' | 'start_time' | 'end_time' | 'duration_minutes' | 'player_count' | 'client_message' | 'whatsapp_opt_in'
+    > & {
+      player_count?: number | null
+      client_message?: string | null
+      whatsapp_opt_in?: boolean | null
       proposal_token?: string | null
       rescheduled_from_id?: string | null
       start_time?: string | null
@@ -77,8 +90,11 @@ export async function listTrainerReservations(trainerId: string): Promise<Traine
   >
 
   return rows
-    .map(({ availability_slots, proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, ...row }) => ({
+    .map(({ availability_slots, proposal_token, rescheduled_from_id, start_time, end_time, duration_minutes, player_count, client_message, whatsapp_opt_in, ...row }) => ({
       ...row,
+      player_count: player_count ?? 1,
+      client_message: client_message ?? null,
+      whatsapp_opt_in: whatsapp_opt_in ?? null,
       start_time: start_time ?? null,
       end_time: end_time ?? null,
       duration_minutes: duration_minutes ?? null,

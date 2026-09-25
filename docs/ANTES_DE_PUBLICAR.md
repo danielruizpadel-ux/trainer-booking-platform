@@ -59,10 +59,32 @@ producción, exigir una cabecera con un secreto de entorno, no quitar el 404.
 authentication`, hace `console.log` de la contraseña y **muestra en pantalla unas
 credenciales de demo**. No autentica nada.
 
-### 4. Revisar las políticas RLS de `reservations`
+### 4. Revisar las políticas RLS de `reservations` — ESCRITURA CERRADA el 25/09/2026
 
-- [ ] Comprobar en Supabase → Authentication → Policies que la clave **anon**
-      no puede leer `reservations`
+- [x] Auditado el 24/09 (Dani): RLS activo, **ninguna** política; anon y
+      authenticated tenían GRANT de todo. La migración 010 les quita INSERT,
+      UPDATE, DELETE, TRUNCATE, REFERENCES y TRIGGER en `reservations` y
+      `trainer_session_prices` (solo queda SELECT, que sin política no
+      devuelve filas). Con la clave anon, `reservations` devuelve 0 filas.
+- [ ] Borrar `reservations_backup_008` (copia manual hecha al aplicar la 008,
+      no está en ninguna migración): tiene nombre, email y teléfono de
+      clientes y está expuesta por PostgREST. RLS la protege hoy, pero no hace
+      falta mantenerla.
+- [ ] Límite de peticiones en `POST /api/reservations`: hoy no hay ninguno
+      (spam de reservas / mensajes al entrenador). Obligatorio antes de publicar.
+- [ ] Idempotencia de `POST /api/reservations` (revisión de Codex, 25/09,
+      MEDIUM): un reintento de red tras un insert que sí llegó puede crear
+      la reserva dos veces en franjas distintas o devolver un 409 engañoso
+      en la misma franja. Hoy lo mitigan: el botón se desactiva mientras se
+      envía, la restricción `reservations_no_overlap` (008) impide dos
+      reservas vivas solapadas y el 23P01 se traduce a 409. Antes de
+      producción: clave de idempotencia por checkout (p. ej. un UUID del
+      navegador guardado con la reserva y único en BD).
+- [ ] Limpieza técnica: `components/trainer/BookingSection.tsx`,
+      `components/trainer/BookingForm.tsx` (formulario antiguo con "$99" y
+      POST con date/time) y `lib/services/reservations.service.ts` ya no los
+      usa ninguna ruta (desde el 25/09 `/[trainerSlug]` usa el mismo widget
+      A2 que `/mauri`). Borrarlos cuando se toque esa zona.
 
 La tabla guarda nombre, email y teléfono de cada cliente. Si hay una política de
 lectura permisiva, cualquiera con tu `NEXT_PUBLIC_SUPABASE_ANON_KEY` —que va en

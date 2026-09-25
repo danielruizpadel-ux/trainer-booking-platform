@@ -27,6 +27,11 @@ export interface ProposableReservation {
   start_time: string | null
   end_time: string | null
   duration_minutes: number | null
+  /** Migración 010: identidad y datos del checkout; la propuesta los hereda */
+  player_id: string | null
+  client_message: string | null
+  player_count: number | null
+  whatsapp_opt_in: boolean | null
 }
 
 export type ProposeResult =
@@ -34,7 +39,7 @@ export type ProposeResult =
   | { ok: false; status: number; message: string }
 
 const SELECT_FOR_PROPOSAL =
-  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes'
+  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes, player_id, client_message, player_count, whatsapp_opt_in'
 
 export async function proposeReschedule(
   original: ProposableReservation,
@@ -99,6 +104,12 @@ export async function proposeReschedule(
       client_phone: original.client_phone,
       notes: original.notes,
       price: original.price,
+      // La propuesta es una fila NUEVA: hereda identidad y datos del checkout
+      // para no perder la atribución (migración 010).
+      player_id: original.player_id ?? null,
+      client_message: original.client_message ?? null,
+      player_count: original.player_count ?? 1,
+      whatsapp_opt_in: original.whatsapp_opt_in ?? null,
       start_time: lookup.range.start_time,
       end_time: lookup.range.end_time,
       duration_minutes: duration,

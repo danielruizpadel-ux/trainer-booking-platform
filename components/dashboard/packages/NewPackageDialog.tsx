@@ -7,7 +7,8 @@ import { DialogShell, dialogButton } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from '@/components/dashboard/reservations/ClientFields'
 import { DurationPicker } from '@/components/dashboard/reservations/DurationPicker'
 import { durationLabel } from '@/lib/availability/durations'
-import { formatRM } from '@/lib/reservations/pricing'
+import { basePriceFor, formatRM } from '@/lib/reservations/pricing'
+import { useTrainerPricing } from '@/components/dashboard/useTrainerPricing'
 
 interface NewPackageDialogProps {
   /** Duraciones que ofrece el entrenador (60/90); se fija una para todo el paquete */
@@ -17,7 +18,8 @@ interface NewPackageDialogProps {
 
 /**
  * "Vender paquete": datos del cliente + tamaño (5/10) con el precio en vivo,
- * calculado con la misma regla del widget (lib/packages/pricing.ts).
+ * calculado con la misma regla del widget sobre el precio de 1 jugador del
+ * entrenador (lib/packages/pricing.ts). El que manda es el servidor.
  * POST /api/dashboard/packages.
  */
 export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) {
@@ -28,7 +30,10 @@ export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) 
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const quote = packagePriceQuote(size, duration)
+  const pricing = useTrainerPricing()
+  const base = pricing.rows ? basePriceFor(pricing.rows, duration, 1) : null
+  const quoteFor = (option: PackageSize) => (base === null ? null : packagePriceQuote(option, base, duration))
+  const quote = quoteFor(size)
 
   async function create() {
     setSending(true)
@@ -60,15 +65,23 @@ export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) 
       footer={
         <>
           <p className="text-sm text-gray-600">
-            Total: <span className="font-semibold text-gray-900 tabular-nums">{formatRM(quote.total)}</span>
-            {quote.discountPercent > 0 && <span className="text-emerald-600"> · {quote.discountPercent} % de descuento</span>}
+            {quote ? (
+              <>
+                Total: <span className="font-semibold text-gray-900 tabular-nums">{formatRM(quote.total)}</span>
+                {quote.discountPercent > 0 && <span className="text-emerald-600"> · {quote.discountPercent} % de descuento</span>}
+              </>
+            ) : pricing.rows ? (
+              <span className="text-red-600">Sin precio para {durationLabel(duration)} (1 jugador): ponlo en Disponibilidad → Precios.</span>
+            ) : (
+              'Cargando precios…'
+            )}
           </p>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} disabled={sending} className={dialogButton.secondary}>Cancelar</button>
             <button
               type="button"
               onClick={create}
-              disabled={sending || !client.client_name.trim() || !client.client_email.trim()}
+              disabled={sending || !quote || !client.client_name.trim() || !client.client_email.trim()}
               className={dialogButton.primary}
             >
               {sending ? 'Guardando…' : `Vender paquete de ${size}`}
@@ -88,7 +101,7 @@ export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) 
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Tamaño</h3>
           <div role="radiogroup" aria-label="Tamaño del paquete" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {PACKAGE_SIZES.map((option) => {
-              const q = packagePriceQuote(option, duration)
+              const q = quoteFor(option)
               const selected = size === option
               return (
                 <button
@@ -103,19 +116,25 @@ export function NewPackageDialog({ durations, onClose }: NewPackageDialogProps) 
                   }`}
                 >
                   <p className="text-base font-semibold text-gray-900">{option} clases</p>
-                  <p className="mt-1 text-sm text-gray-600">
-                    <span className="tabular-nums">{formatRM(q.discountedPricePerSession)}</span> por clase de {durationLabel(duration)}
-                    {q.discountPercent > 0 && (
-                      <>
-                        {' '}
-                        <span className="line-through text-gray-400 tabular-nums">{formatRM(q.pricePerSession)}</span>
-                      </>
-                    )}
-                  </p>
-                  <p className="mt-2 text-sm">
-                    <span className="font-semibold text-gray-900 tabular-nums">{formatRM(q.total)}</span>
-                    {q.discountPercent > 0 && <span className="text-emerald-600"> · −{q.discountPercent} %</span>}
-                  </p>
+                  {q ? (
+                    <>
+                      <p className="mt-1 text-sm text-gray-600">
+                        <span className="tabular-nums">{formatRM(q.discountedPricePerSession)}</span> por clase de {durationLabel(duration)}
+                        {q.discountPercent > 0 && (
+                          <>
+                            {' '}
+                            <span className="line-through text-gray-400 tabular-nums">{formatRM(q.pricePerSession)}</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="mt-2 text-sm">
+                        <span className="font-semibold text-gray-900 tabular-nums">{formatRM(q.total)}</span>
+                        {q.discountPercent > 0 && <span className="text-emerald-600"> · −{q.discountPercent} %</span>}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-400">Sin precio</p>
+                  )}
                 </button>
               )
             })}

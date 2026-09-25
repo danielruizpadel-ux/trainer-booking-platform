@@ -46,6 +46,8 @@ export default async function MauriPage() {
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
+        trainerSlug={trainer.slug}
+        trainerImageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
         classDurations={normalizeDurations(trainer.class_durations)}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}

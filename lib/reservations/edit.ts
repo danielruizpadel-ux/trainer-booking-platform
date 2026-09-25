@@ -29,10 +29,15 @@ export interface EditableReservation {
   start_time: string | null
   end_time: string | null
   duration_minutes: number | null
+  /** Migración 010: lo usan las notificaciones (null = reserva antigua) */
+  whatsapp_opt_in?: boolean | null
 }
 
+// whatsapp_opt_in (migración 010) va aquí porque de esta fila salen las
+// notificaciones de mover / cancelar / confirmar. No es editable: parseDetails
+// no lo acepta (ni player_id, client_message ni player_count).
 export const SELECT_FOR_EDIT =
-  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes'
+  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes, whatsapp_opt_in'
 
 export type EditResult = { ok: true } | { ok: false; status: number; message: string }
 

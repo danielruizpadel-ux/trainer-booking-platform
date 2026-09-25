@@ -34,8 +34,3 @@ export function durationLabel(minutes: number): string {
 export function gridStepFor(durations: readonly number[]): 30 | 60 {
   return durations.includes(90) ? 30 : 60
 }
-
-/** Multiplicador de precio: 1 h = ×1, 1 h 30 = ×1,5. */
-export function durationMultiplier(minutes: number): number {
-  return minutes / 60
-}

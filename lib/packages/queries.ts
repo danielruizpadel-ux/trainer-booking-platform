@@ -46,7 +46,7 @@ export async function getPackageDetail(trainerId: string, packageId: string): Pr
     .from('client_packages')
     .select(
       `${PACKAGE_COLUMNS}, package_sessions ( id, session_number, status, reservation_id, ` +
-        'reservations ( id, status, price, client_name, client_email, client_phone, notes, created_at, start_time, end_time, duration_minutes, ' +
+        'reservations ( id, status, price, client_name, client_email, client_phone, notes, created_at, start_time, end_time, duration_minutes, player_count, client_message, whatsapp_opt_in, ' +
         'availability_slots ( id, session_date, start_time, end_time, class_type ) ) )'
     )
     .eq('id', packageId)

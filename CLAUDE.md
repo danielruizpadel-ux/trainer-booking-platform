@@ -65,8 +65,21 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
 - Estados de reserva y ventana: `lib/reservations/status.ts` y
   `migrations/003_reservation_confirmation_flow.sql`. La decisión del entrenador
   (confirmar / sin pista) vive solo en `lib/reservations/confirmation.ts`.
-- El precio lo calcula el servidor (`lib/reservations/pricing.ts`); nunca
-  aceptar un total del navegador.
+- El precio lo calcula el servidor; nunca aceptar un total del navegador.
+  Precio base = `trainer_session_prices` (entrenador × duración × nº de
+  jugadores, migración 010, editable en Disponibilidad → Precios), leído con
+  `lib/reservations/trainer-prices.ts`; el cálculo puro (descuento 5+/10+,
+  redondeo) está en `lib/reservations/pricing.ts`. Sin precio configurado se
+  falla con un error claro: **nunca** volver a un RM300 fijo en código.
+  Manual y paquetes usan el precio de 1 jugador.
+- `reservations.notes` son las **notas internas** del entrenador. El mensaje
+  del cliente va en `client_message` (≤ 500, texto plano, nunca en logs ni
+  como HTML) y la preferencia de WhatsApp en `whatsapp_opt_in`
+  (`lib/reservations/whatsapp.ts`: columna primero; el "WhatsApp: si/no" de
+  `notes` solo en reservas anteriores a la 010). No volver a escribir flags en `notes`.
+- `getSupabaseServerClient()` falla cerrado sin `SUPABASE_SERVICE_ROLE_KEY`.
+  Desde la 010, anon/authenticated no pueden escribir `reservations` ni
+  `trainer_session_prices`: toda escritura va por el servidor.
 - Tocar ventanas desde el dashboard solo con `lib/reservations/slots.ts`
   (`loadOwnedOpenWindow` comprueba dueño + abierta + que el rango cabe sin
   solapar; `refreshWindowStatus` recalcula contador y `full`). El estado
@@ -92,6 +105,22 @@ Detalle del flujo completo: `docs/BOOKING_FLOW.md`.
 - Shell: `components/dashboard/DashboardShell` (cabecera + nav). Las secciones
   se declaran solo en `components/dashboard/nav-items.ts`. Cada página pone
   `PageHeader` + sus tarjetas; el layout ya pone el marco.
+
+## Cuenta de jugador (`/cuenta`) — Fase A1
+
+- Detalle y pendientes: `docs/PLAYER_ACCOUNTS.md`. Tablas `players` y
+  `player_trainers` (migración 009, **sin aplicar todavía**).
+- El jugador **sale de la sesión**, nunca del cliente: `getPlayerSession()` /
+  `requirePlayer()` en `lib/auth/current-player.ts`. Una ruta de
+  `/api/player` que lea un `player_id` del body o de la query es un bug de
+  seguridad. Mismo criterio que `requireTrainer()`.
+- Una sola sesión de Supabase por navegador: la misma cuenta puede ser
+  entrenador y jugador; salir de una sale de las dos.
+- Checkout A2 (inglés, `components/booking/checkout/`): con sesión y perfil
+  completo, `POST /api/reservations` con `as_player: true` toma player_id,
+  nombre/teléfono/WhatsApp del perfil y el email de Auth **desde la sesión** e
+  ignora los `client_*` y cualquier `player_id` del body. Sin sesión, invitado
+  (player_id NULL). Detalle: `docs/PLAYER_ACCOUNTS.md`.
 
 ## Diseño
 

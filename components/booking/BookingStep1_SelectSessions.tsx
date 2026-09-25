@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import AvailabilityCalendar from '@/components/trainer/calendar/AvailabilityCalendar'
 import BookingSummaryCard from './BookingSummaryCard'
 import { DurationPicker } from '@/components/dashboard/reservations/DurationPicker'
-import { calculateBookingPrice } from '@/lib/reservations/pricing'
+import { quoteBooking, type SessionPriceRow } from '@/lib/reservations/pricing'
 import { durationLabel } from '@/lib/availability/durations'
 
 interface Session {
@@ -27,6 +27,8 @@ interface BookingStep1Props {
   duration: number
   classDurations: number[]
   onDurationChange: (value: number) => void
+  /** Tabla de precios del entrenador (GET /api/pricing); null mientras carga */
+  prices: SessionPriceRow[] | null
 }
 
 export default function BookingStep1_SelectSessions({
@@ -41,12 +43,15 @@ export default function BookingStep1_SelectSessions({
   duration,
   classDurations,
   onDurationChange,
+  prices,
 }: BookingStep1Props) {
-  // Misma regla de precio que el servidor (lib/reservations/pricing.ts).
-  const { total, discount, pricePerSession } = useMemo(() => {
-    const price = calculateBookingPrice(selectedSessions.length, duration)
-    return { total: price.total, discount: price.discountPercent, pricePerSession: price.pricePerSession }
-  }, [selectedSessions, duration])
+  // Vista previa con el precio de 1 jugador del entrenador (misma regla que
+  // el servidor, lib/reservations/pricing.ts). El nº de jugadores se elige en
+  // el checkout; lo que se cobra lo calcula POST /api/reservations.
+  const quote = useMemo(
+    () => (prices ? quoteBooking(prices, selectedSessions.length, duration, 1) : null),
+    [prices, selectedSessions, duration]
+  )
 
   const handleRemove = (date: string, time: string) => {
     onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
@@ -65,7 +70,8 @@ export default function BookingStep1_SelectSessions({
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <DurationPicker durations={classDurations} value={duration} onChange={onDurationChange} />
             <span className="text-sm text-gray-500">
-              Clase de {durationLabel(duration)} · RM {pricePerSession}
+              Clase de {durationLabel(duration)}
+              {quote ? ` · desde RM ${quote.pricePerSession}` : prices ? ' · precio no disponible' : ''}
             </span>
           </div>
         </header>
@@ -86,9 +92,9 @@ export default function BookingStep1_SelectSessions({
           {/* Panel lateral */}
           <BookingSummaryCard
             sessions={selectedSessions}
-            total={total}
-            discount={discount}
-            pricePerSession={pricePerSession}
+            total={quote?.total ?? null}
+            discount={quote?.discountPercent ?? 0}
+            pricePerSession={quote?.pricePerSession ?? null}
             durationMinutes={duration}
             onRemove={handleRemove}
             onConfirm={() => selectedSessions.length > 0 && onConfirm(selectedSessions)}

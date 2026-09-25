@@ -9,6 +9,7 @@ import { durationLabel } from '@/lib/availability/durations'
 import { RESERVATION_STATUS, isAwaitingConfirmation, reservationStatusLabel } from '@/lib/reservations/status'
 import { DialogShell, dialogButton, fieldClass, labelClass } from '@/components/dashboard/DialogShell'
 import { ClientFields, type ClientFieldValues } from './ClientFields'
+import { ReservationClientInfo } from './ReservationClientInfo'
 import { ReservationsCalendar } from './ReservationsCalendar'
 
 interface EditReservationDialogProps {
@@ -117,6 +118,13 @@ export function EditReservationDialog({ reservation: r, onClose }: EditReservati
       }
     >
       <div className="flex flex-col gap-6">
+        <section className="flex flex-col gap-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Del checkout</h3>
+          <div className="rounded-xl ring-1 ring-inset ring-gray-200 bg-gray-50/50 p-4">
+            <ReservationClientInfo reservation={r} />
+          </div>
+        </section>
+
         <section className="flex flex-col gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Cliente</h3>
           <ClientFields values={client} onChange={setClient} disabled={busy !== null} idPrefix="edit" />
