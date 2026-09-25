@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import MiniCalendarOverlay from './MiniCalendarOverlay'
 import { getMonday } from '@/lib/dateUtils'
 
@@ -28,6 +28,7 @@ export default function CalendarNavbar({
   availableDates,
 }: CalendarNavbarProps) {
   const [showMiniCalendar, setShowMiniCalendar] = useState(false)
+  const miniTriggerRef = useRef<HTMLButtonElement>(null)
 
   const shift = (direction: -1 | 1) => {
     const d = new Date(currentDate)
@@ -70,7 +71,11 @@ export default function CalendarNavbar({
 
         <div className="relative">
           <button
+            ref={miniTriggerRef}
+            type="button"
             onClick={() => setShowMiniCalendar((v) => !v)}
+            aria-haspopup="dialog"
+            aria-expanded={showMiniCalendar}
             className="px-2 py-1.5 rounded-lg text-base font-semibold text-gray-900 capitalize hover:bg-gray-100 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             title="Ir a una fecha"
           >
@@ -79,6 +84,7 @@ export default function CalendarNavbar({
           <MiniCalendarOverlay
             isOpen={showMiniCalendar}
             onClose={() => setShowMiniCalendar(false)}
+            triggerRef={miniTriggerRef}
             currentDate={currentDate}
             onDateSelect={(d) => {
               onDateChange(d)

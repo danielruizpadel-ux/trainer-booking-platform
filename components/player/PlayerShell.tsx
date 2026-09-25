@@ -36,7 +36,7 @@ export function PlayerShell({ player, children }: PlayerShellProps) {
                 <path d="M12 3a9 9 0 0 1 0 18M3 12h18" />
               </svg>
             </span>
-            <span className="text-sm font-semibold text-gray-900 hidden sm:inline">Tu cuenta</span>
+            <span className="text-sm font-semibold text-gray-900 sr-only sm:not-sr-only">Tu cuenta</span>
           </Link>
 
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">

@@ -177,3 +177,77 @@ export function browserDraftStorage(): DraftStorage | null {
     return null
   }
 }
+
+/**
+ * Lee el borrador SIN consumirlo, para que un refresco tras volver del login
+ * no pierda la selección mientras no caduque. Si está caducado, es de otro
+ * entrenador/id o no pasa parseDraft, se borra y devuelve null. Mismas
+ * garantías que takeDraft: lo recuperado sigue sin ser de fiar.
+ */
+export function peekDraft(
+  storage: DraftStorage,
+  expected: { trainerSlug: string; draftId: string; now: number; allowedDurations: readonly number[] }
+): BookingDraft | null {
+  if (!isValidTrainerSlug(expected.trainerSlug) || !isDraftId(expected.draftId)) return null
+  try {
+    const key = draftKey(expected.trainerSlug, expected.draftId)
+    const raw = storage.getItem(key)
+    sweepDrafts(storage, expected.now)
+    if (!raw) return null
+    let parsed: BookingDraft | null = null
+    try {
+      parsed = parseDraft(JSON.parse(raw), expected)
+    } catch {
+      parsed = null
+    }
+    if (!parsed) storage.removeItem(key)
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Actualiza la selección de un borrador vivo (sesiones, duración, jugadores)
+ * SIN alargar su caducidad y copiando solo esos campos: nunca datos personales.
+ * Devuelve el borrador guardado, o null si no se pudo (caducado, inválido o
+ * almacenamiento no disponible); en ese caso el que hubiera se borra.
+ */
+export function updateDraftSelection(
+  storage: DraftStorage,
+  draft: BookingDraft,
+  selection: { sessions: Array<{ date: string; time: string }>; duration: number; playerCount: number },
+  expected: { now: number; allowedDurations: readonly number[] }
+): BookingDraft | null {
+  const next = parseDraft(
+    {
+      version: DRAFT_VERSION,
+      draftId: draft.draftId,
+      trainerSlug: draft.trainerSlug,
+      sessions: selection.sessions.map(({ date, time }) => ({ date, time: time.slice(0, 5) })),
+      duration: selection.duration,
+      playerCount: selection.playerCount,
+      expiresAt: draft.expiresAt,
+    },
+    { trainerSlug: draft.trainerSlug, draftId: draft.draftId, now: expected.now, allowedDurations: expected.allowedDurations }
+  )
+  try {
+    if (!next) {
+      storage.removeItem(draftKey(draft.trainerSlug, draft.draftId))
+      return null
+    }
+    storage.setItem(draftKey(next.trainerSlug, next.draftId), JSON.stringify(next))
+    return next
+  } catch {
+    return null
+  }
+}
+
+/** Borra un borrador (tras reservar, o si ya no sirve). */
+export function discardDraft(storage: DraftStorage, trainerSlug: string, draftId: string): void {
+  try {
+    storage.removeItem(draftKey(trainerSlug, draftId))
+  } catch {
+    // Almacenamiento no disponible: nada que borrar.
+  }
+}

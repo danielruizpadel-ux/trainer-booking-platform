@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { loggedInEntryRedirect } from '@/lib/players/entry'
+import { isProgramDemoEnabled } from '@/lib/programs/demo'
 
 /**
  * Protege /dashboard/** (entrenadores) y /cuenta/** (jugadores).
@@ -18,6 +19,10 @@ import { loggedInEntryRedirect } from '@/lib/players/entry'
  * la pantalla de "cuenta no vinculada". Igual en /cuenta: crear la fila de
  * `players` y exigir el onboarding lo hace app/cuenta/(protected). Aquí solo
  * hay redirecciones.
+ *
+ * /programa/** (prototipo con datos de ejemplo) no tiene sesión: aquí solo se
+ * corta con 404 si no está PROGRAMA_DEMO=1 (ver lib/programs/demo.ts). Va
+ * antes de crear el cliente de Supabase para no pedir getUser() en el demo.
  *
  * (En Next 16 este fichero se llama proxy.ts; es lo que antes era middleware.ts.)
  */
@@ -46,6 +51,13 @@ function matchesPath(pathname: string, path: string) {
 }
 
 export async function proxy(request: NextRequest) {
+  if (matchesPath(request.nextUrl.pathname, '/programa')) {
+    if (!isProgramDemoEnabled()) {
+      return new NextResponse('Not Found', { status: 404, headers: { 'X-Robots-Tag': 'noindex' } })
+    }
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -98,5 +110,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/cuenta/:path*'],
+  matcher: ['/dashboard/:path*', '/cuenta/:path*', '/programa/:path*'],
 }

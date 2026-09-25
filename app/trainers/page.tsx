@@ -7,9 +7,13 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
+import { alert, button, surface, text } from '@/components/ui/styles'
 
 interface Trainer {
   id: string
+  /** Página pública con la reserva: /<slug> (para mauri la sirve app/mauri). */
+  slug?: string
   name: string
   bio?: string
   image_url?: string
@@ -21,6 +25,8 @@ export default function TrainersPage() {
   const [trainers, setTrainers] = useState<Trainer[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Fotos que no cargan (URL caída): se pinta la inicial, como sin foto.
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const loadTrainers = async () => {
@@ -42,110 +48,107 @@ export default function TrainersPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="max-w-6xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <Link href="/web" className="text-sm text-primary hover:underline mb-2 block">
-                ← Back to Home
-              </Link>
-              <h1 className="text-3xl font-bold text-gray-900">Our Trainers</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                {trainers.length} professional trainers available
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gray-50/50">
+      <header className="bg-white border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <Link href="/web" className={`-ml-3 ${button.ghost}`}>
+            <Icon name="arrow-left" size={16} />
+            Back to Home
+          </Link>
+          <h1 className={`mt-2 ${text.pageTitle}`}>Our Trainers</h1>
+          <p className="mt-1.5 text-gray-500 tabular-nums" aria-live="polite">
+            {isLoading ? 'Loading trainers...' : `${trainers.length} professional trainers available`}
+          </p>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="max-w-6xl mx-auto px-6 py-12">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
         {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <p className="text-gray-500">Loading trainers...</p>
-          </div>
+          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <li key={i} className={`${surface.card} overflow-hidden`}>
+                <div className="h-48 bg-gray-100 animate-pulse" />
+                <div className="p-6 flex flex-col gap-3">
+                  <div className="h-4 w-1/2 rounded bg-gray-100 animate-pulse" />
+                  <div className="h-3 w-3/4 rounded bg-gray-100 animate-pulse" />
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
 
         {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4 mb-8">
-            <p className="text-sm text-destructive">{error}</p>
+          <div className={`mb-8 ${alert.error}`} role="alert">
+            {error}
           </div>
         )}
 
         {!isLoading && trainers.length === 0 && !error && (
-          <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">No trainers available at the moment</p>
-            <Link href="/web">
-              <Button variant="outline">Back to Home</Button>
+          <div className={`${surface.card} p-10 text-center max-w-lg mx-auto`}>
+            <span className={`mx-auto ${surface.iconTile}`}>
+              <Icon name="users" />
+            </span>
+            <p className="mt-4 text-sm text-gray-600">No trainers available at the moment</p>
+            <Link href="/web" className={`mt-6 ${button.secondary}`}>
+              Back to Home
             </Link>
           </div>
         )}
 
         {trainers.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {trainers.map(trainer => (
-              <div
-                key={trainer.id}
-                className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-primary transition-colors"
-              >
-                {/* Trainer image placeholder */}
-                <div className="w-full h-48 bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                  {trainer.image_url ? (
+              <li key={trainer.id} className={`${surface.cardInteractive} overflow-hidden flex flex-col`}>
+                <div className="w-full h-48 bg-blue-50 flex items-center justify-center">
+                  {trainer.image_url && !failedImages.has(trainer.id) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={trainer.image_url}
                       alt={trainer.name}
+                      onError={() => setFailedImages((prev) => new Set(prev).add(trainer.id))}
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-cyan-600/20 rounded-full flex items-center justify-center mx-auto mb-2">
-                        <span className="text-2xl font-bold text-primary">
-                          {trainer.name.charAt(0)}
-                        </span>
-                      </div>
-                    </div>
+                    <span aria-hidden className="h-16 w-16 rounded-full bg-white text-blue-600 text-2xl font-bold flex items-center justify-center ring-1 ring-gray-200/70">
+                      {trainer.name.charAt(0)}
+                    </span>
                   )}
                 </div>
 
-                {/* Trainer info */}
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {trainer.name}
-                  </h3>
+                <div className="p-6 flex flex-col flex-1">
+                  <h2 className={text.cardTitle}>{trainer.name}</h2>
 
-                  {trainer.bio && (
-                    <p className="text-sm text-gray-500 mb-4 line-clamp-2">
-                      {trainer.bio}
+                  {trainer.bio && <p className="mt-1.5 text-sm text-gray-600 line-clamp-2">{trainer.bio}</p>}
+
+                  {trainer.rating !== undefined && (
+                    <p className="mt-3 flex items-center gap-1.5 text-sm">
+                      <Icon name="star" size={16} className="text-amber-400" />
+                      <span className="font-semibold text-gray-900 tabular-nums">{trainer.rating.toFixed(1)}</span>
+                      {trainer.total_reviews !== undefined && (
+                        <span className="text-gray-500 tabular-nums">({trainer.total_reviews} reviews)</span>
+                      )}
                     </p>
                   )}
 
-                  {/* Rating */}
-                  {trainer.rating !== undefined && (
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="flex items-center">
-                        <span className="text-sm text-yellow-500">★</span>
-                        <span className="text-sm font-medium text-gray-900 ml-1">
-                          {trainer.rating.toFixed(1)}
-                        </span>
-                      </div>
-                      {trainer.total_reviews !== undefined && (
-                        <span className="text-xs text-gray-500">
-                          ({trainer.total_reviews} reviews)
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Action button */}
-                  <Button className="w-full">
-                    Book Session
-                  </Button>
+                  <div className="mt-auto pt-6">
+                    {trainer.slug ? (
+                      <Link
+                        href={`/${encodeURIComponent(trainer.slug)}#booking-section`}
+                        className={`w-full ${button.primary}`}
+                        aria-label={`Book Session with ${trainer.name}`}
+                      >
+                        Book Session
+                      </Link>
+                    ) : (
+                      <Button className="w-full" disabled>
+                        Book Session
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </main>
     </div>

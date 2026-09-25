@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import BookingStep1_SelectSessions from './BookingStep1_SelectSessions'
 import { BookingCheckout, CheckoutError, type CheckoutSubmit } from './checkout/BookingCheckout'
 import type { SessionPriceRow } from '@/lib/reservations/pricing'
@@ -34,6 +34,14 @@ interface BookingFlowProps {
    * disponibilidad; el servidor revalida todo al confirmar.
    */
   restoredDraft?: BookingDraft | null
+  /**
+   * Cambios de selección DESPUÉS de restaurar un borrador (sesiones que
+   * siguen libres, duración, jugadores). Solo datos no personales; con ellos
+   * BookingSection mantiene el borrador al día para que un refresco no lo pierda.
+   */
+  onSelectionChange?: (selection: { sessions: Session[]; duration: number; playerCount: number }) => void
+  /** La reserva se creó (201): el borrador ya no debe restaurarse. */
+  onBooked?: () => void
 }
 
 export default function BookingFlow({
@@ -44,6 +52,8 @@ export default function BookingFlow({
   classDurations = [60],
   account = { kind: 'anonymous' },
   restoredDraft = null,
+  onSelectionChange,
+  onBooked,
 }: BookingFlowProps) {
   const [step, setStep] = useState<'selection' | 'contact'>('selection')
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
@@ -54,6 +64,11 @@ export default function BookingFlow({
   const [prices, setPrices] = useState<SessionPriceRow[] | null>(null)
   const [pricesError, setPricesError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Hasta que el borrador se ha restaurado no se informa de cambios: la
+  // selección vacía inicial borraría el borrador antes de usarlo.
+  const [restoreDone, setRestoreDone] = useState(false)
+  const onSelectionChangeRef = useRef(onSelectionChange)
+  onSelectionChangeRef.current = onSelectionChange
 
   // Tabla de precios vigente del entrenador: solo vista previa.
   useEffect(() => {
@@ -97,6 +112,7 @@ export default function BookingFlow({
         setDuration(restoredDraft.duration)
         setPlayerCount(restoredDraft.playerCount)
         setSelectedSessions(still)
+        setRestoreDone(true)
         const removed = restoredDraft.sessions.length - still.length
         if (still.length === 0) {
           setNotice(null)
@@ -117,6 +133,11 @@ export default function BookingFlow({
       cancelled = true
     }
   }, [restoredDraft, trainerId])
+
+  useEffect(() => {
+    if (!restoreDone) return
+    onSelectionChangeRef.current?.({ sessions: selectedSessions, duration, playerCount })
+  }, [restoreDone, selectedSessions, duration, playerCount])
 
   const handleConfirmSessions = (sessions: Session[]) => {
     setSelectedSessions(sessions)
@@ -154,6 +175,7 @@ export default function BookingFlow({
     if (!response.ok || !data.success) {
       throw new CheckoutError(data.error || "We couldn't create your booking. Please try again.", response.status)
     }
+    onBooked?.()
   }
 
   return (

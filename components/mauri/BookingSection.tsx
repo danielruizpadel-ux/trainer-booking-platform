@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import BookingFlow from '@/components/booking/BookingFlow'
 import type { BookingAccount, BookingPlayer } from '@/lib/players/booking-contact'
-import { browserDraftStorage, takeDraft, type BookingDraft } from '@/lib/booking/draft'
+import { browserDraftStorage, discardDraft, peekDraft, updateDraftSelection, type BookingDraft } from '@/lib/booking/draft'
 import { isDraftId } from '@/lib/players/entry'
 
 interface BookingSectionProps {
@@ -40,6 +40,8 @@ export default function BookingSection({
   // reservar sin cuenta (como invitado).
   const [account, setAccount] = useState<AccountState>({ status: 'loading' })
   const [restoredDraft, setRestoredDraft] = useState<BookingDraft | null>(null)
+  // Borrador vivo (el restaurado, actualizado con los cambios posteriores).
+  const activeDraftRef = useRef<BookingDraft | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -61,22 +63,51 @@ export default function BookingSection({
     }
   }, [])
 
-  // Vuelta del login con ?draft=<uuid>: se recupera (y se consume) el
-  // borrador de ESTE entrenador y ESA pestaña. Lo recuperado no es de fiar:
-  // BookingFlow comprueba la disponibilidad y el servidor revalida todo.
+  // Vuelta del login con ?draft=<uuid>: se LEE (sin consumir) el borrador de
+  // ESTE entrenador y ESA pestaña, y `?draft=` se queda en la URL mientras el
+  // borrador siga vivo: así un refresco dentro de su caducidad no pierde la
+  // selección. Lo recuperado no es de fiar: BookingFlow vuelve a comprobar la
+  // disponibilidad, el precio se recalcula y el servidor revalida todo.
+  // El borrador se borra (y `?draft=` se quita) al reservar, al caducar o si
+  // no es válido.
   useEffect(() => {
     if (!trainerSlug) return
-    const url = new URL(window.location.href)
-    const draftId = url.searchParams.get('draft')
+    const draftId = new URL(window.location.href).searchParams.get('draft')
     if (draftId === null) return
-    url.searchParams.delete('draft')
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
     const storage = browserDraftStorage()
-    if (!storage || !isDraftId(draftId)) return
-    setRestoredDraft(takeDraft(storage, { trainerSlug, draftId, now: Date.now(), allowedDurations: classDurations }))
+    const draft =
+      storage && isDraftId(draftId)
+        ? peekDraft(storage, { trainerSlug, draftId, now: Date.now(), allowedDurations: classDurations })
+        : null
+    if (!draft) {
+      stripDraftParam()
+      return
+    }
+    activeDraftRef.current = draft
+    setRestoredDraft(draft)
     // classDurations viene del servidor y no cambia en esta página.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainerSlug])
+
+  const handleSelectionChange = useCallback(
+    (selection: { sessions: Array<{ date: string; time: string }>; duration: number; playerCount: number }) => {
+      const draft = activeDraftRef.current
+      const storage = browserDraftStorage()
+      if (!draft || !storage) return
+      const next = updateDraftSelection(storage, draft, selection, { now: Date.now(), allowedDurations: classDurations })
+      activeDraftRef.current = next
+      if (!next) stripDraftParam()
+    },
+    [classDurations]
+  )
+
+  const handleBooked = useCallback(() => {
+    const draft = activeDraftRef.current
+    const storage = browserDraftStorage()
+    if (draft && storage) discardDraft(storage, draft.trainerSlug, draft.draftId)
+    activeDraftRef.current = null
+    stripDraftParam()
+  }, [])
 
   const bookingPlayer = account.status === 'authenticated' ? account.player : null
   const entryHref = trainerSlug ? `/cuenta/entrar?trainer=${encodeURIComponent(trainerSlug)}` : null
@@ -114,6 +145,8 @@ export default function BookingSection({
         classDurations={classDurations}
         account={bookingAccount}
         restoredDraft={restoredDraft}
+        onSelectionChange={handleSelectionChange}
+        onBooked={handleBooked}
       />
       {entryHref && account.status !== 'loading' ? (
         // Acceso a la cuenta de jugador. <a> y no <Link>: sin prefetch de /cuenta/entrar.
@@ -162,4 +195,12 @@ export default function BookingSection({
       )}
     </section>
   )
+}
+
+/** Quita `?draft=` de la URL sin recargar (el borrador ya no se restaura). */
+function stripDraftParam() {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('draft')) return
+  url.searchParams.delete('draft')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }

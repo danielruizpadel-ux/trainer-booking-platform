@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { alert, surface, text } from '@/components/ui/styles'
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
@@ -16,8 +18,8 @@ export default function AdminLogin() {
     setIsLoading(true)
 
     try {
-      // TODO: Implement admin authentication
-      console.log('Login attempt with:', { email, password })
+      // TODO: Implement admin authentication (CLAUDE.md: bloqueante antes de publicar).
+      // Nunca registrar el email ni la contraseña, tampoco en consola.
     } catch (err) {
       setError('Authentication failed')
     } finally {
@@ -26,16 +28,19 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50/50 px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="rounded-lg border border-gray-200 bg-white p-8">
-          <h1 className="text-3xl font-bold text-center mb-8">Admin Login</h1>
+        <div className={`${surface.card} p-6 sm:p-8`}>
+          <p className={text.eyebrow}>Admin</p>
+          <h1 className={`mt-1.5 ${text.pageTitle}`}>Admin Login</h1>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
+          <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="admin-email">Email</Label>
               <Input
+                id="admin-email"
                 type="email"
+                autoComplete="username"
                 placeholder="admin@example.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -43,10 +48,12 @@ export default function AdminLogin() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Password</label>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="admin-password">Password</Label>
               <Input
+                id="admin-password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -55,21 +62,17 @@ export default function AdminLogin() {
             </div>
 
             {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-                <p className="text-sm text-destructive">{error}</p>
+              <div className={alert.error} role="alert">
+                {error}
               </div>
             )}
 
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full"
-            >
+            <Button type="submit" disabled={isLoading} className="w-full">
               {isLoading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="mt-6 text-center text-sm text-gray-500">
             Demo credentials: admin@example.com / password
           </p>
         </div>

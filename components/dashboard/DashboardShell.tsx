@@ -41,7 +41,7 @@ export function DashboardShell({ trainer, children }: DashboardShellProps) {
                   <path d="M12 3a9 9 0 0 1 0 18M3 12h18" />
                 </svg>
               </span>
-              <span className="text-sm font-semibold text-gray-900 hidden sm:inline">
+              <span className="text-sm font-semibold text-gray-900 sr-only sm:not-sr-only">
                 Panel del entrenador
               </span>
             </Link>

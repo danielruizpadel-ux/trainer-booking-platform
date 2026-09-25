@@ -122,6 +122,23 @@ Detalle del flujo completo: `docs/BOOKING_FLOW.md`.
   ignora los `client_*` y cualquier `player_id` del body. Sin sesión, invitado
   (player_id NULL). Detalle: `docs/PLAYER_ACCOUNTS.md`.
 
+## Programa (`/programa`) — PROTOTIPO con datos de ejemplo
+
+- Player Development Plan: 5 pantallas con jugador, entrenadores, notas y
+  huecos **inventados** (`lib/programs/sample-data.ts`). Nada cobra, reserva,
+  consume créditos ni guarda progreso. Las reglas del programa (precios, 10
+  sesiones, 24 h) están en `lib/programs/catalog.ts`.
+- **Solo existe con `PROGRAMA_DEMO=1`** (`PROGRAMA_DEMO=1 npm run dev`). Sin
+  esa variable, `/programa/**` da 404 en todas partes, también en un deploy.
+  Doble barrera: `proxy.ts` y `requireProgramDemo()` al principio de cada
+  página (`lib/programs/require-demo.ts`). Una página nueva de `/programa`
+  tiene que llamarlo también: un layout no basta en Next 16.
+- Notas internas de los entrenadores (`PlanSession.note`) solo en la vista de
+  entrenador. El jugador ve `progressSummary`, nunca las notas.
+- La vista de entrenador usa `?como=` para simular quién mira. En la versión
+  real va en `/dashboard` con `requireTrainer()`, y "Mi programa" en `/cuenta`
+  con `requirePlayer()`: nunca un id de jugador o entrenador desde la URL.
+
 ## Diseño
 
 - `DESIGN_SYSTEM.md` es el sistema de diseño, extraído del calendario de reservas
@@ -157,3 +174,13 @@ grep -rnP '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]' components/mauri app/mauri   
 Node 20 (`.nvmrc`). `npm run dev` levanta en el puerto **3001**.
 Variables en `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

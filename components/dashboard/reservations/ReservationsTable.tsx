@@ -147,7 +147,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
       ) : (
         <>
           {/* Tabla (lg+) */}
-          <div className="hidden lg:block bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
+          <div className="hidden xl:block bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -228,8 +228,8 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
             </div>
           </div>
 
-          {/* Tarjetas (móvil y tablet) */}
-          <div className="lg:hidden flex flex-col gap-4">
+          {/* Tarjetas (móvil, tablet y portátil estrecho: la tabla de 8 columnas no cabe por debajo de xl) */}
+          <div className="xl:hidden flex flex-col gap-4">
             {rows.map((r) => (
               <ReservationMobileCard key={r.id} reservation={r} highlighted={highlightId === r.id} />
             ))}
@@ -241,9 +241,9 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
 }
 
 function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <th scope="col" className={`px-4 py-3 font-semibold ${className}`}>{children}</th>
+  return <th scope="col" className={`px-3 py-3 font-semibold ${className}`}>{children}</th>
 }
 
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-4 ${className}`}>{children}</td>
+  return <td className={`px-3 py-4 ${className}`}>{children}</td>
 }
