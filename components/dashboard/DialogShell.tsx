@@ -28,6 +28,16 @@ const openDialogs: HTMLElement[] = []
 const returnTargets = new WeakMap<HTMLElement, HTMLElement | null>()
 
 /**
+ * Al cerrar, ¿hay que devolver el foco? Sí si seguía en cualquier parte del
+ * diálogo (el fondo incluido) o se perdió al desmontar: en body o en un nodo
+ * ya desconectado (según el navegador, activeElement puede seguir apuntando
+ * al elemento quitado). Si ya está en otro sitio de la página, no se toca.
+ */
+export function focusWasInDialog(active: Element | null, root: Node, body: Element): boolean {
+  return !active || active === body || !active.isConnected || root.contains(active)
+}
+
+/**
  * Diálogo modal del dashboard: hoja inferior en móvil, ventana centrada en sm+.
  *
  * Foco: al abrir va a lo marcado con `data-autofocus` o, si no hay, al primer
@@ -37,6 +47,7 @@ const returnTargets = new WeakMap<HTMLElement, HTMLElement | null>()
  * de un ActionsMenu, su botón, porque el menú lo devuelve antes de abrir).
  */
 export function DialogShell({ title, eyebrow, description, onClose, locked = false, footer, children, size = 'lg' }: DialogShellProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -62,8 +73,9 @@ export function DialogShell({ title, eyebrow, description, onClose, locked = fal
   })
 
   useEffect(() => {
+    const root = rootRef.current
     const panel = panelRef.current
-    if (!panel) return
+    if (!root || !panel) return
     returnTargets.set(panel, returnTo?.isConnected ? returnTo : inherited)
     openDialogs.push(panel)
     const isTop = () => openDialogs[openDialogs.length - 1] === panel
@@ -118,10 +130,8 @@ export function DialogShell({ title, eyebrow, description, onClose, locked = fal
       document.removeEventListener('focusin', onFocusIn)
       document.body.style.overflow = previous
       openDialogs.splice(openDialogs.indexOf(panel), 1)
-      // Devolver el foco solo si seguía dentro (o se perdió al desmontar).
-      const active = document.activeElement
       const target = returnTo?.isConnected ? returnTo : inherited?.isConnected ? inherited : null
-      if (target && (!active || active === document.body || panel.contains(active))) target.focus()
+      if (target && focusWasInDialog(document.activeElement, root, document.body)) target.focus()
     }
   }, [returnTo, inherited])
 
@@ -130,8 +140,17 @@ export function DialogShell({ title, eyebrow, description, onClose, locked = fal
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 text-left">
-      <button type="button" tabIndex={-1} aria-label="Cerrar" onClick={() => !locked && onClose()} className="absolute inset-0 bg-gray-900/40" />
+    <div ref={rootRef} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 text-left">
+      {/* El fondo no toma el foco al pulsarlo (mousedown): el foco sigue en
+          el diálogo hasta que se cierra y entonces vuelve a quien lo abrió. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Cerrar"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => !locked && onClose()}
+        className="absolute inset-0 bg-gray-900/40"
+      />
       <div
         ref={panelRef}
         role="dialog"

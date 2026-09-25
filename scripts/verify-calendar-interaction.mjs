@@ -125,3 +125,20 @@ test('calendario: usa las reglas compartidas y el Resumen abre "Nueva reserva" p
   assert.match(dialog, /useState<'slot' \| 'client'>\(initialSlot \? 'client' : 'slot'\)/)
   assert.match(dialog, /initialSlot\?\.duration_minutes/)
 })
+
+test('DialogShell: al cerrar (fondo, Escape o X) devuelve el foco si estaba en el diálogo o se perdió', () => {
+  const { focusWasInDialog } = load('components/dashboard/DialogShell.tsx')
+  const body = { isConnected: true }
+  const trigger = { isConnected: true }
+  const panelInput = { isConnected: false }
+  const backdrop = { isConnected: true } // p. ej. un navegador que aún no ha hecho el "focus fixup"
+  const root = { contains: (n) => n === panelInput || n === backdrop }
+  assert.equal(focusWasInDialog(panelInput, root, body), true, 'dentro del panel')
+  assert.equal(focusWasInDialog(backdrop, root, body), true, 'en el fondo (fuera del panel, dentro del diálogo)')
+  assert.equal(focusWasInDialog({ isConnected: false }, root, body), true, 'nodo desmontado')
+  assert.equal(focusWasInDialog(body, root, body), true)
+  assert.equal(focusWasInDialog(null, root, body), true)
+  assert.equal(focusWasInDialog(trigger, root, body), false, 'si el foco ya está en la página, no se roba')
+  const code = read('components/dashboard/DialogShell.tsx')
+  assert.match(code, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/, 'el fondo no toma el foco al pulsarlo')
+})
