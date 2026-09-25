@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { notifyProposalResponded, notifyRescheduleProposed } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
 import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * Propuesta de nueva fecha (migración 004).
@@ -62,6 +63,10 @@ export async function proposeReschedule(
     ignoreReservationId: original.id,
   })
   if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+  // Antes de liberar la original: una propuesta en el pasado no debe dejarla en needs_reschedule.
+  if (isPastMalaysiaSession(lookup.window.session_date, lookup.range.start_time)) {
+    return { ok: false, status: 400, message: 'No se puede proponer una fecha pasada' }
+  }
 
   const token = randomBytes(24).toString('base64url')
   const now = new Date().toISOString()

@@ -3,6 +3,7 @@ import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { notifyReservationCancelled, notifyReservationMoved } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isRescheduleProposed } from './status'
 import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * Edición directa desde el panel (Parte 3): el entrenador ya ha hablado con
@@ -110,6 +111,9 @@ export async function moveReservation(
     ignoreReservationId: reservation.id,
   })
   if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+  if (isPastMalaysiaSession(lookup.window.session_date, lookup.range.start_time)) {
+    return { ok: false, status: 400, message: 'No se puede mover una reserva al pasado' }
+  }
 
   const sameRange =
     slotId === reservation.availability_slot_id &&

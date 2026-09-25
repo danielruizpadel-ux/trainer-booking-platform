@@ -4,6 +4,7 @@ import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, ref
 import { SELECT_FOR_EDIT, cancelReservation, type EditableReservation } from '@/lib/reservations/edit'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import type { ClientPackage, PackageSessionStatus } from './status'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * Agendar / desagendar una sesión de paquete.
@@ -81,6 +82,9 @@ export async function schedulePackageSession(
   const duration = pkg.duration_minutes ?? 60
   const lookup = await loadOwnedOpenWindow(supabase, slotId, trainerId, startTime, duration)
   if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+  if (isPastMalaysiaSession(lookup.window.session_date, lookup.range.start_time)) {
+    return { ok: false, status: 400, message: 'No se puede agendar una sesión en el pasado' }
+  }
 
   const status = confirmed ? RESERVATION_STATUS.CONFIRMED : RESERVATION_STATUS.PENDING_CONFIRMATION
   const label = `Paquete de ${pkg.sessions_total} clases · sesión ${session.session_number}/${pkg.sessions_total}`
