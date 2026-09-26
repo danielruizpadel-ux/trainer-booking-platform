@@ -1,9 +1,37 @@
 /**
- * ¿Respondió la base? Un SQLSTATE (5 caracteres) o un PGRSTxxx de PostgREST
- * significan que la petición llegó y se rechazó: la transacción se deshizo.
- * Un error sin código (supabase-js con la red cortada, un 5xx de un proxy)
- * después de mandar una escritura NO dice si se aplicó.
+ * ¿Hay evidencia fiable de que una escritura YA ENVIADA se rechazó (y su
+ * transacción se deshizo)?
+ *
+ * supabase-js devuelve como `error` lo que venga en el cuerpo de la
+ * respuesta: `code`, `message`, `details`. Un proxy o una pasarela (502/504
+ * con un JSON propio) puede traer un `code` con formato válido — cinco
+ * caracteres o `PGRSTxxx` — sin que la petición haya llegado a Postgres, o
+ * mientras la transacción sigue en marcha. El formato del código no prueba
+ * nada (revisión de Codex): antes se deducía "rollback" de él.
+ *
+ * Ahora solo cuenta como rechazo confirmado un error que lleve un
+ * identificador que únicamente generan NUESTRAS funciones y restricciones
+ * (p. ej. 'window_plan_stale', 'one_off_window_conflict',
+ * 'reservations_no_overlap', o "no existe la función <la nuestra>"), junto
+ * con su código. Cualquier otro error después de enviar la escritura es
+ * «resultado no confirmado»: se dice así y se recarga, sin afirmar que no
+ * cambió nada.
+ *
+ * Un error ANTES de enviar la escritura (una lectura previa) no necesita
+ * esto: no se escribió nada.
  */
-export function isDatabaseErrorCode(code: string | null | undefined): boolean {
-  return typeof code === 'string' && (/^[0-9A-Z]{5}$/.test(code) || /^PGRST\d+$/.test(code))
+export interface RejectionEvidence {
+  /** Código que debe traer el error (el que produce nuestra función/restricción). */
+  code: string
+  /** Texto que solo produce nuestra función/restricción (en message o details). */
+  marker: string
+}
+
+export function isConfirmedRejection(
+  error: { code?: string | null; message?: string | null; details?: string | null } | null | undefined,
+  evidence: RejectionEvidence[]
+): boolean {
+  if (!error || typeof error.code !== 'string') return false
+  const text = `${error.message ?? ''} ${error.details ?? ''}`
+  return evidence.some((e) => e.code === error.code && text.includes(e.marker))
 }

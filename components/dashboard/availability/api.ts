@@ -6,8 +6,9 @@
  *   failed   el servidor respondió con un error (JSON). Si es
  *            `sync_failed`, `data.outcome` dice si la sincronización no se
  *            aplicó ('not_applied') o no se sabe ('unknown').
- *   unknown  no hay respuesta legible (red cortada, respuesta perdida, un
- *            5xx que no es nuestro JSON): la petición pudo completarse o no.
+ *   unknown  resultado no confirmado: no hay respuesta legible (red
+ *            cortada, respuesta perdida) o no es nuestro JSON (un proxy con
+ *            su propio cuerpo): la petición pudo completarse o no.
  */
 export type ApiResult =
   | { kind: 'ok'; data: Record<string, unknown> & { success: true } }
@@ -31,18 +32,20 @@ export async function callApi(url: string, init: RequestInit | undefined, fallba
   }
   const data = (await response.json().catch(() => null)) as (ApiError & Record<string, unknown>) | null
   if (!data || typeof data !== 'object') return { kind: 'unknown' }
-  if (!response.ok || data.success !== true) return { kind: 'failed', data, message: data.error || fallbackError }
-  return { kind: 'ok', data: data as unknown as Record<string, unknown> & { success: true } }
+  if (response.ok && data.success === true) return { kind: 'ok', data: data as unknown as Record<string, unknown> & { success: true } }
+  // Solo es "falló" si es nuestra respuesta de error ({ success: false, error }).
+  if (data.success === false && typeof data.error === 'string') return { kind: 'failed', data, message: data.error || fallbackError }
+  return { kind: 'unknown' }
 }
 
 /** Una escritura (horario, excepción) cuya respuesta se perdió. */
 export const UNKNOWN_SAVE_MESSAGE =
-  'No hemos podido confirmar si el cambio se ha guardado ni si tu disponibilidad publicada se ha actualizado (se perdió la respuesta). Recarga la página para ver cómo ha quedado.'
+  'Resultado no confirmado: no sabemos si el cambio se ha guardado ni si tu disponibilidad publicada se ha actualizado. Recarga la página para ver cómo ha quedado.'
 
 /** «Sincronizar huecos» cuya respuesta se perdió. */
 export const UNKNOWN_SYNC_MESSAGE =
-  'No hemos podido confirmar si la sincronización se ha aplicado (se perdió la respuesta). Recarga la página para ver tu disponibilidad actual y vuelve a sincronizar si hace falta.'
+  'Resultado no confirmado: no sabemos si la sincronización se ha aplicado. Recarga la página para ver tu disponibilidad actual y vuelve a sincronizar si hace falta.'
 
 /** La limpieza de huecos antiguos cuya respuesta se perdió o que falló a mitad. */
 export const UNKNOWN_PURGE_MESSAGE =
-  'No hemos podido confirmar la limpieza de huecos antiguos: puede haberse hecho en parte. Vuelve a pulsar «Sincronizar huecos» para terminarla.'
+  'Limpieza de huecos antiguos no confirmada: puede haberse hecho en parte. Vuelve a pulsar «Sincronizar huecos» para terminarla.'

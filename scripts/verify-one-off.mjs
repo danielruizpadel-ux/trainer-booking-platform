@@ -231,18 +231,28 @@ test('errores de la función: se traducen y la app no intenta limpiar nada (la t
   }
 })
 
-test('respuesta perdida tras mandar la clase (sin código de la base): no dice que no se creó', async () => {
+test('tras mandar la clase, sin evidencia fiable → resultado no confirmado (también un código "válido" de un proxy)', async () => {
   const { ONE_OFF_UNKNOWN_MESSAGE } = load('lib/reservations/one-off.ts')
-  reset({ rpcError: { code: '', message: 'TypeError: fetch failed' } })
-  let r = await createOneOffReservation(T, input('18:00', 60))
-  assert.equal(r.status, 500)
-  assert.equal(r.message, ONE_OFF_UNKNOWN_MESSAGE)
-  assert.match(r.message, /No hemos podido confirmar si la clase se ha creado/)
-  reset({ rpcError: { code: '23502', message: 'null value' } })
-  r = await createOneOffReservation(T, input('18:00', 60))
-  assert.equal(r.message, 'No se pudo crear la reserva', 'con código de la base sí se sabe que no se creó')
+  assert.match(ONE_OFF_UNKNOWN_MESSAGE, /^Resultado no confirmado: no sabemos si la clase se ha creado/)
+  for (const rpcError of [
+    { code: '', message: 'TypeError: fetch failed' },
+    { code: '23503', message: 'Bad Gateway' },
+    { code: '23P01', message: 'upstream connect error' },
+    { code: 'PGRST301', message: 'Gateway Timeout' },
+    { code: '23502', message: 'null value' },
+  ]) {
+    reset({ rpcError })
+    const r = await createOneOffReservation(T, input('18:00', 60))
+    assert.equal(r.status, 500, JSON.stringify(rpcError))
+    assert.equal(r.message, ONE_OFF_UNKNOWN_MESSAGE, JSON.stringify(rpcError))
+  }
+  // Con el identificador de nuestra restricción/función sí se sabe que no se creó.
+  reset({ rpcError: { code: '23P01', message: 'conflicting key value violates exclusion constraint "reservations_no_overlap"' } })
+  assert.equal((await createOneOffReservation(T, input('18:00', 60))).status, 409)
+  reset({ rpcError: { code: 'P0001', message: 'one_off_window_conflict' } })
+  assert.equal((await createOneOffReservation(T, input('18:00', 60))).status, 409)
   const dialog = read('components/dashboard/reservations/NewReservationDialog.tsx')
-  assert.match(dialog, /if \(!data\) throw new UnconfirmedCreate\(\)/)
+  assert.match(dialog, /if \(ours && data\.success === false && typeof data\.error === 'string'\) throw new Error\(data\.error\)\s+\/\/[^\n]*\n\s+throw new UnconfirmedCreate\(\)/)
   assert.match(dialog, /disabled=\{sending \|\| unconfirmed \|\|/, 'no se deja reenviar')
 })
 

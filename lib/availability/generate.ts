@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseDateStr, toDateStr } from '@/lib/dateUtils'
 import { isSlotOpen, reservationHoldsSlot } from './slot-status'
-import { isDatabaseErrorCode } from '@/lib/supabase/error-codes'
+import { isConfirmedRejection, type RejectionEvidence } from '@/lib/supabase/error-codes'
 
 /**
  * Generador: a partir de la plantilla semanal + excepciones (migración 005),
@@ -382,7 +382,19 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
 
 export const WINDOW_PLAN_FUNCTION = 'apply_window_plan'
 
-export { isDatabaseErrorCode }
+/**
+ * Rechazos de apply_window_plan con evidencia fiable (su propio
+ * identificador + código): la transacción se deshizo. Ver
+ * lib/supabase/error-codes.ts.
+ */
+export const WINDOW_PLAN_REJECTIONS: RejectionEvidence[] = [
+  { code: 'P0001', marker: 'window_plan_stale' },
+  { code: '42501', marker: 'window_plan_foreign_row' },
+  { code: '22023', marker: 'window_plan_invalid' },
+  // La función (o su firma con revisión, 016) no existe: nada se ejecutó.
+  { code: 'PGRST202', marker: 'apply_window_plan' },
+  { code: '42883', marker: 'apply_window_plan' },
+]
 
 /**
  * La sincronización no se ha aplicado (nada ha cambiado en las ventanas).
@@ -395,22 +407,28 @@ export class WindowSyncError extends Error {
   /** El plan se calculó con un horario que ya cambió (016): no se aplicó nada; se puede recalcular. */
   readonly stale: boolean
   /**
-   * No se sabe si se aplicó: el error llegó DESPUÉS de mandar el plan y no
-   * trae código de Postgres/PostgREST (red cortada, respuesta perdida, 5xx
-   * de un proxy). Con código, la base lo rechazó y la transacción se deshizo.
+   * Resultado no confirmado: el error llegó DESPUÉS de mandar el plan y no
+   * es uno de los rechazos con evidencia fiable (WINDOW_PLAN_REJECTIONS).
+   * Un código con formato válido no basta: puede venir de un proxy.
    */
   readonly outcomeUnknown: boolean
   constructor(error: { code?: string; message?: string }, options: { afterSend?: boolean } = {}) {
     // PGRST202 / 42883: falta la función (014/016) o su firma nueva (016);
     // 42703: falta trainers.availability_revision (016).
-    const missingMigration = error.code === 'PGRST202' || error.code === '42883' || error.code === '42703'
-    const stale = error.code === 'P0001' && String(error.message ?? '').includes('window_plan_stale')
+    const afterSend = Boolean(options.afterSend)
+    const text = `${error.message ?? ''}`
+    // Antes de mandar el plan, 42703 = falta trainers.availability_revision
+    // (016). Después, solo "no existe apply_window_plan" (014/016).
+    const missingMigration =
+      (!afterSend && error.code === '42703') ||
+      ((error.code === 'PGRST202' || error.code === '42883') && text.includes('apply_window_plan'))
+    const stale = isConfirmedRejection(error, [{ code: 'P0001', marker: 'window_plan_stale' }])
     super(missingMigration ? 'Faltan las migraciones 014/016 (apply_window_plan)' : `apply_window_plan falló (${error.code ?? 'sin código'}): ${error.message ?? ''}`)
     this.name = 'WindowSyncError'
     this.code = error.code ?? null
     this.missingMigration = missingMigration
     this.stale = stale
-    this.outcomeUnknown = Boolean(options.afterSend) && !isDatabaseErrorCode(error.code)
+    this.outcomeUnknown = afterSend && !isConfirmedRejection(error, WINDOW_PLAN_REJECTIONS)
   }
 }
 

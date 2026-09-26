@@ -12,9 +12,12 @@ import { generateSlotsForTrainer, WindowSyncError, type GenerateSummary } from '
  *   saved = false  «Sincronizar huecos»: no había nada más que guardar.
  *
  * Respuesta de fallo: 500 { success: false, code: 'sync_failed', saved, outcome, error }.
- *   outcome = 'not_applied'  la base rechazó el plan: la transacción se deshizo.
- *   outcome = 'unknown'      se perdió la respuesta tras mandar el plan: pudo
- *                            aplicarse o no. El mensaje NO dice que no cambió.
+ *   outcome = 'not_applied'  el fallo fue antes de mandar el plan, o es un
+ *                            rechazo con evidencia fiable (su identificador +
+ *                            código, WINDOW_PLAN_REJECTIONS).
+ *   outcome = 'unknown'      resultado no confirmado: cualquier otro error tras
+ *                            mandar el plan (red, proxy, código "válido" sin
+ *                            identificador). El mensaje NO dice que no cambió.
  * La interfaz no debe presentarlo como guardado/sincronizado.
  */
 export const SYNC_FAILED_CODE = 'sync_failed'
@@ -24,8 +27,8 @@ export type SyncFailureOutcome = 'not_applied' | 'unknown'
 export function syncFailedMessage(saved: boolean, missingMigration: boolean, outcome: SyncFailureOutcome = 'not_applied'): string {
   if (outcome === 'unknown') {
     return saved
-      ? 'Tu cambio se ha guardado, pero no hemos podido confirmar si tu disponibilidad publicada se ha actualizado (se perdió la respuesta). Recarga la página para ver cómo ha quedado y, si hace falta, pulsa «Sincronizar huecos».'
-      : 'No hemos podido confirmar si la sincronización se ha aplicado (se perdió la respuesta). Recarga la página para ver tu disponibilidad actual y vuelve a sincronizar si hace falta.'
+      ? 'Tu cambio se ha guardado, pero el resultado de la sincronización no está confirmado: no sabemos si tu disponibilidad publicada se ha actualizado. Recarga la página para ver cómo ha quedado y, si hace falta, pulsa «Sincronizar huecos».'
+      : 'Resultado no confirmado: no sabemos si la sincronización se ha aplicado. Recarga la página para ver tu disponibilidad actual y vuelve a sincronizar si hace falta.'
   }
   const base = saved
     ? 'Tu cambio se ha guardado, pero tu disponibilidad publicada NO se ha actualizado: sigue exactamente como antes.'

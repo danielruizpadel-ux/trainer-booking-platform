@@ -9,7 +9,7 @@ import { parseDetails, type ReservationDetailsInput } from './edit'
 import { createManualReservation, type ManualResult } from './manual'
 import { OVERLAP_MESSAGE, WINDOW_SELECT, isSlotConflictError, toLoadedWindow, type WindowReservation, type WindowRow } from './slots'
 import { checkOneOffRange } from './one-off-rules'
-import { isDatabaseErrorCode } from '@/lib/supabase/error-codes'
+import { isConfirmedRejection } from '@/lib/supabase/error-codes'
 
 /**
  * Clase puntual: el entrenador reserva un tramo para un cliente aunque esté
@@ -162,7 +162,7 @@ export async function createOneOffReservation(trainerId: string, input: OneOffRe
 
 export const ONE_OFF_FUNCTION = 'create_one_off_reservation'
 export const ONE_OFF_UNKNOWN_MESSAGE =
-  'No hemos podido confirmar si la clase se ha creado (se perdió la respuesta). Revisa el calendario antes de volver a intentarlo.'
+  'Resultado no confirmado: no sabemos si la clase se ha creado. Revisa el calendario antes de volver a intentarlo.'
 const WINDOW_CONFLICT_MESSAGE = 'Ya hay una ventana con ese mismo horario ese día. Elige otro tramo.'
 
 type DbError = { code?: string; message?: string; details?: string | null }
@@ -172,23 +172,27 @@ type DbError = { code?: string; message?: string; details?: string | null }
  * se ha deshecho entera: no hay ventana ni reserva que limpiar.
  */
 export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }> {
-  const text = `${error.message ?? ''} ${error.details ?? ''}`
+  // Solo se dice "no se creó" con evidencia fiable: un identificador que
+  // únicamente produce nuestra función o restricción, con su código
+  // (isSlotConflictError ya exige el nombre de la restricción). Un código
+  // con formato válido no basta: puede venir de un proxy
+  // (lib/supabase/error-codes.ts).
   if (isSlotConflictError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
-  if (text.includes('one_off_window_conflict')) return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
-  if (error.code === '22023' && text.includes('one_off_invalid')) return { ok: false, status: 400, message: 'Tramo no válido' }
+  if (isConfirmedRejection(error, [{ code: 'P0001', marker: 'one_off_window_conflict' }])) {
+    return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
+  }
+  if (isConfirmedRejection(error, [{ code: '22023', marker: 'one_off_invalid' }])) {
+    return { ok: false, status: 400, message: 'Tramo no válido' }
+  }
   // PGRST202: PostgREST no conoce la función (012 sin aplicar o caché sin
   // recargar); 42883: Postgres no la encuentra. Falla cerrado, sin atajos no
   // atómicos.
-  if (error.code === 'PGRST202' || error.code === '42883') {
+  if (isConfirmedRejection(error, [{ code: 'PGRST202', marker: ONE_OFF_FUNCTION }, { code: '42883', marker: ONE_OFF_FUNCTION }])) {
     console.error('Falta la migración 012 (create_one_off_reservation)')
     return { ok: false, status: 503, message: 'Las clases puntuales aún no están activadas (falta la migración 012).' }
   }
-  // Sin código de la base: se perdió la respuesta después de mandar la
-  // escritura. No se dice que no se creó: puede que sí.
-  if (!isDatabaseErrorCode(error.code)) {
-    console.error('create_one_off_reservation sin respuesta de la base:', { message: error.message ?? null })
-    return { ok: false, status: 500, message: ONE_OFF_UNKNOWN_MESSAGE }
-  }
-  console.error('create_one_off_reservation falló:', { code: error.code ?? null })
-  return { ok: false, status: 500, message: 'No se pudo crear la reserva' }
+  // Cualquier otro error después de mandar la escritura: resultado no
+  // confirmado. No se dice que no se creó: puede que sí.
+  console.error('create_one_off_reservation: resultado no confirmado', { code: error.code ?? null })
+  return { ok: false, status: 500, message: ONE_OFF_UNKNOWN_MESSAGE }
 }

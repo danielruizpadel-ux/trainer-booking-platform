@@ -81,8 +81,12 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
             body: JSON.stringify({ slot_id: slot.window_id, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
           })
       const data = await response.json().catch(() => null)
-      if (!data) throw new UnconfirmedCreate()
-      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo crear la reserva')
+      const ours = data && typeof data === 'object'
+      if (!ours || !response.ok || data.success !== true) {
+        if (ours && data.success === false && typeof data.error === 'string') throw new Error(data.error)
+        // Sin respuesta legible o no es la nuestra (p. ej. un proxy): no se sabe.
+        throw new UnconfirmedCreate()
+      }
       router.refresh()
       onCreated?.()
       onClose()
@@ -243,4 +247,4 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
 class UnconfirmedCreate extends Error {}
 
 const UNCONFIRMED_CREATE_MESSAGE =
-  'No hemos podido confirmar si la reserva se ha creado (se perdió la respuesta). Revisa el calendario antes de volver a intentarlo.'
+  'Resultado no confirmado: no sabemos si la reserva se ha creado. Revisa el calendario antes de volver a intentarlo.'

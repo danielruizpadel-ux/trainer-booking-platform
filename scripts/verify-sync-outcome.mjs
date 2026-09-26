@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Resultado de una sincronización cuando algo falla (revisión de Codex):
 //
-//   1. generate.ts real: un error con código de Postgres/PostgREST = no se
-//      aplicó; un error SIN código después de mandar el plan (o una
-//      excepción de la llamada) = no se sabe; un fallo antes de mandarlo
-//      (lecturas) = no se aplicó.
+//   1. generate.ts real: después de mandar el plan, solo un rechazo con
+//      evidencia fiable (identificador de nuestra función + su código) es
+//      "no se aplicó"; cualquier otro error — también un código con formato
+//      válido enviado por un proxy — es "resultado no confirmado". Un fallo
+//      antes de mandarlo (lecturas) = no se aplicó.
 //   2. syncWindows: `outcome` y un mensaje que no afirma "no ha cambiado"
 //      cuando no se sabe.
 //   3. callApi (navegador): red caída o respuesta que no es nuestro JSON =
@@ -21,7 +22,8 @@ import assert from 'node:assert/strict'
 import { fakeSupabase, load, read } from './lib/ts-harness.mjs'
 
 const T = '11111111-1111-4111-8111-111111111111'
-const { generateSlotsForTrainer, WindowSyncError, isDatabaseErrorCode } = load('lib/availability/generate.ts')
+const { generateSlotsForTrainer, WindowSyncError } = load('lib/availability/generate.ts')
+const { isConfirmedRejection } = load('lib/supabase/error-codes.ts')
 const { syncWindows } = load('lib/availability/sync-response.ts')
 const { callApi, UNKNOWN_SYNC_MESSAGE, UNKNOWN_PURGE_MESSAGE, UNKNOWN_SAVE_MESSAGE } = load('components/dashboard/availability/api.ts')
 const { describeSync } = load('components/dashboard/availability/sync-report.ts')
@@ -45,15 +47,44 @@ const errorOf = async (client) => {
 
 // ─── 1. Clasificación ────────────────────────────────────────────────────────
 
-test('isDatabaseErrorCode: SQLSTATE y PGRST sí; vacío, null o texto no', () => {
-  for (const c of ['23P01', '42883', 'P0001', '57014', 'PGRST202', 'PGRST301']) assert.equal(isDatabaseErrorCode(c), true, c)
-  for (const c of ['', null, undefined, 'fetch failed', '500']) assert.equal(isDatabaseErrorCode(c), false, String(c))
+// Cuerpos con código de formato válido que podría devolver un proxy o una pasarela.
+const PROXY_ERRORS = [
+  { code: '23503', message: 'Bad Gateway' },
+  { code: '23P01', message: 'upstream connect error' },
+  { code: 'PGRST301', message: 'Gateway Timeout' },
+  { code: '57014', message: 'request timeout' },
+]
+
+test('isConfirmedRejection: exige código Y el identificador de nuestra función; el formato no basta', () => {
+  const ev = [{ code: 'P0001', marker: 'window_plan_stale' }]
+  assert.equal(isConfirmedRejection({ code: 'P0001', message: 'window_plan_stale' }, ev), true)
+  assert.equal(isConfirmedRejection({ code: 'P0001', message: 'x', details: 'window_plan_stale' }, ev), true, 'también en details')
+  assert.equal(isConfirmedRejection({ code: 'P0001', message: 'otra cosa' }, ev), false, 'código válido sin identificador')
+  assert.equal(isConfirmedRejection({ code: '22023', message: 'window_plan_stale' }, ev), false, 'identificador con otro código')
+  for (const e of PROXY_ERRORS) assert.equal(isConfirmedRejection(e, ev), false, JSON.stringify(e))
+  assert.equal(isConfirmedRejection(null, ev), false)
+  assert.equal(isConfirmedRejection({ message: 'window_plan_stale' }, ev), false, 'sin código')
 })
 
-test('generate.ts: con código de la base → no aplicado; sin código tras mandar el plan → desconocido', async () => {
-  let e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: '23503', message: 'fk' } }) }))
+test('generate.ts: tras mandar el plan, solo los rechazos con evidencia son "no aplicado"; el resto, no confirmado', async () => {
+  let e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: '42501', message: 'window_plan_foreign_row' } }) }))
   assert.ok(e instanceof WindowSyncError)
+  assert.equal(e.outcomeUnknown, false, 'rechazo de nuestra función')
+  e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: 'P0001', message: 'window_plan_stale' } }) }))
   assert.equal(e.outcomeUnknown, false)
+  assert.equal(e.stale, true)
+  e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.apply_window_plan' } }) }))
+  assert.equal(e.outcomeUnknown, false)
+  assert.equal(e.missingMigration, true)
+  for (const proxy of PROXY_ERRORS) {
+    e = await errorOf(supa({ rpc: async () => ({ data: null, error: proxy }) }))
+    assert.equal(e.outcomeUnknown, true, `proxy ${JSON.stringify(proxy)}`)
+    assert.equal(e.stale, false)
+    assert.equal(e.missingMigration, false)
+  }
+  e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: 'P0001', message: 'otra excepción' } }) }))
+  assert.equal(e.outcomeUnknown, true, 'P0001 sin identificador no es window_plan_stale')
+  assert.equal(e.stale, false, 'y no se reintenta como plan viejo')
   e = await errorOf(supa({ rpc: async () => ({ data: null, error: { code: '', message: 'TypeError: fetch failed' } }) }))
   assert.equal(e.outcomeUnknown, true, 'supabase-js sin código: la red')
   e = await errorOf(supa({ rpc: async () => { throw new Error('socket hang up') } }))
@@ -64,20 +95,29 @@ test('generate.ts: con código de la base → no aplicado; sin código tras mand
 
 // ─── 2. syncWindows ──────────────────────────────────────────────────────────
 
+test('syncWindows: un proxy con código válido → resultado no confirmado (nunca "no ha cambiado")', async () => {
+  for (const proxy of PROXY_ERRORS) {
+    const body = await (await syncWindows(supa({ rpc: async () => ({ data: null, error: proxy }) }), T, false)).response.json()
+    assert.equal(body.outcome, 'unknown', JSON.stringify(proxy))
+    assert.match(body.error, /^Resultado no confirmado/)
+    assert.doesNotMatch(body.error, /no ha cambiado/)
+  }
+})
+
 test('syncWindows: desconocido → outcome unknown y el mensaje no dice que no cambió', async () => {
   const r = await syncWindows(supa({ rpc: async () => ({ data: null, error: { code: '', message: 'fetch failed' } }) }), T, true)
   assert.equal(r.ok, false)
   const body = await r.response.json()
   assert.equal(body.outcome, 'unknown')
   assert.equal(body.saved, true)
-  assert.match(body.error, /no hemos podido confirmar si tu disponibilidad publicada se ha actualizado/)
+  assert.match(body.error, /el resultado de la sincronización no está confirmado/)
   assert.doesNotMatch(body.error, /no ha cambiado|sigue exactamente como antes|NO se ha actualizado/)
   const manual = await (await syncWindows(supa({ rpc: async () => ({ data: null, error: { message: 'x' } }) }), T, false)).response.json()
-  assert.match(manual.error, /No hemos podido confirmar si la sincronización se ha aplicado/)
+  assert.match(manual.error, /^Resultado no confirmado: no sabemos si la sincronización se ha aplicado/)
 })
 
-test('syncWindows: rechazada por la base → outcome not_applied y sí dice que no cambió', async () => {
-  const body = await (await syncWindows(supa({ rpc: async () => ({ data: null, error: { code: '23503', message: 'fk' } }) }), T, false)).response.json()
+test('syncWindows: rechazada con evidencia (identificador de la función) → not_applied y sí dice que no cambió', async () => {
+  const body = await (await syncWindows(supa({ rpc: async () => ({ data: null, error: { code: '42501', message: 'window_plan_foreign_row' } }) }), T, false)).response.json()
   assert.equal(body.outcome, 'not_applied')
   assert.match(body.error, /no ha cambiado/)
 })
@@ -91,6 +131,11 @@ test('callApi: red caída o respuesta ilegible = desconocido; error JSON = faile
     assert.deepEqual(await callApi('/x', {}, 'err'), { kind: 'unknown' })
     globalThis.fetch = async () => new Response('<html>502 Bad Gateway</html>', { status: 502 })
     assert.deepEqual(await callApi('/x', {}, 'err'), { kind: 'unknown' })
+    // JSON de un proxy con código "válido" pero sin nuestra forma → no confirmado.
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: '23503', message: 'Bad Gateway' }), { status: 502 })
+    assert.deepEqual(await callApi('/x', {}, 'err'), { kind: 'unknown' })
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: false }), { status: 500 })
+    assert.deepEqual(await callApi('/x', {}, 'err'), { kind: 'unknown' }, 'success:false sin error de texto')
     globalThis.fetch = async () => new Response(JSON.stringify({ success: false, code: 'sync_failed', outcome: 'not_applied', error: 'no se aplicó' }), { status: 500 })
     const failed = await callApi('/x', {}, 'err')
     assert.equal(failed.kind, 'failed')
@@ -144,7 +189,7 @@ test('botón: en serie, la limpieza solo si la sincronización se confirmó', ()
 })
 
 test('horario y excepciones: una respuesta perdida no se presenta como guardada ni como no guardada', () => {
-  assert.match(UNKNOWN_SAVE_MESSAGE, /No hemos podido confirmar si el cambio se ha guardado/)
+  assert.match(UNKNOWN_SAVE_MESSAGE, /^Resultado no confirmado: no sabemos si el cambio se ha guardado/)
   const weekly = read('components/dashboard/availability/WeeklySchedule.tsx')
   assert.match(weekly, /if \(result\.kind === 'unknown'\) throw new UnknownOutcomeError\(UNKNOWN_SAVE_MESSAGE\)/)
   assert.match(weekly, /setError\(err\.outcome === 'unknown' \? err\.message : SAVED_NOT_PUBLISHED\)/)

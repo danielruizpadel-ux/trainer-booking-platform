@@ -293,11 +293,13 @@ Límites:
 - **Hay que aplicar la 014 (después de la 013)** antes de desplegar este
   código: sin ella, cualquier cambio de horario se guarda pero no se
   sincroniza (y se avisa).
-- Una reserva pública validada con el rango viejo de una ventana puede
-  entrar justo después de acortarla (la FK solo comprueba que la ventana
-  exista; probado en C4): la reserva queda fuera del rango, pero no se
-  publica más tiempo. Es la carrera general entre la validación en la app
-  y la escritura, no algo nuevo de la 014.
+- ~~Una reserva validada con el rango viejo de una ventana podía entrar
+  justo después de acortarla (C4).~~ **Resuelto por la migración 015**
+  (`reservations_within_window`, ver la sección siguiente): cuando esté
+  aplicada, la base rechaza esa reserva en los dos órdenes de concurrencia
+  (probado en `scripts/verify-window-range-db.sh` y en el C4 de
+  `scripts/verify-window-plan-db.sh`, que ahora espera el rechazo). **Hasta
+  aplicar la 015 en Supabase, C4 sigue siendo posible en la base real.**
 - La purga de huecos legacy sigue aparte (solo borra ventanas manuales
   vacías: si se queda a medias, se ofrece de menos, nunca de más).
 - `refreshAllWindows` (available/full) después de sincronizar sigue siendo
@@ -328,14 +330,25 @@ Límites:
 3. **«Sincronizar huecos»** en serie: primero la sincronización; la
    limpieza de huecos antiguos solo si se confirmó. Cada una se informa por
    separado (`components/dashboard/availability/sync-report.ts`).
-4. **Respuesta perdida**: `sync_failed` lleva `outcome`. `not_applied` solo
-   si la base respondió con código (SQLSTATE / PGRST); si el error llega
-   sin código después de mandar el plan, `unknown` y el mensaje dice «no
-   hemos podido confirmar…», nunca «no ha cambiado». En el navegador, red
-   caída o respuesta ilegible = desconocido (`components/dashboard/availability/api.ts`):
-   horario, excepciones y «Sincronizar huecos» recargan y lo dicen. La
-   clase puntual hace lo mismo (servidor y diálogo, que no deja reenviar).
-   Pruebas: `scripts/verify-sync-outcome.mjs`.
+4. **Respuesta perdida / resultado no confirmado**: `sync_failed` lleva
+   `outcome`. Tras mandar la escritura, `not_applied` SOLO con evidencia
+   fiable: un error con el identificador que únicamente producen nuestras
+   funciones o restricciones y su código (`window_plan_stale`,
+   `window_plan_foreign_row`, `one_off_window_conflict`,
+   `reservations_no_overlap`, `reservations_within_window`, «no existe
+   apply_window_plan / create_one_off_reservation»;
+   `lib/supabase/error-codes.ts`, `isConfirmedRejection`). Cualquier otro
+   error — sin código, o con un código de formato válido que podría haber
+   mandado un proxy — es `unknown` y el mensaje empieza por «Resultado no
+   confirmado», nunca «no ha cambiado». (Revisión de Codex sobre 06406f1:
+   antes bastaba con que el código tuviera 5 caracteres o empezara por
+   PGRST.) Un fallo antes de mandar la escritura (lecturas previas) sigue
+   siendo `not_applied`. En el navegador (`components/dashboard/availability/api.ts`
+   y el diálogo de nueva reserva), red caída, respuesta ilegible o un JSON
+   que no es nuestro `{ success: false, error }` = no confirmado: recargan
+   y lo dicen; la clase puntual no deja reenviar. Pruebas:
+   `scripts/verify-sync-outcome.mjs` y `scripts/verify-one-off.mjs`
+   (incluye códigos de proxy `23503`, `23P01`, `PGRST301`, `57014`).
 
 Límites:
 
@@ -347,10 +360,13 @@ Límites:
   práctica; las pruebas lo alargan con `pg_sleep`).
 - La revisión sube con cualquier escritura del horario, aunque no cambie
   nada que afecte a las ventanas: puede provocar un recálculo de más.
-- El resultado desconocido se detecta por la forma del error (sin código).
-  Un proxy que devolviera un JSON propio con código parecido no se
-  distinguiría. La reserva manual y la web pública no se han tocado en
-  este aspecto (siguen diciendo «no se pudo…» ante un error sin código).
+- «No aplicado» solo se afirma con el identificador de nuestra función o
+  restricción. Un proxy que copiara también ese identificador exacto no se
+  distinguiría (no es un caso realista). A cambio, algunos rechazos reales
+  sin identificador propio (p. ej. un `statement_timeout`) se muestran
+  como «no confirmado» aunque la transacción se deshiciera.
+- La reserva manual y la web pública no se han tocado en este aspecto
+  (siguen diciendo «no se pudo…» ante un error que no reconocen).
 
 ## Numeración de migraciones (pendiente al unir ramas)
 
