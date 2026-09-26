@@ -162,6 +162,17 @@ export async function cancelReservation(reservation: EditableReservation): Promi
   const { error } = await supabase.from('reservations').update(updates).eq('id', reservation.id)
   if (error) return { ok: false, status: 500, message: error.message }
 
+  await afterReservationCancelled(reservation, wasHolding)
+  return { ok: true }
+}
+
+/**
+ * Lo que va DESPUÉS de cancelar (ya escrito): recalcular la ventana si la
+ * reserva ocupaba hueco y avisar al cliente. También lo usa
+ * unschedulePackageSession tras la transacción de unschedule_package_session.
+ */
+export async function afterReservationCancelled(reservation: EditableReservation, wasHolding: boolean): Promise<void> {
+  const supabase = getSupabaseServerClient()
   if (wasHolding) await refreshWindowStatus(supabase, reservation.availability_slot_id)
 
   const { data: slot } = await supabase
@@ -174,5 +185,4 @@ export async function cancelReservation(reservation: EditableReservation): Promi
     session_date: slot?.session_date,
     start_time: reservation.start_time ?? slot?.start_time,
   })
-  return { ok: true }
 }

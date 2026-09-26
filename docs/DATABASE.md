@@ -114,6 +114,16 @@ Paquetes de 5/10 clases con el precio fijado al vender. `client_packages.duratio
 `package_sessions.reservation_id` enlaza cada sesión agendada con su fila
 real de `reservations`.
 
+**Funciones `schedule_package_session` y `unschedule_package_session`
+(migración 011, pendiente de aplicar):** agendar y desagendar una sesión son
+una sola transacción cada una. Las dos empiezan bloqueando la fila de
+`package_sessions` (`FOR UPDATE`). Agendar comprueba crédito libre y ventana
+(abierta, rango dentro, no pasada), crea la reserva con los datos y el precio
+del paquete y la enlaza. Desagendar comprueba que el crédito sigue enlazado a
+la reserva que vio la app, la cancela si está viva y devuelve el crédito.
+Solo las ejecuta `service_role`; las llama `lib/packages/schedule.ts`. No
+insertar, cancelar ni desenganchar la reserva de un paquete por otro camino.
+
 ## `trainer_weekly_hours` y `trainer_availability_overrides` (migración 005)
 
 Plantilla semanal y excepciones por fecha. `lib/availability/generate.ts` las

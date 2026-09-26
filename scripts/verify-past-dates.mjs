@@ -24,7 +24,7 @@ const reset = (date, time) => {
   state.writes = []
 }
 
-const WRITE_OPS = new Set(['insert', 'update', 'upsert', 'delete'])
+const WRITE_OPS = new Set(['insert', 'update', 'upsert', 'delete', 'rpc'])
 mock('lib/supabase/client.ts', {
   getSupabaseServerClient: () =>
     fakeSupabase((table, ops) => {
@@ -32,6 +32,7 @@ mock('lib/supabase/client.ts', {
       if (write) {
         state.writes.push({ table, op: write.op })
         if (write.op === 'insert') return { data: { id: 'new-1' }, error: null }
+        if (write.op === 'rpc') return { data: [{ outcome: 'scheduled', reservation_id: 'new-1' }], error: null }
         return { data: [{ id: 'row-1' }], error: null }
       }
       if (table === 'package_sessions') {
