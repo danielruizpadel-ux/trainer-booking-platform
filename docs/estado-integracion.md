@@ -66,21 +66,42 @@ Decisiones:
   jugador) y guarda con `POST /api/dashboard/reservations/one-off`.
   Si el tramo no mide una duración ofrecida, se elige una empezando a la
   misma hora.
-- **Sin cambio de esquema.** `reservations.availability_slot_id` es NOT NULL y
-  `reservations.session_date` (la de `reservations_no_overlap`, 008) la pone
-  un trigger desde la ventana. Por eso:
+- **Sin columnas ni tablas nuevas.** `reservations.availability_slot_id` es
+  NOT NULL y `reservations.session_date` (la de `reservations_no_overlap`,
+  008) la pone un trigger desde la ventana. Por eso:
   - tramo dentro de una ventana abierta → reserva manual normal en ella;
   - si no → ventana propia del tamaño **exacto** de la clase con
     `status = 'blocked'` y `generated_by_pattern = false`, y la reserva
     dentro. `blocked` es cerrada para `isSlotOpen` (la web no la ofrece ni la
     acepta), `refreshWindowStatus` no la reabre al cancelar y el generador
-    semanal no toca filas manuales. Si la reserva falla, se borra la ventana.
+    semanal no toca filas manuales.
+- **Atómica en PostgreSQL (revisión de Codex, 26/09/2026).** La primera
+  versión (1b115e9) creaba la ventana, insertaba la reserva y, si fallaba,
+  borraba la ventana desde la app: otra petición podía reutilizar esa ventana
+  a medias y la limpieza podía fallar y dejarla huérfana. Ahora lo hace la
+  función `create_one_off_reservation` (`migrations/011`) en una sola
+  transacción, con `pg_advisory_xact_lock` por entrenador y día: cualquier
+  fallo deshace ventana y reserva juntas y no hay limpieza. Las reservas que
+  no pasan por la función (web, manual) las frena `reservations_no_overlap`.
+  Solo la ejecuta `service_role`. Sin la 011 aplicada la ruta responde 503;
+  no hay camino alternativo no atómico.
+- **Compatibilidad del esquema (revisión de Codex).** `migrations/001` no es
+  lo desplegado (CHECK de `class_type` y `status`, unique con `class_type`).
+  La 011 comprueba al aplicarse, contra el esquema real: la 008 (restricción
+  y trigger), las columnas de la 005/007/010, que `'private'` exista donde
+  apunte la FK de `class_type`, y —con una fila de prueba que siempre se
+  deshace— que los CHECK admitan una ventana `private`/`blocked`. Si no,
+  se para con un mensaje claro. Si el rol no puede usar
+  `session_replication_role`, avisa y sigue sin la prueba de CHECK. La
+  función no depende de la forma del unique: una violación de unicidad sale
+  como `one_off_window_conflict` (409). Referencia del esquema desplegado
+  para pruebas: `scripts/db/deployed-schema.sql`.
 - **Validación en servidor** (`lib/reservations/one-off.ts`, reglas en
   `one-off-rules.ts`): entrenador de la sesión (nunca `trainer_id` del
   navegador), duración ofrecida, rejilla de 30 min, mismo día, no pasado (KL),
   a un año vista como mucho, sin pisar reservas vivas de ninguna ventana del
   día (falla cerrado si no puede leerlas), y la base como red final (23P01 y
-  23505 → 409).
+  conflicto de ventana → 409; función sin aplicar → 503).
 - **«Abrir disponibilidad»** (secundaria): enlace a `/dashboard/disponibilidad`
   con el aviso de que ahí se cambia el horario que se repite cada semana y
   que lo abierto se puede reservar en la web. No abre nada por sí solo ni
@@ -90,13 +111,40 @@ Decisiones:
 
 Pruebas: `scripts/verify-one-off.mjs` (código real con dobles de Supabase:
 reglas, servidor, ruta, no publicación, generador) y
-`scripts/verify-one-off-db.sh` (Postgres aislado en Docker con la 008 tal
-cual: trigger de fecha, 23P01 entre ventanas, 23505, cancelar y reutilizar).
+`scripts/verify-one-off-db.sh` (Postgres aislado en Docker:
+`scripts/db/deployed-schema.sql` + la 008 y la 011 tal cual; 50 casos:
+función, atomicidad con fallo después de crear la ventana, permisos, carreras
+deterministas —transacción abierta con `pg_sleep` mientras llega la
+segunda: misma franja con commit y con rollback, reutilización con rollback,
+franjas solapadas, reserva de la web sin cerrojo—, ráfagas de 10 en
+paralelo, y variantes de esquema incompatibles o con el unique de la 001).
 Navegador (desktop y iframe de 375 px, con los POST interceptados en la
 página: no se guardó ninguna reserva): arrastre, clic normal, arrastre desde
 reserva, solape, duración no ofrecida, dos toques, envío de la puntual.
 
 Límites conocidos:
+
+- **La 011 hay que aplicarla en Supabase** (SQL Editor, como postgres, y
+  `notify pgrst, 'reload schema';`). Hasta entonces «Crear clase puntual»
+  fuera del horario responde 503; dentro de una ventana abierta funciona.
+  No se ha probado contra la Supabase real (solo en Postgres aislado).
+- No se sabe si el rol `postgres` de Supabase puede usar
+  `session_replication_role`; si no, la 011 lo avisa y se aplica sin la
+  prueba de CHECK (el resto de comprobaciones sí se hacen). Si luego un CHECK
+  rechazara la ventana, cada clase puntual daría 500 y no quedaría nada
+  escrito.
+- Si la respuesta se pierde después del commit (red), el entrenador ve un
+  error pero la clase está creada; al reintentar le sale «franja ocupada» y
+  la ve en el calendario al recargar.
+- La purga de huecos legacy (`lib/availability/cleanup.ts`, manual y bajo
+  demanda) no coge el cerrojo de la 011. Solo afecta a ventanas manuales
+  creadas antes del 20/09/2026 y sin reserva viva: si una de ellas fuera
+  además `blocked` y se reutilizara para una clase puntual justo mientras
+  la purga está en marcha, su DELETE esperaría al `FOR UPDATE` de la función
+  y después chocaría con la FK de `reservations` (o, si en la base real esa
+  FK fuera ON DELETE CASCADE, borraría la reserva nueva: no se ha podido
+  comprobar sin tocar Supabase). Las ventanas puntuales nuevas no entran en
+  ese criterio.
 
 - El arrastre no desplaza la rejilla sola al llegar al borde; un tramo largo
   que no se ve entero se elige con «Elegir tramo» (dos toques, con scroll en

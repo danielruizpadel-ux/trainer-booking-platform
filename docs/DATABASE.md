@@ -188,6 +188,20 @@ authenticated **sin** INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ni
 TRIGGER (solo conservan SELECT, que sin política no devuelve filas). Toda
 escritura va por el servidor con la service role.
 
+## Migración 011 — clase puntual atómica (pendiente de aplicar)
+
+Función `public.create_one_off_reservation(p_trainer_id, p_session_date,
+p_start_time, p_end_time, p_duration_minutes, p_client_name, p_client_email,
+p_client_phone, p_notes, p_price, p_status)` → `(reservation_id, window_id,
+window_reused)`. En una transacción y con `pg_advisory_xact_lock` por
+entrenador + fecha: crea (o reutiliza, solo si es manual y `blocked`) la
+ventana exacta `private`/`blocked`/`generated_by_pattern = false` y la
+reserva dentro. Sin tablas ni columnas nuevas. Solo `service_role`. Errores:
+23P01 (`reservations_no_overlap`), `one_off_window_conflict`, 22023
+`one_off_invalid_*`. Al aplicarse comprueba que el esquema admite esa
+ventana (ver cabecera de `migrations/011_one_off_reservation.sql`). La usa
+`lib/reservations/one-off.ts`; probada en `scripts/verify-one-off-db.sh`.
+
 ## `email_logs` y `whatsapp_logs`
 
 | `email_logs` | `whatsapp_logs` |
