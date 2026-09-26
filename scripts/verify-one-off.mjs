@@ -6,7 +6,7 @@
 //   1. Reglas del tramo: rejilla, duración ofrecida, mismo día, pasado (KL),
 //      un año vista, solape; el tramo arrastrado se ajusta a 30 min.
 //   2. Servidor: fuera de la disponibilidad llama a create_one_off_reservation
-//      (migrations/011: ventana EXACTA `blocked` manual + reserva en una
+//      (migrations/012: ventana EXACTA `blocked` manual + reserva en una
 //      transacción) y NO escribe tablas por su cuenta; dentro de una ventana
 //      abierta es la reserva manual de siempre. No escribe horario semanal ni
 //      excepciones. Rechaza antes de escribir (400/409) y traduce los errores

@@ -19,12 +19,12 @@ import { checkOneOffRange } from './one-off-rules'
  * NULL y `reservations.session_date` (la que usa `reservations_no_overlap`,
  * migración 008) la rellena un trigger desde la ventana. Sin ventana no hay
  * fecha ni protección de la base. Sin columnas ni tablas nuevas; solo la
- * función de la migración 011:
+ * función de la migración 012:
  *
  *   1. Si el tramo cabe entero en una ventana ABIERTA del entrenador, es una
  *      reserva manual normal en esa ventana (createManualReservation, que lo
  *      vuelve a validar todo).
- *   2. Si no, la función `create_one_off_reservation` (migrations/011) crea
+ *   2. Si no, la función `create_one_off_reservation` (migrations/012) crea
  *      —o reutiliza, si es manual y `blocked`— una ventana del tamaño EXACTO
  *      de la clase con `status = 'blocked'` y `generated_by_pattern = false`,
  *      y la reserva dentro, en UNA transacción serializada por entrenador y
@@ -35,7 +35,7 @@ import { checkOneOffRange } from './one-off-rules'
  *        - `refreshWindowStatus` no toca ventanas `blocked`.
  *        - El generador del horario semanal nunca toca filas con
  *          `generated_by_pattern = false`.
- *      Sin la 011 aplicada, 503 (no hay camino alternativo no atómico).
+ *      Sin la 012 aplicada, 503 (no hay camino alternativo no atómico).
  *
  * Validación (servidor, siempre): entrenador de la sesión (lo pasa la ruta,
  * nunca el body), duración ofrecida, rejilla de 30 min, mismo día, no pasado
@@ -120,7 +120,7 @@ export async function createOneOffReservation(trainerId: string, input: OneOffRe
   }
 
   // 2. Fuera de la disponibilidad: ventana propia, exacta y cerrada, y la
-  //    reserva dentro, en UNA transacción (migrations/011). Aviso rápido si
+  //    reserva dentro, en UNA transacción (migrations/012). Aviso rápido si
   //    ya hay otra ventana con ese rango; la función lo vuelve a decidir con
   //    la fila bloqueada.
   const exact = loaded.find((l) => l.window.start_time.slice(0, 5) === range.start_time && l.window.end_time.slice(0, 5) === range.end_time)
@@ -158,7 +158,7 @@ const WINDOW_CONFLICT_MESSAGE = 'Ya hay una ventana con ese mismo horario ese d�
 type DbError = { code?: string; message?: string; details?: string | null }
 
 /**
- * Errores de la función (ver cabecera de migrations/011). La transacción ya
+ * Errores de la función (ver cabecera de migrations/012). La transacción ya
  * se ha deshecho entera: no hay ventana ni reserva que limpiar.
  */
 export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }> {
@@ -166,12 +166,12 @@ export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }
   if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
   if (text.includes('one_off_window_conflict')) return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
   if (error.code === '22023' && text.includes('one_off_invalid')) return { ok: false, status: 400, message: 'Tramo no válido' }
-  // PGRST202: PostgREST no conoce la función (011 sin aplicar o caché sin
+  // PGRST202: PostgREST no conoce la función (012 sin aplicar o caché sin
   // recargar); 42883: Postgres no la encuentra. Falla cerrado, sin atajos no
   // atómicos.
   if (error.code === 'PGRST202' || error.code === '42883') {
-    console.error('Falta la migración 011 (create_one_off_reservation)')
-    return { ok: false, status: 503, message: 'Las clases puntuales aún no están activadas (falta la migración 011).' }
+    console.error('Falta la migración 012 (create_one_off_reservation)')
+    return { ok: false, status: 503, message: 'Las clases puntuales aún no están activadas (falta la migración 012).' }
   }
   console.error('create_one_off_reservation falló:', { code: error.code ?? null })
   return { ok: false, status: 500, message: 'No se pudo crear la reserva' }

@@ -1,7 +1,9 @@
--- 011 — Clase puntual atómica: ventana propia + reserva en UNA transacción
+-- 012 — Clase puntual atómica: ventana propia + reserva en UNA transacción
 --
--- Requiere, en este orden: 008 (reservations_no_overlap + trigger de fecha)
--- y 010 (player_count, whatsapp_opt_in).
+-- Requiere, en este orden: 008 (reservations_no_overlap + trigger de fecha),
+-- 010 (player_count, whatsapp_opt_in) y 011 (esquema compatible: columnas de
+-- cliente en reservations, availability_slot_id NOT NULL, class_type
+-- 'private', unique por rango).
 --
 -- «Crear clase puntual» (dashboard) reserva un tramo para un cliente aunque
 -- esté fuera de la disponibilidad. `reservations.availability_slot_id` es NOT
@@ -37,11 +39,11 @@
 --   P0001 'one_off_window_conflict'    → ya hay otra ventana con ese rango (409)
 --   22023 'one_off_invalid_*'          → datos no válidos (400)
 --
--- PASO 0 comprueba que el esquema desplegado admite lo que escribe la
--- función (class_type 'private', status 'blocked', columnas de la 010). El
--- esquema de migrations/001 NO lo admite (CHECK de class_type y status): si
--- este entorno viene de ahí, la migración se para con un mensaje claro en vez
--- de fallar después en cada clase puntual.
+-- PASO 0 comprueba que el esquema admite lo que escribe la función
+-- (class_type 'private', status 'blocked', columnas de la 010 y la 011). Una
+-- base creada con migrations/001 lo admite solo después de la 011; si falta,
+-- la migración se para con un mensaje claro en vez de fallar después en cada
+-- clase puntual.
 --
 -- Aplicar en Supabase → SQL Editor → Run (como postgres). Idempotente. Va en
 -- una transacción: si algo falla, no se queda nada a medias. Después:
@@ -60,24 +62,35 @@ begin
     select 1 from pg_constraint
      where conname = 'reservations_no_overlap' and conrelid = 'public.reservations'::regclass
   ) then
-    raise exception '011 requiere la 008: no existe la restricción reservations_no_overlap';
+    raise exception '012 requiere la 008: no existe la restricción reservations_no_overlap';
   end if;
   if not exists (
     select 1 from pg_trigger
      where tgname = 'reservations_set_session_date' and tgrelid = 'public.reservations'::regclass
   ) then
-    raise exception '011 requiere la 008: no existe el trigger reservations_set_session_date';
+    raise exception '012 requiere la 008: no existe el trigger reservations_set_session_date';
   end if;
   if exists (
     select 1
       from (values ('reservations', 'player_count'), ('reservations', 'whatsapp_opt_in'),
                    ('reservations', 'duration_minutes'), ('reservations', 'start_time'),
-                   ('reservations', 'end_time'), ('availability_slots', 'generated_by_pattern')) as need(tbl, col)
+                   ('reservations', 'end_time'), ('availability_slots', 'generated_by_pattern'),
+                   ('reservations', 'client_name'), ('reservations', 'client_email'),
+                   ('reservations', 'client_phone'), ('reservations', 'price')) as need(tbl, col)
      where not exists (
        select 1 from information_schema.columns c
         where c.table_schema = 'public' and c.table_name = need.tbl and c.column_name = need.col)
   ) then
-    raise exception '011 requiere la 005, 007 y 010: faltan columnas (player_count, whatsapp_opt_in, duration_minutes, start_time/end_time o generated_by_pattern)';
+    raise exception '012 requiere la 005, 007, 010 y 011: faltan columnas en reservations/availability_slots';
+  end if;
+  -- Sin esto, una reserva cuya ventana se borre se queda sin fecha y fuera de
+  -- reservations_no_overlap (008). Lo garantiza la 011.
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'reservations'
+       and column_name = 'availability_slot_id' and is_nullable = 'YES'
+  ) then
+    raise exception '012 requiere la 011: reservations.availability_slot_id admite NULL';
   end if;
 
   -- class_type = 'private' tiene que existir en la tabla a la que apunte la FK
@@ -92,7 +105,7 @@ begin
   loop
     execute format('select exists (select 1 from %s where %I = %L)', fk.ref_table, fk.ref_col, 'private') into ok;
     if not ok then
-      raise exception '011: availability_slots.class_type apunta a %.% y ahí no existe ''private''', fk.ref_table, fk.ref_col;
+      raise exception '012: availability_slots.class_type apunta a %.% y ahí no existe ''private''', fk.ref_table, fk.ref_col;
     end if;
   end loop;
 
@@ -105,14 +118,14 @@ begin
       (trainer_id, session_date, start_time, end_time, class_type, status, current_bookings, max_capacity, generated_by_pattern)
     values
       (gen_random_uuid(), date '1900-01-01', time '00:00', time '00:30', 'private', 'blocked', 0, 1, false);
-    raise exception using errcode = 'P0011', message = '011 dry run ok';
+    raise exception using errcode = 'P0011', message = '012 dry run ok';
   exception
     when sqlstate 'P0011' then
       null; -- compatible; la fila se ha deshecho
     when check_violation or not_null_violation then
-      raise exception '011: availability_slots no admite una ventana private/blocked (%). ¿Esquema de migrations/001?', sqlerrm;
+      raise exception '012: availability_slots no admite una ventana private/blocked (%). ¿Esquema de migrations/001?', sqlerrm;
     when insufficient_privilege then
-      raise warning '011: sin permiso para la prueba de CHECK (ejecutar como postgres); se sigue sin ella';
+      raise warning '012: sin permiso para la prueba de CHECK (ejecutar como postgres); se sigue sin ella';
   end;
   -- No hace falta restaurar session_replication_role: el bloque de arriba
   -- siempre termina en excepción, y eso deshace también el set_config local.
@@ -216,7 +229,7 @@ end;
 $$;
 
 comment on function public.create_one_off_reservation(uuid, date, time, time, integer, text, text, text, text, numeric, text) is
-  'Clase puntual del dashboard: ventana exacta blocked/manual + reserva en una transacción, serializada por entrenador y día. Solo service_role. Migración 011.';
+  'Clase puntual del dashboard: ventana exacta blocked/manual + reserva en una transacción, serializada por entrenador y día. Solo service_role. Migración 012.';
 
 -- Solo el servidor (service role). Nunca anon/authenticated: el entrenador
 -- lo pone la ruta desde la sesión, no quien llama.
