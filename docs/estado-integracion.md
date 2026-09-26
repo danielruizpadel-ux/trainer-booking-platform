@@ -1,6 +1,6 @@
 # Estado de integración — A1/A2 + A3.1 + UI
 
-Última actualización: 25/09/2026. Worktree: `integracion-programa`.
+Última actualización: 26/09/2026. Worktree: `integracion-programa`.
 
 ## HECHO
 
@@ -50,7 +50,75 @@
 - Integrar un proveedor real de email antes de prometer confirmaciones por email;
   `lib/notifications/notify.ts` sigue siendo un stub.
 
+## Clase puntual desde el calendario (26/09/2026)
+
+Decisiones:
+
+- **Selección de tramo** en el calendario del Resumen: arrastrar con el ratón
+  (solo `pointerType === 'mouse'`, a partir de 6 px; un clic quieto sigue
+  siendo el clic de siempre) o, en táctil, «Elegir tramo» + dos toques
+  (inicio y fin). Nunca empieza sobre una reserva (`data-reservation`). No se
+  toca `touch-action`: el dedo sigue desplazando la rejilla. Celdas de 30 min.
+  Al soltar, `RangeSelectionDialog` enseña fecha, inicio y fin **sin guardar**.
+- **«Crear clase puntual»** (acción principal): reserva ese tramo para un
+  cliente una sola vez, aunque esté fuera de la disponibilidad. Sigue en
+  «Nueva reserva» (datos del cliente, confirmada/pendiente, precio de 1
+  jugador) y guarda con `POST /api/dashboard/reservations/one-off`.
+  Si el tramo no mide una duración ofrecida, se elige una empezando a la
+  misma hora.
+- **Sin cambio de esquema.** `reservations.availability_slot_id` es NOT NULL y
+  `reservations.session_date` (la de `reservations_no_overlap`, 008) la pone
+  un trigger desde la ventana. Por eso:
+  - tramo dentro de una ventana abierta → reserva manual normal en ella;
+  - si no → ventana propia del tamaño **exacto** de la clase con
+    `status = 'blocked'` y `generated_by_pattern = false`, y la reserva
+    dentro. `blocked` es cerrada para `isSlotOpen` (la web no la ofrece ni la
+    acepta), `refreshWindowStatus` no la reabre al cancelar y el generador
+    semanal no toca filas manuales. Si la reserva falla, se borra la ventana.
+- **Validación en servidor** (`lib/reservations/one-off.ts`, reglas en
+  `one-off-rules.ts`): entrenador de la sesión (nunca `trainer_id` del
+  navegador), duración ofrecida, rejilla de 30 min, mismo día, no pasado (KL),
+  a un año vista como mucho, sin pisar reservas vivas de ninguna ventana del
+  día (falla cerrado si no puede leerlas), y la base como red final (23P01 y
+  23505 → 409).
+- **«Abrir disponibilidad»** (secundaria): enlace a `/dashboard/disponibilidad`
+  con el aviso de que ahí se cambia el horario que se repite cada semana y
+  que lo abierto se puede reservar en la web. No abre nada por sí solo ni
+  implementa disponibilidad pública excepcional de un día.
+- En el calendario, una ventana `blocked`/`cancelled` ya no se pinta con el
+  fondo blanco de «abierto» (solo se ven sus reservas).
+
+Pruebas: `scripts/verify-one-off.mjs` (código real con dobles de Supabase:
+reglas, servidor, ruta, no publicación, generador) y
+`scripts/verify-one-off-db.sh` (Postgres aislado en Docker con la 008 tal
+cual: trigger de fecha, 23P01 entre ventanas, 23505, cancelar y reutilizar).
+Navegador (desktop y iframe de 375 px, con los POST interceptados en la
+página: no se guardó ninguna reserva): arrastre, clic normal, arrastre desde
+reserva, solape, duración no ofrecida, dos toques, envío de la puntual.
+
+Límites conocidos:
+
+- El arrastre no desplaza la rejilla sola al llegar al borde; un tramo largo
+  que no se ve entero se elige con «Elegir tramo» (dos toques, con scroll en
+  medio).
+- Sin alternativa de teclado para un tramo fuera del horario: con teclado
+  sigue la rejilla de horas de los tramos libres.
+- Si más adelante el horario semanal pide exactamente el mismo rango que una
+  ventana puntual, la restricción única hace que el generador no cree la
+  suya ese día: ese rango se queda cerrado (lo ocupa la clase puntual). Si se
+  cancela esa clase, ese día no se reabre solo.
+- Una ventana puntual vacía (reserva cancelada o movida) se queda en la base
+  como `blocked`; no se ofrece a nadie y se reutiliza si se vuelve a crear la
+  misma clase.
+- La reserva puntual se crea sin `player_id` (igual que la manual); la
+  vinculación con cuentas de jugador sigue en FUTURO.
+
 ## FUTURO (no implementado)
+
+- **Disponibilidad pública excepcional de un día desde el calendario** (abrir
+  a la web solo el tramo elegido, esa fecha). Hoy «Abrir disponibilidad» solo
+  lleva al editor, sin rellenar nada; allí las excepciones por fecha que ya
+  existían sustituyen el horario de TODO ese día, no añaden un tramo.
 
 - **«Nueva reserva» vinculada a una cuenta existente.** El entrenador podrá
   buscar por nombre o email y **seleccionar explícitamente** una cuenta de
