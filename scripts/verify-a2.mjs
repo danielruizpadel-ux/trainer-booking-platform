@@ -75,6 +75,8 @@ mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () =>
 mock('lib/reservations/slots.ts', {
   OVERLAP_MESSAGE: 'Esa franja se acaba de ocupar. Elige otra hora.',
   isOverlapError: (e) => e?.code === '23P01',
+  // 015: el 23514 de reservations_within_window también es "franja no disponible".
+  isSlotConflictError: (e) => e?.code === '23P01' || (e?.code === '23514' && String(e?.message).includes('reservations_within_window')),
   lookupStatus: () => 409,
   refreshWindowStatus: async () => {},
   reservationRange: () => ({ start_time: '10:00', end_time: '11:00' }),

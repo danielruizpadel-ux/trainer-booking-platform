@@ -114,6 +114,27 @@ export function isOverlapError(
   return `${error.message ?? ''} ${error.details ?? ''}`.includes(OVERLAP_CONSTRAINT)
 }
 
+/**
+ * Migración 015: la base rechaza (23514) una reserva viva que quede fuera
+ * del horario vigente de su ventana (p. ej. porque la sincronización del
+ * horario la acortó entre la comprobación de la app y el insert).
+ */
+export const WINDOW_RANGE_CONSTRAINT = 'reservations_within_window'
+
+export function isWindowRangeError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(WINDOW_RANGE_CONSTRAINT)
+}
+
+/** "Esa franja ya no está disponible" (409): solape (008) o fuera de la ventana (015). */
+export function isSlotConflictError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  return isOverlapError(error) || isWindowRangeError(error)
+}
+
 export type WindowLookup =
   | { ok: true; window: WindowRow; range: TimeRange }
   | { ok: false; code: 'not_found' | 'forbidden' | 'taken' | 'closed' | 'db_error'; message: string }

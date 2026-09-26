@@ -7,7 +7,7 @@ import { calculateBookingPrice } from './pricing'
 import { requireBasePrice } from './trainer-prices'
 import { parseDetails, type ReservationDetailsInput } from './edit'
 import { createManualReservation, type ManualResult } from './manual'
-import { OVERLAP_MESSAGE, WINDOW_SELECT, isOverlapError, toLoadedWindow, type WindowReservation, type WindowRow } from './slots'
+import { OVERLAP_MESSAGE, WINDOW_SELECT, isSlotConflictError, toLoadedWindow, type WindowReservation, type WindowRow } from './slots'
 import { checkOneOffRange } from './one-off-rules'
 
 /**
@@ -163,7 +163,7 @@ type DbError = { code?: string; message?: string; details?: string | null }
  */
 export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }> {
   const text = `${error.message ?? ''} ${error.details ?? ''}`
-  if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  if (isSlotConflictError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
   if (text.includes('one_off_window_conflict')) return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
   if (error.code === '22023' && text.includes('one_off_invalid')) return { ok: false, status: 400, message: 'Tramo no válido' }
   // PGRST202: PostgREST no conoce la función (012 sin aplicar o caché sin

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { notifyProposalResponded, notifyRescheduleProposed } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
-import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
+import { OVERLAP_MESSAGE, isSlotConflictError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
@@ -128,7 +128,7 @@ export async function proposeReschedule(
 
   if (insertError || !proposal) {
     await restoreOriginal()
-    if (isOverlapError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+    if (isSlotConflictError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
     const missing = insertError?.code === '42703' || /rescheduled_from_id|proposal_token/.test(insertError?.message ?? '')
     return {
       ok: false,

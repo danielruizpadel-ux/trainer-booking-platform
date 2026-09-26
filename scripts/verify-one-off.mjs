@@ -218,6 +218,8 @@ test('errores de la función: se traducen y la app no intenta limpiar nada (la t
     [{ code: '42883', message: 'function create_one_off_reservation does not exist' }, 503],
     [{ code: '23502', message: 'null value in column' }, 500],
     [{ code: '23P01', message: 'otra_exclusion' }, 500],
+    [{ code: '23514', message: 'reservations_within_window: la reserva queda fuera del horario de su ventana' }, 409],
+    [{ code: '23514', message: 'new row violates check constraint "otra"' }, 500],
   ]
   for (const [rpcError, status] of cases) {
     reset({ rpcError })

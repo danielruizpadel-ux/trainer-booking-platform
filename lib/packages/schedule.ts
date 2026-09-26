@@ -1,6 +1,6 @@
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { RESERVATION_STATUS } from '@/lib/reservations/status'
-import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from '@/lib/reservations/slots'
+import { OVERLAP_MESSAGE, isSlotConflictError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from '@/lib/reservations/slots'
 import { SELECT_FOR_EDIT, cancelReservation, type EditableReservation } from '@/lib/reservations/edit'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import type { ClientPackage, PackageSessionStatus } from './status'
@@ -110,7 +110,7 @@ export async function schedulePackageSession(
     })
     .select('id')
     .single()
-  if (isOverlapError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  if (isSlotConflictError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
   if (insertError || !reservation) {
     return { ok: false, status: 500, message: insertError?.message ?? 'No se pudo crear la reserva' }
   }

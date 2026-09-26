@@ -10,7 +10,7 @@ import { findBookableWindow, loadOpenWindows } from '@/lib/availability/booking'
 import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { isClassDuration } from '@/lib/availability/durations'
 import { addMinutes, findSelectionOverlap } from '@/lib/availability/windows'
-import { isOverlapError, refreshWindowStatus } from '@/lib/reservations/slots'
+import { isSlotConflictError, refreshWindowStatus } from '@/lib/reservations/slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
@@ -247,7 +247,7 @@ export async function POST(request: Request) {
     // Otra petición se quedó la franja entre la comprobación de arriba y este
     // insert: lo rechaza la restricción de la 008. El insert es uno solo, así
     // que no se ha creado ninguna de las sesiones.
-    if (isOverlapError(insertError)) {
+    if (isSlotConflictError(insertError)) {
       console.warn('Reserva rechazada por solapamiento (23P01 reservations_no_overlap):', {
         trainerId,
         sessions: picked.map((p) => `${p.windowId} ${p.start}-${p.end}`),

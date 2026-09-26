@@ -42,10 +42,10 @@ checkre() { if [[ "$3" =~ $2 ]]; then pass "$1"; else bad "$1: no casa /$2/ con 
 
 docker exec "$NAME" psql -U postgres -qc "create database $DB" >/dev/null
 run < scripts/db/deployed-schema.sql >/dev/null
-for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan; do
+for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan 015_reservations_within_window; do
   out=$(run < migrations/$f.sql) || { bad "$f: $out"; exit 1; }
 done
-pass "esquema desplegado + 008, 011, 012, 013 y 014"
+pass "esquema desplegado + 008, 011, 012, 013, 014 y 015"
 checkre "014 se niega sin la 013" "014 requiere la 013" "$(docker exec "$NAME" psql -U postgres -qc 'create database no013' >/dev/null; docker exec -i "$NAME" psql -U postgres -d no013 -q < scripts/db/deployed-schema.sql >/dev/null 2>&1; docker exec -i "$NAME" psql -U postgres -d no013 -v ON_ERROR_STOP=1 -q < migrations/014_apply_window_plan.sql 2>&1)"
 
 T=11111111-1111-4111-8111-111111111111
@@ -183,8 +183,8 @@ check "C3 una sola ventana nueva" "1" "$(q "select count(*) from availability_sl
 
 hold "select apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W3\",\"end_time\":\"12:00\"}]}'::jsonb)" commit
 r=$(q "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W3', '$T', 'Web3', 'w@x', 'pending_confirmation', '13:00', '14:00') returning 'insertada'"); wait
-check "C4 LÍMITE: una reserva validada con el rango viejo entra tras acortar (la FK solo mira que la ventana exista)" "insertada" "$r"
-check "C4 pero lo publicado no se amplía: la ventana es 11-12" "12:00:00" "$(q "select end_time from availability_slots where id = '$W3'")"
+checkre "C4 una reserva validada con el rango viejo tras acortar: la 015 la rechaza (antes entraba)" "reservations_within_window" "$r"
+check "C4 ventana 11-12 y ninguna reserva fuera" "12:00:00|0" "$(q "select end_time from availability_slots where id = '$W3'")|$(q "select count(*) from reservations where client_name = 'Web3'")"
 
 # ─── G. El plan del generate.ts REAL, aplicado por la función real ───────────
 # Día a 3 días vista con la misma forma que A; el patrón de ese día de la
