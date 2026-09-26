@@ -53,10 +53,14 @@ export const read = (relativePath) => fs.readFileSync(path.join(root, relativePa
 
 /**
  * Supabase falso: cualquier cadena de métodos; `respond(table, ops)` decide la
- * respuesta al hacer await. `ops` = [{ op, args }] en orden.
+ * respuesta al hacer await. `ops` = [{ op, args }] en orden. Una llamada
+ * `rpc(fn, params)` llega como table = 'rpc:<fn>', ops = [{ op: 'rpc', args: [params] }].
  */
 export function fakeSupabase(respond) {
   return {
+    rpc(fn, params) {
+      return Promise.resolve().then(() => respond(`rpc:${fn}`, [{ op: 'rpc', args: [params] }]))
+    },
     from(table) {
       const ops = []
       const builder = new Proxy(

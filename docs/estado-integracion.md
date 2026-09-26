@@ -352,7 +352,8 @@ Límites:
 
 Límites:
 
-- Hay que aplicar 011 → 016 en orden antes de desplegar este código.
+- Hay que aplicar 011 → 019 en orden antes de desplegar este código (la 019
+  con su procedimiento: decisiones de la 018 hechas y escritores detenidos).
 - La 015 se para si la base real ya tiene reservas vivas fuera de su
   ventana; habrá que resolverlas a mano antes (no se toca ningún dato).
 - `FOR SHARE` en cada reserva viva que se crea o mueve: una reserva espera
@@ -368,25 +369,48 @@ Límites:
 - La reserva manual y la web pública no se han tocado en este aspecto
   (siguen diciendo «no se pudo…» ante un error que no reconocen).
 
-## Numeración de migraciones (pendiente al unir ramas)
+## Numeración de migraciones (resuelta al integrar pagos-paquetes)
 
-Esta rama: `011_schema_compat`, `012_one_off_reservation` (requiere 011) y
-`013_reservations_slot_fk_restrict`, `014_apply_window_plan` (requiere la 013), `015_reservations_within_window` y `016_availability_revision` (requiere la 014). La rama `emdash/pagos-paquetes-t3o2n`
-tiene `011_package_session_atomic_schedule.sql` (commit 44888db) y, sin
-commitear en su worktree, `012a_package_credit_preparation.sql` y
-`012b_package_credit_single_live.sql`. Ninguna de las tres toca
-`reservations.availability_slot_id` ni lo que cambian las nuestras (sus
-funciones insertan reservas con `availability_slot_id` y dependen de la
-008/010; con la 013 una ventana con reservas de paquete tampoco se puede
-borrar, que es lo deseado).
+`emdash/pagos-paquetes-t3o2n` (88595bd, con sus commits anteriores dd0e739 y
+44888db) se integró en esta rama el 26/09/2026. Sus migraciones pasan a
+números posteriores y únicos, conservando su orden:
 
-No se ha aplicado ni integrado ninguna. Al unir, hay que darles números
-únicos y un orden: las de pagos-paquetes solo requieren 004/006/007/008/010,
-así que pueden ir antes o después de las nuestras; nuestra 012 requiere
-nuestra 011, y la 013 es independiente. Los mensajes de error de cada
-migración (`'011 requiere…'`, `'012 requiere…'`) y las referencias en
-`lib/reservations/one-off.ts`, `docs/` y los `scripts/verify-*` llevan el
-número y habrá que renumerarlos a la vez.
+| Antes (pagos) | Ahora | Qué es |
+|---|---|---|
+| `011_package_session_atomic_schedule` | `017_package_session_atomic_schedule` | agendar/desagendar una sesión de paquete en una transacción (R1) |
+| `012a_package_credit_preparation` | `018_package_credit_preparation` | preparación: tabla de decisiones, corte y vistas de revisión |
+| — | *(paso manual)* | decisiones sobre datos: resolver `package_credit_backfill_report` |
+| `012b_package_credit_single_live` | `019_package_credit_single_live` | fase final con **escritores detenidos** (R2) |
+
+Orden final completo: `001 … 010` → `011_schema_compat` →
+`012_one_off_reservation` → `013_reservations_slot_fk_restrict` →
+`014_apply_window_plan` → `015_reservations_within_window` →
+`016_availability_revision` → `017_package_session_atomic_schedule` →
+`018_package_credit_preparation` → *(decisiones)* →
+`019_package_credit_single_live` (detener escritores, aplicar, desplegar,
+reabrir; ver `docs/DATABASE.md`). Las de pagos solo requieren
+004/006/007/008/010, así que van al final sin depender de las nuestras.
+
+Renumerado a la vez: cabeceras, mensajes de error (`'017 requiere la 006'`,
+`'019 requiere la 017/018'`…) y comentarios de las tres migraciones; los
+mensajes y comentarios de `lib/packages/schedule.ts`,
+`lib/reservations/proposal.ts`, `edit.ts`, `slots.ts` y
+`lib/packages/queries.ts`; la sección de paquetes de `docs/DATABASE.md`; y los
+scripts `verify-package-*`.
+
+Interacción comprobada (`scripts/verify-integration-chain-db.sh`, cadena
+001 → 019 desde vacío): las funciones de pagos ya bloquean la ventana
+`FOR SHARE` y comprueban el rango (`out_of_window`), igual que el trigger de
+la 015, que queda como red (un insert a mano fuera → 23514). Agendar o
+proponer frente a una sincronización que acorta (014/016) esperan en los dos
+órdenes y no dejan nada a medias (crédito libre u original pendiente). Al
+revivir una reserva de paquete salta antes la guardia de pagos
+(`reservations_package_no_revive`) que la de la 015 (orden alfabético de
+triggers). El plan de sincronización cierra, no borra, una ventana con
+reservas de paquete. `package_credit_integrity_check` queda sin filas que
+bloqueen. En la app, el 23514 de la 015 dentro de `schedule_package_session`
+y `propose_reschedule` se traduce a 409 (`isSlotConflictError`), junto a los
+409 propios de pagos (crédito ocupado, revivir, cuarentena).
 
 ## FUTURO (no implementado)
 

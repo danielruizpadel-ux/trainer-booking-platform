@@ -2,6 +2,7 @@ import { getPlayerSession } from '@/lib/auth/current-player'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { formatSessionLabel } from '@/lib/dateUtils'
 import { durationLabel } from '@/lib/availability/durations'
+import { formatRMEn } from '@/lib/reservations/pricing'
 import { listPlayerReservations, type PlayerReservationRow as PlayerReservation } from '@/lib/players/reservations'
 
 /*
@@ -35,6 +36,17 @@ export function statusLabel(status: string | null): string {
     default:
       return 'Estado desconocido'
   }
+}
+
+/**
+ * reservations.price tal cual está en la fila (el entrenador puede editarlo).
+ * NULL o no numérico → "Price unavailable"; nunca se rellena con el precio
+ * vigente del entrenador. No es un importe pagado ni lleva descuento/total.
+ */
+export function sessionPriceLabel(price: number | string | null | undefined): string {
+  if (price === null || price === undefined || (typeof price === 'string' && price.trim() === '')) return 'Price unavailable'
+  const amount = Number(price)
+  return Number.isFinite(amount) ? `Session price ${formatRMEn(amount)}` : 'Price unavailable'
 }
 
 export async function PlayerReservationsCard() {
@@ -72,7 +84,7 @@ function ReservationRow({ row }: { row: PlayerReservation }) {
   if (!slot || !trainer) return null
   const start = row.start_time ?? slot.start_time
   const duration = row.duration_minutes ?? Math.max(0, toMinutes(row.end_time ?? slot.end_time) - toMinutes(start))
-  return <li className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div className="min-w-0"><p className="font-semibold text-gray-900 truncate">{trainer.name}</p><p className="mt-1 text-sm text-gray-600">{formatSessionLabel(slot.session_date, start)} · {durationLabel(duration)}</p></div><span className="self-start sm:self-auto rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200">{statusLabel(row.status)}</span></li>
+  return <li className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div className="min-w-0"><p className="font-semibold text-gray-900 truncate">{trainer.name}</p><p className="mt-1 text-sm text-gray-600">{formatSessionLabel(slot.session_date, start)} · {durationLabel(duration)}</p><p className="mt-1 text-sm text-gray-500">{sessionPriceLabel(row.price)}</p></div><span className="self-start sm:self-auto rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200">{statusLabel(row.status)}</span></li>
 }
 
 function toMinutes(value: string): number {
