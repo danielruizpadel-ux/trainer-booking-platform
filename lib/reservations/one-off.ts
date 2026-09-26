@@ -18,27 +18,24 @@ import { checkOneOffRange } from './one-off-rules'
  * Por qué hace falta una ventana: `reservations.availability_slot_id` es NOT
  * NULL y `reservations.session_date` (la que usa `reservations_no_overlap`,
  * migración 008) la rellena un trigger desde la ventana. Sin ventana no hay
- * fecha ni protección de la base. No se ha tocado el esquema:
+ * fecha ni protección de la base. Sin columnas ni tablas nuevas; solo la
+ * función de la migración 011:
  *
  *   1. Si el tramo cabe entero en una ventana ABIERTA del entrenador, es una
  *      reserva manual normal en esa ventana (createManualReservation, que lo
  *      vuelve a validar todo).
- *   2. Si no, se crea una ventana propia del tamaño EXACTO de la clase con
- *      `status = 'blocked'` y `generated_by_pattern = false`, y la reserva
- *      dentro:
+ *   2. Si no, la función `create_one_off_reservation` (migrations/011) crea
+ *      —o reutiliza, si es manual y `blocked`— una ventana del tamaño EXACTO
+ *      de la clase con `status = 'blocked'` y `generated_by_pattern = false`,
+ *      y la reserva dentro, en UNA transacción serializada por entrenador y
+ *      día. Si algo falla, no queda nada: no hay limpieza que pueda fallar
+ *      ni ventana recién creada que otra petición pueda coger a medias.
  *        - `blocked` es cerrada para isSlotOpen: GET /api/availability y
  *          POST /api/reservations nunca ofrecen ni aceptan nada ahí.
- *        - `refreshWindowStatus` no toca ventanas `blocked` (no la reabre al
- *          cancelar la reserva).
+ *        - `refreshWindowStatus` no toca ventanas `blocked`.
  *        - El generador del horario semanal nunca toca filas con
- *          `generated_by_pattern = false` (ni las borra ni las reabre).
- *      Aunque se reabriera, su rango es exactamente el de la clase: no le
- *      sobraría tiempo libre mientras la reserva siga viva.
- *      Si la reserva no se puede insertar (solape en la base, error), la
- *      ventana recién creada se borra.
- *   Si ya hay una fila con ese rango exacto ese día (restricción única
- *   trainer + fecha + inicio + fin), solo se reutiliza si es una ventana
- *   manual `blocked` (p. ej. la de una clase puntual cancelada); si no, 409.
+ *          `generated_by_pattern = false`.
+ *      Sin la 011 aplicada, 503 (no hay camino alternativo no atómico).
  *
  * Validación (servidor, siempre): entrenador de la sesión (lo pasa la ruta,
  * nunca el body), duración ofrecida, rejilla de 30 min, mismo día, no pasado
@@ -122,77 +119,60 @@ export async function createOneOffReservation(trainerId: string, input: OneOffRe
     return manual.ok ? { ...manual, placement: 'window' } : manual
   }
 
-  // 2. Fuera de la disponibilidad: ventana propia, exacta y cerrada.
+  // 2. Fuera de la disponibilidad: ventana propia, exacta y cerrada, y la
+  //    reserva dentro, en UNA transacción (migrations/011). Aviso rápido si
+  //    ya hay otra ventana con ese rango; la función lo vuelve a decidir con
+  //    la fila bloqueada.
   const exact = loaded.find((l) => l.window.start_time.slice(0, 5) === range.start_time && l.window.end_time.slice(0, 5) === range.end_time)
-  let windowId: string
-  let createdWindow = false
-  if (exact) {
-    if (exact.row.generated_by_pattern !== false || (exact.window.status ?? '').toLowerCase() !== SLOT_STATUS.BLOCKED) {
-      return { ok: false, status: 409, message: 'Ya hay una ventana con ese mismo horario ese día. Elige otro tramo.' }
-    }
-    windowId = exact.window.id
-  } else {
-    const { data: created, error: windowError } = await supabase
-      .from('availability_slots')
-      .insert({
-        trainer_id: trainerId,
-        session_date: date,
-        start_time: range.start_time,
-        end_time: range.end_time,
-        class_type: 'private',
-        status: SLOT_STATUS.BLOCKED,
-        current_bookings: 1,
-        max_capacity: 1,
-        generated_by_pattern: false,
-        created_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single()
-    // 23505: otra petición acaba de crear esa misma fila (restricción única).
-    if (windowError?.code === '23505') return { ok: false, status: 409, message: OVERLAP_MESSAGE }
-    if (windowError || !created) return { ok: false, status: 500, message: windowError?.message ?? 'No se pudo crear la clase' }
-    windowId = created.id
-    createdWindow = true
+  if (exact && (exact.row.generated_by_pattern !== false || (exact.window.status ?? '').toLowerCase() !== SLOT_STATUS.BLOCKED)) {
+    return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
   }
 
   const confirmed = input.confirmed === true
   const status = confirmed ? RESERVATION_STATUS.CONFIRMED : RESERVATION_STATUS.PENDING_CONFIRMATION
-  const { data: reservation, error: insertError } = await supabase
-    .from('reservations')
-    .insert({
-      trainer_id: trainerId,
-      availability_slot_id: windowId,
-      ...parsed.updates,
-      start_time: range.start_time,
-      end_time: range.end_time,
-      duration_minutes: duration,
-      price: calculateBookingPrice(1, base.price, { durationMinutes: duration }).discountedPricePerSession,
-      player_count: 1,
-      whatsapp_opt_in: false,
-      status,
-      created_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !reservation) {
-    // Sin reserva, la ventana creada para ella sobra (y está cerrada: no se
-    // ofrecía a nadie). Solo se borra la que se creó en esta petición.
-    if (createdWindow) {
-      const { error: cleanupError } = await supabase.from('availability_slots').delete().eq('id', windowId).eq('trainer_id', trainerId)
-      if (cleanupError) console.warn('No se pudo borrar la ventana de una clase puntual fallida:', cleanupError.message)
-    }
-    if (isOverlapError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
-    return { ok: false, status: 500, message: insertError?.message ?? 'No se pudo crear la reserva' }
+  const { data: created, error: rpcError } = await supabase.rpc(ONE_OFF_FUNCTION, {
+    p_trainer_id: trainerId,
+    p_session_date: date,
+    p_start_time: range.start_time,
+    p_end_time: range.end_time,
+    p_duration_minutes: duration,
+    p_client_name: parsed.updates.client_name,
+    p_client_email: parsed.updates.client_email,
+    p_client_phone: parsed.updates.client_phone ?? null,
+    p_notes: parsed.updates.notes ?? null,
+    p_price: calculateBookingPrice(1, base.price, { durationMinutes: duration }).discountedPricePerSession,
+    p_status: status,
+  })
+  if (rpcError) return oneOffError(rpcError)
+  const row = (Array.isArray(created) ? created[0] : created) as { reservation_id?: string } | null
+  if (!row?.reservation_id) {
+    console.error('create_one_off_reservation no devolvió la reserva')
+    return { ok: false, status: 500, message: 'No se pudo crear la reserva' }
   }
+  return { ok: true, id: row.reservation_id, status, placement: 'one_off' }
+}
 
-  if (!createdWindow) {
-    const { error: countError } = await supabase
-      .from('availability_slots')
-      .update({ current_bookings: 1, updated_at: new Date().toISOString() })
-      .eq('id', windowId)
-    if (countError) console.warn('No se pudo actualizar el contador de la clase puntual:', countError.message)
+export const ONE_OFF_FUNCTION = 'create_one_off_reservation'
+const WINDOW_CONFLICT_MESSAGE = 'Ya hay una ventana con ese mismo horario ese día. Elige otro tramo.'
+
+type DbError = { code?: string; message?: string; details?: string | null }
+
+/**
+ * Errores de la función (ver cabecera de migrations/011). La transacción ya
+ * se ha deshecho entera: no hay ventana ni reserva que limpiar.
+ */
+export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }> {
+  const text = `${error.message ?? ''} ${error.details ?? ''}`
+  if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  if (text.includes('one_off_window_conflict')) return { ok: false, status: 409, message: WINDOW_CONFLICT_MESSAGE }
+  if (error.code === '22023' && text.includes('one_off_invalid')) return { ok: false, status: 400, message: 'Tramo no válido' }
+  // PGRST202: PostgREST no conoce la función (011 sin aplicar o caché sin
+  // recargar); 42883: Postgres no la encuentra. Falla cerrado, sin atajos no
+  // atómicos.
+  if (error.code === 'PGRST202' || error.code === '42883') {
+    console.error('Falta la migración 011 (create_one_off_reservation)')
+    return { ok: false, status: 503, message: 'Las clases puntuales aún no están activadas (falta la migración 011).' }
   }
-
-  return { ok: true, id: reservation.id, status, placement: 'one_off' }
+  console.error('create_one_off_reservation falló:', { code: error.code ?? null })
+  return { ok: false, status: 500, message: 'No se pudo crear la reserva' }
 }

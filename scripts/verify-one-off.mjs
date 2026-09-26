@@ -5,18 +5,19 @@
 //
 //   1. Reglas del tramo: rejilla, duración ofrecida, mismo día, pasado (KL),
 //      un año vista, solape; el tramo arrastrado se ajusta a 30 min.
-//   2. Servidor: fuera de la disponibilidad crea una ventana EXACTA y
-//      `blocked` (manual) y la reserva dentro; dentro de una ventana abierta
-//      es la reserva manual de siempre. No escribe horario semanal ni
-//      excepciones. Rechaza antes de escribir (400/409); si la base rechaza
-//      el solape (23P01) borra la ventana que acaba de crear.
+//   2. Servidor: fuera de la disponibilidad llama a create_one_off_reservation
+//      (migrations/011: ventana EXACTA `blocked` manual + reserva en una
+//      transacción) y NO escribe tablas por su cuenta; dentro de una ventana
+//      abierta es la reserva manual de siempre. No escribe horario semanal ni
+//      excepciones. Rechaza antes de escribir (400/409) y traduce los errores
+//      de la función (23P01, conflicto de ventana, función sin aplicar → 503).
 //   3. El entrenador sale de la sesión: un trainer_id en el body se ignora.
 //   4. La ventana puntual no se publica: bookableSlotsFor no ofrece nada en
 //      ella, descuenta su reserva de una ventana abierta que la solape, el
 //      generador semanal no la toca y refreshWindowStatus no la reabre.
 //
 // Código real con dobles de Supabase. Sin servidor ni base reales: no toca
-// reservas. La restricción de la base se prueba aparte en
+// reservas. La función, su atomicidad y las carreras se prueban aparte en
 // scripts/verify-one-off-db.sh (Postgres aislado en Docker).
 //
 //   node scripts/verify-one-off.mjs
@@ -38,8 +39,8 @@ const plusDays = (date, n) => {
 const DAY = plusDays(klToday, 10)
 
 const state = {}
-function reset({ rows = [], offered = [60, 90], dayReadError = null, windowInsertError = null, reservationInsertError = null } = {}) {
-  Object.assign(state, { rows, offered, dayReadError, windowInsertError, reservationInsertError, writes: [] })
+function reset({ rows = [], offered = [60, 90], dayReadError = null, rpcError = null } = {}) {
+  Object.assign(state, { rows, offered, dayReadError, rpcError, writes: [], rpcs: [] })
 }
 
 const openRow = (reservations = []) => ({
@@ -47,8 +48,16 @@ const openRow = (reservations = []) => ({
   status: 'available', current_bookings: reservations.length, max_capacity: 1, generated_by_pattern: true, reservations,
 })
 
+const withRpc = (client) =>
+  Object.assign(client, {
+    rpc: async (name, args) => {
+      state.rpcs.push({ name, args })
+      return state.rpcError ? { data: null, error: state.rpcError } : { data: [{ reservation_id: 'res-new', window_id: 'win-new', window_reused: false }], error: null }
+    },
+  })
+
 mock('lib/supabase/client.ts', {
-  getSupabaseServerClient: () =>
+  getSupabaseServerClient: () => withRpc(
     fakeSupabase((table, ops) => {
       const find = (op) => ops.find((o) => o.op === op)
       const eqValue = (column) => ops.find((o) => o.op === 'eq' && o.args[0] === column)?.args[1]
@@ -56,12 +65,7 @@ mock('lib/supabase/client.ts', {
         const write = find(op)
         if (!write) continue
         state.writes.push({ table, op, values: write.args[0], eq: ops.filter((o) => o.op === 'eq').map((o) => o.args) })
-        if (table === 'availability_slots' && op === 'insert') {
-          return state.windowInsertError ? { data: null, error: state.windowInsertError } : { data: { id: 'win-new' }, error: null }
-        }
-        if (table === 'reservations' && op === 'insert') {
-          return state.reservationInsertError ? { data: null, error: state.reservationInsertError } : { data: { id: 'res-new' }, error: null }
-        }
+        if (op === 'insert') return { data: { id: `${table}-new` }, error: null }
         return { data: null, error: null }
       }
       if (table === 'trainer_session_prices') {
@@ -73,7 +77,7 @@ mock('lib/supabase/client.ts', {
         return { data: state.rows.filter((r) => r.trainer_id === eqValue('trainer_id') && r.session_date === eqValue('session_date')), error: null }
       }
       return { data: null, error: null }
-    }),
+    })),
 })
 mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () => state.offered })
 
@@ -116,29 +120,20 @@ test('reglas: el tramo arrastrado se ajusta a celdas de 30 min en cualquier dire
 
 // ─── 2. Servidor ─────────────────────────────────────────────────────────────
 
-test('fuera de la disponibilidad: ventana exacta, blocked, manual; reserva dentro; nada del horario semanal', async () => {
+test('fuera de la disponibilidad: una sola llamada a la función atómica; la app no escribe tablas', async () => {
   reset({ rows: [openRow()] })
-  const r = await createOneOffReservation(T, input('18:00', 90, { confirmed: true }))
+  const r = await createOneOffReservation(T, input('18:00', 90, { confirmed: true, client_email: ' Ana@Example.com ' }))
   assert.deepEqual(r, { ok: true, id: 'res-new', status: 'confirmed', placement: 'one_off' })
-  const [win] = writesTo('availability_slots', 'insert')
-  assert.equal(win.values.trainer_id, T)
-  assert.equal(win.values.session_date, DAY)
-  assert.equal(win.values.start_time, '18:00')
-  assert.equal(win.values.end_time, '19:30')
-  assert.equal(win.values.status, 'blocked')
-  assert.equal(win.values.generated_by_pattern, false)
-  const [res] = writesTo('reservations', 'insert')
-  assert.equal(res.values.availability_slot_id, 'win-new')
-  assert.equal(res.values.trainer_id, T)
-  assert.equal(res.values.start_time, '18:00')
-  assert.equal(res.values.end_time, '19:30')
-  assert.equal(res.values.duration_minutes, 90)
-  assert.equal(res.values.price, 450, 'precio del servidor (1 jugador, 90 min)')
-  assert.equal(res.values.player_id, undefined, 'sin cuenta de jugador')
-  assert.equal(res.values.whatsapp_opt_in, false)
-  assert.equal(res.values.status, 'confirmed')
-  assert.equal(state.writes.length, 2, 'solo ventana + reserva')
-  assert.equal(state.writes.some((w) => /weekly|override/.test(w.table)), false)
+  assert.equal(state.writes.length, 0, 'ni insert ni delete desde la app')
+  assert.equal(state.rpcs.length, 1)
+  assert.deepEqual(state.rpcs[0], {
+    name: 'create_one_off_reservation',
+    args: {
+      p_trainer_id: T, p_session_date: DAY, p_start_time: '18:00', p_end_time: '19:30', p_duration_minutes: 90,
+      p_client_name: 'Ana Test', p_client_email: 'ana@example.com', p_client_phone: null, p_notes: null,
+      p_price: 450, p_status: 'confirmed',
+    },
+  })
 })
 
 test('sin marcar "tengo pista": nace pendiente de confirmar, como la manual', async () => {
@@ -146,6 +141,7 @@ test('sin marcar "tengo pista": nace pendiente de confirmar, como la manual', as
   const r = await createOneOffReservation(T, input('18:00', 60))
   assert.equal(r.ok, true)
   assert.equal(r.status, 'pending_confirmation')
+  assert.equal(state.rpcs[0].args.p_status, 'pending_confirmation')
 })
 
 test('dentro de una ventana abierta: reserva manual normal en esa ventana (sin ventana nueva)', async () => {
@@ -153,7 +149,7 @@ test('dentro de una ventana abierta: reserva manual normal en esa ventana (sin v
   const r = await createOneOffReservation(T, input('10:00', 90))
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.placement, 'window')
-  assert.equal(writesTo('availability_slots', 'insert').length, 0)
+  assert.equal(state.rpcs.length, 0, 'sin función: reserva manual en la ventana')
   const [res] = writesTo('reservations', 'insert')
   assert.equal(res.values.availability_slot_id, OPEN)
   assert.equal(res.values.start_time, '10:00')
@@ -164,7 +160,7 @@ test('en parte dentro y en parte fuera de una ventana abierta: clase puntual pro
   reset({ rows: [openRow()] })
   const r = await createOneOffReservation(T, input('12:30', 90))
   assert.equal(r.placement, 'one_off')
-  assert.equal(writesTo('availability_slots', 'insert')[0].values.end_time, '14:00')
+  assert.equal(state.rpcs[0].args.p_end_time, '14:00')
 })
 
 test('pisa una reserva viva de CUALQUIER ventana del día (también de una cerrada) → 409 sin escribir', async () => {
@@ -179,7 +175,7 @@ test('pisa una reserva viva de CUALQUIER ventana del día (también de una cerra
     assert.equal(r.ok, false, `${start}`)
     assert.equal(r.status, 409)
   }
-  assert.equal(state.writes.length, 0)
+  assert.equal(state.writes.length + state.rpcs.length, 0)
   // Una cancelada ya no ocupa
   blockedWithBooking.reservations[0].status = 'cancelled'
   const r = await createOneOffReservation(T, input('17:30', 90))
@@ -202,40 +198,38 @@ test('validación antes de escribir: pasado, duración no ofrecida, fuera de rej
     assert.equal(r.ok, false, why)
     assert.equal(r.status, status, why)
   }
-  assert.equal(state.writes.length, 0)
+  assert.equal(state.writes.length + state.rpcs.length, 0)
 })
 
 test('sin poder leer el día (fallo de red) no se crea nada: 500', async () => {
   reset({ dayReadError: { message: 'network' } })
   const r = await createOneOffReservation(T, input('18:00', 60))
   assert.equal(r.status, 500)
-  assert.equal(state.writes.length, 0)
+  assert.equal(state.writes.length + state.rpcs.length, 0)
 })
 
-test('la base rechaza el solape (23P01) → 409 y se borra la ventana recién creada', async () => {
-  reset({ reservationInsertError: { code: '23P01', message: 'conflicting key value violates exclusion constraint "reservations_no_overlap"' } })
-  const r = await createOneOffReservation(T, input('18:00', 60))
-  assert.equal(r.status, 409)
-  const [del] = writesTo('availability_slots', 'delete')
-  assert.ok(del, 'borra la ventana')
-  assert.deepEqual(del.eq, [['id', 'win-new'], ['trainer_id', T]])
+test('errores de la función: se traducen y la app no intenta limpiar nada (la transacción ya se deshizo)', async () => {
+  const cases = [
+    [{ code: '23P01', message: 'one_off_overlap (reservations_no_overlap)' }, 409],
+    [{ code: '23P01', message: 'conflicting key value violates exclusion constraint "reservations_no_overlap"' }, 409],
+    [{ code: 'P0001', message: 'one_off_window_conflict', details: 'duplicate key value' }, 409],
+    [{ code: '22023', message: 'one_off_invalid_range' }, 400],
+    [{ code: 'PGRST202', message: 'Could not find the function public.create_one_off_reservation' }, 503],
+    [{ code: '42883', message: 'function create_one_off_reservation does not exist' }, 503],
+    [{ code: '23502', message: 'null value in column' }, 500],
+    [{ code: '23P01', message: 'otra_exclusion' }, 500],
+  ]
+  for (const [rpcError, status] of cases) {
+    reset({ rpcError })
+    const r = await createOneOffReservation(T, input('18:00', 60))
+    assert.equal(r.ok, false, JSON.stringify(rpcError))
+    assert.equal(r.status, status, JSON.stringify(rpcError))
+    assert.equal(state.rpcs.length, 1, 'un solo intento, sin reintentos ni atajos no atómicos')
+    assert.equal(state.writes.length, 0, 'sin deletes de limpieza')
+  }
 })
 
-test('otro error al insertar la reserva → 500 y también se borra la ventana', async () => {
-  reset({ reservationInsertError: { code: '23502', message: 'null value' } })
-  const r = await createOneOffReservation(T, input('18:00', 60))
-  assert.equal(r.status, 500)
-  assert.equal(writesTo('availability_slots', 'delete').length, 1)
-})
-
-test('otra petición creó la misma ventana a la vez (23505) → 409 sin reserva', async () => {
-  reset({ windowInsertError: { code: '23505', message: 'duplicate key' } })
-  const r = await createOneOffReservation(T, input('18:00', 60))
-  assert.equal(r.status, 409)
-  assert.equal(writesTo('reservations').length, 0)
-})
-
-test('ya hay una fila con ese rango exacto: se reutiliza solo si es manual y blocked', async () => {
+test('ya hay una fila con ese rango exacto: aviso rápido si no es reutilizable; si lo es, decide la función', async () => {
   const exact = (extra) => ({
     id: 'w-exact', trainer_id: T, session_date: DAY, start_time: '18:00:00', end_time: '19:00:00', class_type: 'private',
     current_bookings: 0, max_capacity: 1, reservations: [{ id: 'old', status: 'cancelled', start_time: '18:00:00', end_time: '19:00:00' }], ...extra,
@@ -243,15 +237,14 @@ test('ya hay una fila con ese rango exacto: se reutiliza solo si es manual y blo
   reset({ rows: [exact({ status: 'blocked', generated_by_pattern: false })] })
   let r = await createOneOffReservation(T, input('18:00', 60))
   assert.equal(r.ok, true)
-  assert.equal(writesTo('availability_slots', 'insert').length, 0)
-  assert.equal(writesTo('reservations', 'insert')[0].values.availability_slot_id, 'w-exact')
-  assert.equal(writesTo('availability_slots', 'update')[0].values.status, undefined, 'no cambia su estado (sigue blocked)')
+  assert.equal(state.rpcs.length, 1)
+  assert.equal(state.writes.length, 0)
 
   for (const extra of [{ status: 'blocked', generated_by_pattern: true }, { status: 'full', generated_by_pattern: false }, { status: 'cancelled', generated_by_pattern: false }]) {
     reset({ rows: [exact(extra)] })
     r = await createOneOffReservation(T, input('18:00', 60))
     assert.equal(r.status, 409, JSON.stringify(extra))
-    assert.equal(state.writes.length, 0)
+    assert.equal(state.writes.length + state.rpcs.length, 0)
   }
 })
 
@@ -260,7 +253,7 @@ test('solo mira las ventanas del entrenador de la sesión', async () => {
   reset({ rows: [{ ...openRow(), id: 'foreign', trainer_id: OTHER }] })
   const r = await createOneOffReservation(T, input('10:00', 60))
   assert.equal(r.placement, 'one_off')
-  assert.equal(writesTo('reservations', 'insert')[0].values.trainer_id, T)
+  assert.equal(state.rpcs[0].args.p_trainer_id, T)
 })
 
 // ─── 3. Ruta ─────────────────────────────────────────────────────────────────
@@ -275,14 +268,14 @@ test('ruta: el entrenador sale de la sesión; trainer_id del body se ignora; sin
   let res = await call({ ...input('18:00', 60), trainer_id: OTHER })
   assert.equal(res.status, 200)
   assert.equal((await res.json()).placement, 'one_off')
-  assert.equal(writesTo('availability_slots', 'insert')[0].values.trainer_id, T)
-  assert.equal(writesTo('reservations', 'insert')[0].values.trainer_id, T)
+  assert.equal(state.rpcs[0].args.p_trainer_id, T)
+  assert.equal(JSON.stringify(state.rpcs).includes(OTHER), false)
 
   reset()
   session = new Response(JSON.stringify({ success: false }), { status: 401 })
   res = await call(input('18:00', 60))
   assert.equal(res.status, 401)
-  assert.equal(state.writes.length, 0)
+  assert.equal(state.writes.length + state.rpcs.length, 0)
 
   const code = read('app/api/dashboard/reservations/one-off/route.ts')
   assert.match(code, /createOneOffReservation\(trainer\.id, body\)/)
