@@ -48,3 +48,15 @@ export interface SlotPick {
 
 /** @deprecated Forma anterior a la 007; la conservan solo los tipos de importaciones antiguas. */
 export type CalendarSlot = SlotPick & { id: string }
+
+/**
+ * Tramo elegido arrastrando (o con dos toques) en el calendario del Resumen.
+ * Aún no se ha guardado nada. `taken`: reservas vivas de ese día (para avisar
+ * antes de guardar; el servidor lo vuelve a comprobar).
+ */
+export interface RangeSelection {
+  session_date: string
+  start_time: string
+  end_time: string
+  taken: TimeRange[]
+}

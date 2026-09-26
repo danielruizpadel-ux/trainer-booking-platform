@@ -351,3 +351,23 @@ test('refreshWindowStatus no reabre una ventana blocked (cancelar la clase puntu
   await refreshWindowStatus(supabase, 'w-one', [60])
   assert.deepEqual(writes, [])
 })
+
+// ─── 5. Interacción (estático; la prueba real se hizo en el navegador) ───────
+
+test('calendario: arrastre solo con ratón, nunca desde una reserva, sin bloquear el scroll táctil', () => {
+  const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  const cal = code('components/dashboard/reservations/ReservationsCalendar.tsx')
+  assert.match(cal, /event\.pointerType !== 'mouse'/)
+  assert.match(cal, /closest\('\[data-reservation\]'\)\) return/)
+  assert.equal((cal.match(/data-reservation(?![\]'])/g) ?? []).length, 2, 'los dos tipos de bloque de reserva llevan la marca')
+  assert.doesNotMatch(cal, /touch-action|touchAction|touch-none|preventDefault\(\)[^]{0,40}pointerdown/)
+  assert.match(cal, /DRAG_THRESHOLD/)
+  assert.match(cal, /aria-pressed=\{tapMode\}/)
+  const dialog = code('components/dashboard/reservations/RangeSelectionDialog.tsx')
+  assert.match(dialog, /Crear clase puntual/)
+  assert.match(dialog, /href="\/dashboard\/disponibilidad"/)
+  assert.doesNotMatch(dialog, /fetch\(/, 'el diálogo del tramo no guarda nada')
+  const create = code('components/dashboard/reservations/NewReservationDialog.tsx')
+  assert.match(create, /'\/api\/dashboard\/reservations\/one-off'/)
+  assert.doesNotMatch(create, /trainer_id/)
+})

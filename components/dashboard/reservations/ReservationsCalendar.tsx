@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getMonday, parseDateStr, toDateStr } from '@/lib/dateUtils'
-import type { CalendarData, CalendarReservation, CalendarWindow, SlotPick } from '@/lib/reservations/calendar'
-import { toMinutes, type TimeRange } from '@/lib/availability/windows'
+import type { CalendarData, CalendarReservation, CalendarWindow, RangeSelection, SlotPick } from '@/lib/reservations/calendar'
+import { fromMinutes, toMinutes, type TimeRange } from '@/lib/availability/windows'
+import { ONE_OFF_STEP, selectionFromPoints } from '@/lib/reservations/one-off-rules'
 import {
   durationsFittingAt,
   futureBookableStarts,
@@ -47,7 +48,23 @@ interface ReservationsCalendarProps {
   compact?: boolean
   /** Cambia cuando hay que recargar (p. ej. tras agendar) */
   refreshKey?: number
+  /**
+   * view: tramo elegido arrastrando con el ratón (fuera de las reservas) o,
+   * en táctil, con «Elegir tramo» y dos toques. Solo lo enseña; no guarda.
+   */
+  onSelectRange?: (selection: RangeSelection) => void
+  /** view: tramo elegido que sigue marcado (mientras su diálogo está abierto) */
+  selectedRange?: RangeSelection | null
 }
+
+interface Draft {
+  day: string
+  start: number
+  end: number
+}
+
+/** Píxeles de desplazamiento vertical antes de que un clic pase a ser arrastre. */
+const DRAG_THRESHOLD = 6
 
 const HOUR_PX = 48
 const MIN_HOUR = 8
@@ -108,6 +125,8 @@ export function ReservationsCalendar({
   initialDate,
   compact = false,
   refreshKey = 0,
+  onSelectRange,
+  selectedRange = null,
 }: ReservationsCalendarProps) {
   const today = toDateStr(new Date())
   const [anchor, setAnchor] = useState<string>(initialDate ?? today)
@@ -232,7 +251,95 @@ export function ReservationsCalendar({
   const effectiveDuration = mode === 'select' ? duration : shortestDuration(data.durations)
   // En view, un hueco libre crea una clase si quien usa el calendario lo permite.
   const canCreate = mode === 'view' && Boolean(onCreateAt)
+  const canSelectRange = mode === 'view' && Boolean(onSelectRange)
   const label = rangeLabel(days, scale)
+
+  // ── Tramo arrastrado (ratón) o elegido con dos toques ──────────────────────
+  // Arrastre: solo con ratón y solo si el puntero se mueve DRAG_THRESHOLD px;
+  // un clic quieto sigue siendo el clic de siempre (crear en un tramo libre,
+  // abrir una reserva). Nunca empieza sobre una reserva. En táctil no se
+  // intercepta el gesto (el dedo sigue desplazando la rejilla): «Elegir
+  // tramo» pasa a un modo en el que el primer toque marca el inicio y el
+  // segundo el final. Todo se ajusta a celdas de 30 min.
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [tapMode, setTapMode] = useState(false)
+  const [tapStart, setTapStart] = useState<{ day: string; minute: number } | null>(null)
+  const suppressClick = useRef(false)
+  const endDrag = useRef<(() => void) | null>(null)
+  useEffect(() => () => endDrag.current?.(), [])
+  // Al cambiar de periodo, un toque de inicio pendiente ya no está a la vista.
+  useEffect(() => setTapStart(null), [rangeStart, rangeEnd])
+
+  const minuteAt = (clientY: number, column: HTMLElement) =>
+    gridStart * 60 + ((clientY - column.getBoundingClientRect().top) / HOUR_PX) * 60
+
+  function finishSelection(day: string, start: number, end: number) {
+    const taken = (reservationsByDay.get(day) ?? []).map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
+    onSelectRange?.({ session_date: day, start_time: fromMinutes(start), end_time: fromMinutes(end), taken })
+  }
+
+  function onColumnPointerDown(day: string, event: React.PointerEvent<HTMLDivElement>) {
+    suppressClick.current = false
+    if (!canSelectRange || tapMode || event.pointerType !== 'mouse' || event.button !== 0) return
+    if ((event.target as Element).closest('[data-reservation]')) return
+    const column = event.currentTarget
+    const origin = minuteAt(event.clientY, column)
+    const startY = event.clientY
+    let active = false
+    const selectionAt = (clientY: number) => selectionFromPoints(origin, minuteAt(clientY, column), gridStart * 60, gridEnd * 60)
+    const onMove = (e: PointerEvent) => {
+      if (!active && Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return
+      active = true
+      setDraft({ day, ...selectionAt(e.clientY) })
+    }
+    const onUp = (e: PointerEvent) => {
+      cleanup()
+      setDraft(null)
+      if (!active) return
+      // El clic que sigue a soltar no debe crear una clase ni abrir nada.
+      suppressClick.current = true
+      const sel = selectionAt(e.clientY)
+      finishSelection(day, sel.start, sel.end)
+    }
+    const onCancel = () => {
+      cleanup()
+      setDraft(null)
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      endDrag.current = null
+    }
+    endDrag.current?.()
+    endDrag.current = cleanup
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
+  function onColumnClickCapture(day: string, event: React.MouseEvent<HTMLDivElement>) {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    // Modo toques: las reservas siguen abriéndose; el teclado (detail 0) también va como siempre.
+    if (!tapMode || event.detail === 0 || (event.target as Element).closest('[data-reservation]')) return
+    event.preventDefault()
+    event.stopPropagation()
+    // Centro de la celda de 30 min tocada: así el tramo incluye esa celda en las dos direcciones.
+    const minute = Math.floor(minuteAt(event.clientY, event.currentTarget) / ONE_OFF_STEP) * ONE_OFF_STEP + ONE_OFF_STEP / 2
+    if (!tapStart || tapStart.day !== day) {
+      setTapStart({ day, minute })
+      return
+    }
+    const sel = selectionFromPoints(tapStart.minute, minute, gridStart * 60, gridEnd * 60)
+    setTapStart(null)
+    setTapMode(false)
+    finishSelection(day, sel.start, sel.end)
+  }
 
   function createAt(w: CalendarWindow, start: string) {
     const taken = (reservationsByDay.get(w.session_date) ?? []).map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
@@ -302,6 +409,24 @@ export function ReservationsCalendar({
         </div>
 
         <div className="flex items-center gap-2">
+          {canSelectRange && (
+            <button
+              type="button"
+              aria-pressed={tapMode}
+              onClick={() => {
+                setTapMode((on) => !on)
+                setTapStart(null)
+              }}
+              className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                tapMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v4M12 17v4M5 10h14M5 14h14" />
+              </svg>
+              {tapMode ? 'Cancelar tramo' : 'Elegir tramo'}
+            </button>
+          )}
           {!compact && <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
             {(['day', 'week'] as Scale[]).map((value) => (
               <button
@@ -323,6 +448,14 @@ export function ReservationsCalendar({
       {error && (
         <p role="alert" className="text-sm text-red-600">
           {error}
+        </p>
+      )}
+
+      {tapMode && (
+        <p aria-live="polite" className="-mt-1 text-sm text-blue-700">
+          {tapStart
+            ? `Inicio: ${fromMinutes(tapStart.minute - ONE_OFF_STEP / 2)}. Toca dónde termina (en el mismo día).`
+            : 'Toca en el calendario la hora de inicio del tramo.'}
         </p>
       )}
 
@@ -369,7 +502,9 @@ export function ReservationsCalendar({
             {days.map((day) => (
               <div
                 key={day}
-                className="relative border-l border-gray-100"
+                className={`relative border-l border-gray-100 ${canSelectRange ? 'select-none' : ''}`}
+                onPointerDown={canSelectRange ? (event) => onColumnPointerDown(day, event) : undefined}
+                onClickCapture={canSelectRange ? (event) => onColumnClickCapture(day, event) : undefined}
                 style={{
                   height: bodyHeight,
                   // "Sin abrir": fondo rayado; las líneas horizontales marcan las horas
@@ -415,6 +550,13 @@ export function ReservationsCalendar({
                     onHideSummary={hideSummary}
                   />
                 ))}
+                {draft?.day === day && <SelectionBox start={draft.start} end={draft.end} gridStart={gridStart} />}
+                {!draft && selectedRange?.session_date === day && (
+                  <SelectionBox start={toMinutes(selectedRange.start_time)} end={toMinutes(selectedRange.end_time)} gridStart={gridStart} />
+                )}
+                {tapMode && tapStart?.day === day && (
+                  <SelectionBox start={tapStart.minute - ONE_OFF_STEP / 2} end={tapStart.minute + ONE_OFF_STEP / 2} gridStart={gridStart} label="Inicio" />
+                )}
               </div>
             ))}
           </div>
@@ -422,6 +564,11 @@ export function ReservationsCalendar({
       </div>
 
       <Legend mode={mode} canCreate={canCreate} />
+      {canSelectRange && (
+        <p className="-mt-2 text-xs text-gray-500">
+          Para un tramo fuera de tu horario, arrástralo con el ratón o usa «Elegir tramo». No se guarda nada hasta que lo confirmes.
+        </p>
+      )}
 
       {summary && (
         <ReservationSummaryCard
@@ -456,6 +603,22 @@ export function ReservationsCalendar({
           onClose={() => setOpenPicker(null)}
         />
       )}
+    </div>
+  )
+}
+
+const CLOSED_BY_HAND = new Set(['blocked', 'cancelled', 'canceled'])
+
+/** Tramo que se está arrastrando o ya elegido (solo visual; no recibe el puntero). */
+function SelectionBox({ start, end, gridStart, label }: { start: number; end: number; gridStart: number; label?: string }) {
+  const range = { start_time: fromMinutes(start), end_time: fromMinutes(end) }
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-x-1 z-[2] rounded-lg border-2 border-blue-600 bg-blue-600/10 px-2 py-1 text-xs font-semibold leading-tight text-blue-800 tabular-nums"
+      style={{ top: topOf(range.start_time, gridStart) + 1, height: heightOf(range) }}
+    >
+      {label ? `${label} ${range.start_time}` : `${range.start_time} – ${range.end_time}`}
     </div>
   )
 }
@@ -511,12 +674,16 @@ function WindowBlock({
 
   return (
     <>
-      {/* Fondo "abierto" de la ventana entera */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 bg-white/80"
-        style={{ top: topOf(w.start_time, gridStart), height: heightOf(w) + 2 }}
-      />
+      {/* Fondo "abierto" de la ventana entera. Una cerrada a mano (día apagado,
+          clase puntual) no es horario abierto: se queda el fondo de "sin abrir"
+          y solo se ven sus reservas. */}
+      {!CLOSED_BY_HAND.has((w.status ?? '').toLowerCase()) && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bg-white/80"
+          style={{ top: topOf(w.start_time, gridStart), height: heightOf(w) + 2 }}
+        />
+      )}
       {w.free.map((range) => {
         const style = { top: topOf(range.start_time, gridStart) + 1, height: heightOf(range) }
         const time = `${range.start_time} – ${range.end_time}`
@@ -685,7 +852,7 @@ function ReservationBlock({
 
   if (!clickable) {
     return (
-      <div style={style} className={`${BLOCK_BASE} ${classes}`} title={`${r.client_name} · ${range} · ${status}`}>
+      <div data-reservation style={style} className={`${BLOCK_BASE} ${classes}`} title={`${r.client_name} · ${range} · ${status}`}>
         {content}
       </div>
     )
@@ -694,6 +861,7 @@ function ReservationBlock({
   return (
     <button
       type="button"
+      data-reservation
       style={style}
       className={`${BLOCK_BASE} ${classes}`}
       aria-expanded={pinned || undefined}

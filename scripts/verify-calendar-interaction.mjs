@@ -122,7 +122,8 @@ test('calendario: usa las reglas compartidas y el Resumen abre "Nueva reserva" p
   assert.match(home, /onCreateAt=\{\(pick, fitting\) => setCreating\(\{ pick, fitting \}\)\}/)
   assert.match(home, /initialSlot=\{creating\.pick\}/)
   const dialog = code('components/dashboard/reservations/NewReservationDialog.tsx')
-  assert.match(dialog, /useState<'slot' \| 'client'>\(initialSlot \? 'client' : 'slot'\)/)
+  // Precargada (clic en un libre) o clase puntual (tramo arrastrado): directo a los datos del cliente.
+  assert.match(dialog, /useState<'slot' \| 'client'>\(initialSlot \|\| oneOff \? 'client' : 'slot'\)/)
   assert.match(dialog, /initialSlot\?\.duration_minutes/)
 })
 

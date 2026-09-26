@@ -31,17 +31,27 @@ interface NewReservationDialogProps {
   initialDurations?: number[]
   /** Tras crear la reserva (p. ej. para recargar el calendario que la abrió) */
   onCreated?: () => void
+  /**
+   * Clase puntual (tramo arrastrado en el Resumen): fecha, hora y duración ya
+   * fijadas, puede estar fuera del horario. Sin selector de hueco ni de
+   * duración; se guarda con POST /api/dashboard/reservations/one-off.
+   */
+  oneOff?: { session_date: string; start_time: string; duration_minutes: number } | null
 }
 
 /**
  * "Nueva reserva" (Parte 4): hueco libre → datos del cliente → ¿ya tengo la
  * pista? Crea `confirmed` o `pending_confirmation` vía POST /api/dashboard/reservations.
  */
-export function NewReservationDialog({ durations, onClose, initialSlot = null, initialDurations, onCreated }: NewReservationDialogProps) {
+export function NewReservationDialog({ durations, onClose, initialSlot = null, initialDurations, onCreated, oneOff = null }: NewReservationDialogProps) {
   const router = useRouter()
-  const [step, setStep] = useState<'slot' | 'client'>(initialSlot ? 'client' : 'slot')
-  const [duration, setDuration] = useState<number>(initialSlot?.duration_minutes ?? durations[0] ?? 60)
-  const [slot, setSlot] = useState<SlotPick | null>(initialSlot)
+  const [step, setStep] = useState<'slot' | 'client'>(initialSlot || oneOff ? 'client' : 'slot')
+  const [duration, setDuration] = useState<number>(oneOff?.duration_minutes ?? initialSlot?.duration_minutes ?? durations[0] ?? 60)
+  const [slot, setSlot] = useState<SlotPick | null>(
+    oneOff
+      ? { window_id: '', session_date: oneOff.session_date, start_time: oneOff.start_time, end_time: addMinutes(oneOff.start_time, oneOff.duration_minutes), duration_minutes: oneOff.duration_minutes }
+      : initialSlot
+  )
   // ¿La franja es la precargada? Solo entonces se elige la duración aquí;
   // elegida en el calendario del paso 1, la duración ya va con ella.
   const [preloaded, setPreloaded] = useState(Boolean(initialSlot))
@@ -56,11 +66,18 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
     setSending(true)
     setError(null)
     try {
-      const response = await fetch('/api/dashboard/reservations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slot_id: slot.window_id, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
-      })
+      // La puntual no lleva ventana: la decide el servidor (ver lib/reservations/one-off.ts).
+      const response = oneOff
+        ? await fetch('/api/dashboard/reservations/one-off', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_date: slot.session_date, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
+          })
+        : await fetch('/api/dashboard/reservations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slot_id: slot.window_id, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
+          })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo crear la reserva')
       router.refresh()
@@ -81,9 +98,15 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
 
   return (
     <DialogShell
-      eyebrow="Nueva reserva"
+      eyebrow={oneOff ? 'Clase puntual' : 'Nueva reserva'}
       title={step === 'slot' ? 'Elige una franja libre' : 'Datos del cliente'}
-      description={step === 'slot' ? 'Solo tu disponibilidad abierta. Toca una hora de inicio.' : slotLabel ?? undefined}
+      description={
+        step === 'slot'
+          ? 'Solo tu disponibilidad abierta. Toca una hora de inicio.'
+          : oneOff && slotLabel
+            ? `${slotLabel}. Solo esta vez: no cambia tu disponibilidad.`
+            : (slotLabel ?? undefined)
+      }
       onClose={onClose}
       locked={sending}
       footer={
@@ -97,9 +120,13 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
           </>
         ) : (
           <>
-            <button type="button" onClick={() => setStep('slot')} disabled={sending} className="h-11 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors self-start">
-              ← Cambiar hueco
-            </button>
+            {oneOff ? (
+              <span className="hidden sm:block" />
+            ) : (
+              <button type="button" onClick={() => setStep('slot')} disabled={sending} className="h-11 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors self-start">
+                ← Cambiar hueco
+              </button>
+            )}
             <div className="flex gap-2">
               <button type="button" onClick={onClose} disabled={sending} className={dialogButton.secondary}>Cancelar</button>
               <button
@@ -139,7 +166,7 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {preloaded && slot && durations.length > 1 && (
+          {!oneOff && preloaded && slot && durations.length > 1 && (
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-gray-900">Duración</span>
               <DurationPicker
