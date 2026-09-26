@@ -25,6 +25,8 @@ export const SLOT_STATUS = {
   PENDING: 'pending',
   /** Sin ningún inicio libre para la duración mínima que ofrece el entrenador */
   FULL: 'full',
+  /** Cerrada a mano: día apagado con reserva dentro (generate.ts) o ventana de una clase puntual (one-off.ts) */
+  BLOCKED: 'blocked',
 } as const
 
 /**
