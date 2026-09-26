@@ -114,6 +114,57 @@ export function isOverlapError(
   return `${error.message ?? ''} ${error.details ?? ''}`.includes(OVERLAP_CONSTRAINT)
 }
 
+/**
+ * Un crédito de paquete respalda como mucho una reserva viva (migración 012b,
+ * índice único parcial). Su 23505 es "esa sesión de paquete ya tiene otra
+ * reserva activa" (409), no un fallo del servidor.
+ */
+export const CREDIT_TAKEN_MESSAGE = 'Esta sesión de paquete ya tiene otra reserva activa'
+
+export const CREDIT_CONSTRAINT = 'reservations_one_live_per_package_session'
+
+export function isCreditTakenError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23505') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(CREDIT_CONSTRAINT)
+}
+
+/**
+ * Una reserva de paquete cancelada o sin pista no se reactiva (migración 012b,
+ * trigger reservations_package_no_revive): el crédito se vuelve a usar
+ * agendando desde el paquete. Lo lanza moveReservation al "revivirla".
+ */
+export const PACKAGE_REVIVE_MESSAGE =
+  'Esta reserva de paquete ya no ocupa su sesión. Agenda la sesión de nuevo desde el paquete.'
+
+export const PACKAGE_REVIVE_GUARD = 'reservations_package_no_revive'
+
+export function isPackageReviveError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(PACKAGE_REVIVE_GUARD)
+}
+
+/**
+ * Reserva anterior a la migración 012b, muerta, que podría haber sido de un
+ * paquete y nadie ha clasificado todavía: está en cuarentena y no se
+ * reactiva (trigger reservations_legacy_quarantine) hasta clasificarla con
+ * classify_legacy_reservation desde el SQL Editor.
+ */
+export const LEGACY_UNCLASSIFIED_MESSAGE =
+  'Esta reserva es anterior al control de paquetes y falta comprobar si era de un paquete. Hasta entonces no se puede reactivar; crea una reserva nueva o pide que la clasifiquen.'
+
+export const LEGACY_UNCLASSIFIED_GUARD = 'reservations_legacy_unclassified'
+
+export function isLegacyUnclassifiedError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(LEGACY_UNCLASSIFIED_GUARD)
+}
+
 export type WindowLookup =
   | { ok: true; window: WindowRow; range: TimeRange }
   | { ok: false; code: 'not_found' | 'forbidden' | 'taken' | 'closed' | 'db_error'; message: string }

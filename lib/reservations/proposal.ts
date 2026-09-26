@@ -2,7 +2,16 @@ import { randomBytes } from 'node:crypto'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { notifyProposalResponded, notifyRescheduleProposed } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isAwaitingConfirmation, isRescheduleProposed } from './status'
-import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus, reservationRange } from './slots'
+import {
+  CREDIT_TAKEN_MESSAGE,
+  OVERLAP_MESSAGE,
+  isCreditTakenError,
+  isOverlapError,
+  loadOwnedOpenWindow,
+  lookupStatus,
+  refreshWindowStatus,
+  reservationRange,
+} from './slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
@@ -10,7 +19,10 @@ import { isPastMalaysiaSession } from '@/lib/dateUtils'
  *
  *   proposeReschedule   entrenador: reserva ORIGINAL pending_confirmation → needs_reschedule
  *                       (hueco liberado) + reserva NUEVA reschedule_proposed sobre el hueco
- *                       elegido (hueco → pending), con token de un solo uso.
+ *                       elegido (hueco → pending), con token de un solo uso. Todo en una
+ *                       transacción (propose_reschedule, migración 012b); si la original es
+ *                       de un paquete, la propuesta hereda su crédito y el crédito pasa a
+ *                       apuntar a ella: un crédito respalda como mucho una reserva viva.
  *   respondToProposal   cliente, sin login, desde /propuesta/[token]:
  *                       acepta → pending_confirmation · elige otra → needs_reschedule (hueco liberado)
  */
@@ -69,75 +81,42 @@ export async function proposeReschedule(
   }
 
   const token = randomBytes(24).toString('base64url')
-  const now = new Date().toISOString()
 
-  // Primero se libera la original y DESPUÉS se inserta la propuesta. Al revés,
-  // la restricción reservations_no_overlap (migración 008) rechazaría toda
-  // propuesta que solape con la original mientras esta sigue viva (p. ej. la
-  // misma ventana media hora más tarde), aunque la app la haya dado por buena
-  // con ignoreReservationId.
-  const { data: released, error: originalError } = await supabase
-    .from('reservations')
-    .update({ status: RESERVATION_STATUS.NEEDS_RESCHEDULE, updated_at: now })
-    .eq('id', original.id)
-    .in('status', [RESERVATION_STATUS.PENDING_CONFIRMATION, 'pending'])
-    .select('id')
-  if (originalError) return { ok: false, status: 500, message: originalError.message }
-  if (!released || released.length === 0) {
-    return { ok: false, status: 409, message: 'Solo se puede proponer otra fecha sobre una reserva pendiente' }
-  }
-
-  // Si la propuesta no se crea, la original vuelve a como estaba. Si entre
-  // tanto alguien ha cogido su franja, la restricción impide devolverla y se
-  // queda en needs_reschedule, que es lo que refleja la realidad.
-  const restoreOriginal = async () => {
-    const { error } = await supabase
-      .from('reservations')
-      .update({ status: original.status, updated_at: new Date().toISOString() })
-      .eq('id', original.id)
-      .eq('status', RESERVATION_STATUS.NEEDS_RESCHEDULE)
-    if (error) console.warn('No se pudo devolver la reserva original a su estado:', error.message)
-  }
-
-  const { data: proposal, error: insertError } = await supabase
-    .from('reservations')
-    .insert({
-      trainer_id: original.trainer_id,
-      availability_slot_id: slotId,
-      client_name: original.client_name,
-      client_email: original.client_email,
-      client_phone: original.client_phone,
-      notes: original.notes,
-      price: original.price,
-      // La propuesta es una fila NUEVA: hereda identidad y datos del checkout
-      // para no perder la atribución (migración 010).
-      player_id: original.player_id ?? null,
-      client_message: original.client_message ?? null,
-      player_count: original.player_count ?? 1,
-      whatsapp_opt_in: original.whatsapp_opt_in ?? null,
-      start_time: lookup.range.start_time,
-      end_time: lookup.range.end_time,
-      duration_minutes: duration,
-      status: RESERVATION_STATUS.RESCHEDULE_PROPOSED,
-      rescheduled_from_id: original.id,
-      proposal_token: token,
-      created_at: now,
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !proposal) {
-    await restoreOriginal()
-    if (isOverlapError(insertError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
-    const missing = insertError?.code === '42703' || /rescheduled_from_id|proposal_token/.test(insertError?.message ?? '')
+  // Liberar la original, crear la propuesta y, si la original es de un
+  // paquete, pasarle el crédito, en UNA transacción (propose_reschedule,
+  // migración 012b). Antes eran escrituras sueltas: si la propuesta fallaba se
+  // intentaba "restaurar" la original con otra escritura, y entre medias el
+  // crédito parecía libre y se podía agendar una tercera reserva (R2). Las
+  // comprobaciones de arriba solo sirven para responder pronto; la función
+  // las repite con la fila bloqueada.
+  const { data, error: rpcError } = await supabase.rpc('propose_reschedule', {
+    p_original_id: original.id,
+    p_trainer_id: original.trainer_id,
+    p_slot_id: slotId,
+    p_start_time: lookup.range.start_time,
+    p_token: token,
+  })
+  if (isOverlapError(rpcError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  if (isCreditTakenError(rpcError)) return { ok: false, status: 409, message: CREDIT_TAKEN_MESSAGE }
+  if (rpcError) {
+    const text = rpcError.message ?? ''
+    const missing =
+      rpcError.code === 'PGRST202' ||
+      rpcError.code === '42883' ||
+      (text.includes('propose_reschedule') && /could not find the function|does not exist|schema cache/i.test(text))
     return {
       ok: false,
       status: 500,
-      message: missing
-        ? 'Falta aplicar migrations/004_reschedule_proposals.sql en Supabase'
-        : `No se pudo crear la propuesta: ${insertError?.message}`,
+      message: missing ? 'Falta aplicar migrations/012b_package_credit_single_live.sql en Supabase' : `No se pudo crear la propuesta: ${text}`,
     }
   }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; proposal_id?: string | null } | null
+  const failure = row?.outcome ? PROPOSE_FAILURES[row.outcome] : undefined
+  if (failure) return { ok: false, ...failure }
+  if (row?.outcome !== 'proposed' || !row.proposal_id) {
+    return { ok: false, status: 500, message: 'No se pudo crear la propuesta' }
+  }
+  const proposal = { id: row.proposal_id }
 
   await refreshWindowStatus(supabase, original.availability_slot_id)
   if (slotId !== original.availability_slot_id) await refreshWindowStatus(supabase, slotId)
@@ -153,6 +132,18 @@ export async function proposeReschedule(
   )
 
   return { ok: true, proposalId: proposal.id, token }
+}
+
+/** Resultados de propose_reschedule (migración 012b) que no son éxito. */
+const PROPOSE_FAILURES: Record<string, { status: number; message: string }> = {
+  not_found: { status: 404, message: 'Reserva o hueco no encontrado' },
+  forbidden: { status: 403, message: 'Esta reserva no es tuya' },
+  not_pending: { status: 409, message: 'Solo se puede proponer otra fecha sobre una reserva pendiente' },
+  same_range: { status: 400, message: 'Elige una franja distinta de la actual' },
+  window_closed: { status: 409, message: 'Esa ventana está cerrada' },
+  out_of_window: { status: 409, message: 'Esa franja ya no está libre' },
+  past: { status: 400, message: 'No se puede proponer una fecha pasada' },
+  invalid: { status: 400, message: 'Hora no válida' },
 }
 
 export interface PublicProposal {

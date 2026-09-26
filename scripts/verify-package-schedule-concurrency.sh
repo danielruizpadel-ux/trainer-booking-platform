@@ -26,6 +26,7 @@
 # no arranca hasta que A está de verdad dentro de su pg_sleep (con el bloqueo).
 #
 #   bash scripts/verify-package-schedule-concurrency.sh
+#   WITH_012=1 bash scripts/verify-package-schedule-concurrency.sh   # igual, con la 012 aplicada encima
 set -u
 cd "$(dirname "$0")/.."
 C=r1-pkg-pg-verify
@@ -75,6 +76,14 @@ psqlc -c "alter table public.reservations add column proposal_token text" || exi
 psqlc < migrations/011_package_session_atomic_schedule.sql || exit 1
 psqlc < migrations/011_package_session_atomic_schedule.sql || { echo "011 no es idempotente"; exit 1; }
 check "aplicada dos veces: 2 funciones" "$(q "select count(*) from pg_proc where proname in ('schedule_package_session','unschedule_package_session')")" "2"
+# WITH_012=1: repite TODO lo de abajo con las versiones de la 012 (R2), que
+# sustituyen a las de la 011 y tienen que conservar sus garantías.
+if [ "${WITH_012:-0}" = 1 ]; then
+  psqlc -c "alter table public.reservations add column rescheduled_from_id uuid references public.reservations(id) on delete set null" || exit 1  # 004
+  psqlc < migrations/012a_package_credit_preparation.sql || exit 1
+  psqlc < migrations/012b_package_credit_single_live.sql || exit 1
+  check "WITH_012: propose_reschedule existe" "$(q "select count(*) from pg_proc where proname = 'propose_reschedule'")" "1"
+fi
 
 T=11111111-1111-4111-8111-111111111111
 T2=22222222-2222-4222-8222-222222222222

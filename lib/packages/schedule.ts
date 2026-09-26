@@ -1,6 +1,14 @@
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { RESERVATION_STATUS } from '@/lib/reservations/status'
-import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from '@/lib/reservations/slots'
+import {
+  CREDIT_TAKEN_MESSAGE,
+  OVERLAP_MESSAGE,
+  isCreditTakenError,
+  isOverlapError,
+  loadOwnedOpenWindow,
+  lookupStatus,
+  refreshWindowStatus,
+} from '@/lib/reservations/slots'
 import { SELECT_FOR_EDIT, afterReservationCancelled, type EditableReservation } from '@/lib/reservations/edit'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import type { ClientPackage, PackageSessionStatus } from './status'
@@ -106,6 +114,9 @@ export async function schedulePackageSession(
     p_status: status,
   })
   if (isOverlapError(rpcError)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  // Migración 012b: el crédito ya respalda otra reserva viva (p. ej. una
+  // propuesta que se coló entre la comprobación y el insert).
+  if (isCreditTakenError(rpcError)) return { ok: false, status: 409, message: CREDIT_TAKEN_MESSAGE }
   if (rpcError) return rpcErrorResult(rpcError, 'schedule_package_session')
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; reservation_id?: string | null } | null
   const failure = row?.outcome ? SCHEDULE_FAILURES[row.outcome] : undefined

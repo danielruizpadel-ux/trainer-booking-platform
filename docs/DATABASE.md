@@ -61,6 +61,7 @@ No existen: `is_available`, `is_booked`, `price`.
 | `rescheduled_from_id` | uuid | **migración 004**: reserva original de una propuesta de nueva fecha |
 | `proposal_token` | text | **migración 004**: token del enlace público `/propuesta/[token]`; NULL al responder |
 | `notes` | text | notas internas del entrenador. Antes de la 010 el widget guardaba aquí "WhatsApp: si/no" (solo se lee en reservas antiguas) |
+| `package_session_id` | uuid | **migración 012b (pendiente de aplicar)**: crédito de paquete que respalda la reserva (la creada al agendar y sus propuestas, que lo heredan). FK a `package_sessions(id)` ON DELETE RESTRICT (un paquete con reservas no se borra: se cancela con `status = 'cancelled'`, y sus reservas conservan el crédito): los embeds `package_sessions → reservations` necesitan la pista `reservations!reservation_id` (sin ella, PGRST201). Índice único parcial `reservations_one_live_per_package_session`: como mucho una reserva viva por crédito (23505 → 409). Una reserva de paquete cancelada o sin pista no se reactiva (trigger `reservations_package_no_revive`, 23514 → 409) |
 | `created_at`, `updated_at` | timestamptz | |
 
 **Restricción `reservations_no_overlap` (migración 008, pendiente de aplicar):**
@@ -123,6 +124,40 @@ del paquete y la enlaza. Desagendar comprueba que el crédito sigue enlazado a
 la reserva que vio la app, la cancela si está viva y devuelve el crédito.
 Solo las ejecuta `service_role`; las llama `lib/packages/schedule.ts`. No
 insertar, cancelar ni desenganchar la reserva de un paquete por otro camino.
+
+**Un crédito respalda como mucho una reserva viva (migraciones 012a + 012b,
+pendientes de aplicar):** toda reserva nacida de un crédito lleva
+`reservations.package_session_id`, también las propuestas de otra fecha, y
+un índice único parcial impide dos vivas por crédito en cualquier camino.
+Proponer otra fecha es la función `propose_reschedule` (una transacción, para
+todas las reservas): la original pasa a `needs_reschedule`, la propuesta
+hereda el crédito y el crédito pasa a apuntar a ella. El crédito solo queda
+libre cuando no le queda ninguna reserva viva (propuesta rechazada o
+cancelada, o "sin pista" sin propuesta), y una reserva de paquete que ha
+dejado de estar viva no se reactiva al moverla: se agenda de nuevo desde el
+paquete. Antes de la 012b, la 012a crea `package_credit_resolutions` y la
+vista `package_credit_backfill_report`. El conjunto a revisar es
+estructural, no depende de `notes` ni del email (que son editables): toda
+reserva sin evidencia de un entrenador con paquetes, creada entre su primer
+paquete y la 012b. Las vivas se deciden a mano antes de la 012b (su crédito,
+o "no es de paquete"); las muertas quedan en cuarentena
+(`package_credit_quarantine`): no se pueden reactivar hasta clasificarlas con
+`classify_legacy_reservation`. Nunca se asigna un crédito por suposición; si
+hay varios candidatos, elegir exige evidencia externa (pago, conversación,
+agenda). Un paquete con reservas no se borra (FK RESTRICT): se cancela.
+
+**Aplicar la 012b (procedimiento obligatorio):** 011 y 012a aplicadas y
+decisiones hechas → **detener los escritores** (mantenimiento) → 012b →
+desplegar el código de R2 → reabrir → comprobar
+`select * from package_credit_integrity_check where bloquea` (vacío). La 012b
+toma `LOCK TABLE ... IN EXCLUSIVE MODE` con `lock_timeout`: si hay
+escritores, aborta sin cambiar nada. Además, dos triggers dan el crédito a
+las reservas que cree el código antiguo durante la transición (enlace de la
+011 y propuestas de antes de R2), y esa vista marca lo que no deba existir.
+Detener los escritores sigue siendo obligatorio: cubre escritores que la
+migración no conoce. `decided_by`/`reason` de las decisiones son un registro
+de auditoría: la base solo comprueba que no estén vacíos, no que la
+evidencia sea cierta.
 
 ## `trainer_weekly_hours` y `trainer_availability_overrides` (migración 005)
 

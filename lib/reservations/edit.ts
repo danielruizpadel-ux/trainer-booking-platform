@@ -2,7 +2,19 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { notifyReservationCancelled, notifyReservationMoved } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isRescheduleProposed } from './status'
-import { OVERLAP_MESSAGE, isOverlapError, loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import {
+  CREDIT_TAKEN_MESSAGE,
+  LEGACY_UNCLASSIFIED_MESSAGE,
+  OVERLAP_MESSAGE,
+  PACKAGE_REVIVE_MESSAGE,
+  isCreditTakenError,
+  isLegacyUnclassifiedError,
+  isOverlapError,
+  isPackageReviveError,
+  loadOwnedOpenWindow,
+  lookupStatus,
+  refreshWindowStatus,
+} from './slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
@@ -135,6 +147,14 @@ export async function moveReservation(
     })
     .eq('id', reservation.id)
   if (isOverlapError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  // Mover una reserva que no ocupaba hueco la revive (pending_confirmation).
+  // En una reserva de paquete no se permite (migración 012b): el crédito se
+  // vuelve a usar agendando desde el paquete. El 23505 del índice queda como
+  // red por si una reserva de paquete llegara a revivir por otro camino.
+  if (isPackageReviveError(error)) return { ok: false, status: 409, message: PACKAGE_REVIVE_MESSAGE }
+  // Reserva anterior a la 012b en cuarentena (podría haber sido de un paquete).
+  if (isLegacyUnclassifiedError(error)) return { ok: false, status: 409, message: LEGACY_UNCLASSIFIED_MESSAGE }
+  if (isCreditTakenError(error)) return { ok: false, status: 409, message: CREDIT_TAKEN_MESSAGE }
   if (error) return { ok: false, status: 500, message: error.message }
 
   await refreshWindowStatus(supabase, reservation.availability_slot_id)

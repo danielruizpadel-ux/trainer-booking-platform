@@ -75,6 +75,8 @@ mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () =>
 mock('lib/reservations/slots.ts', {
   OVERLAP_MESSAGE: 'Esa franja se acaba de ocupar. Elige otra hora.',
   isOverlapError: (e) => e?.code === '23P01',
+  CREDIT_TAKEN_MESSAGE: 'Esta sesión de paquete ya tiene otra reserva activa',
+  isCreditTakenError: (e) => e?.code === '23505',
   lookupStatus: () => 409,
   refreshWindowStatus: async () => {},
   reservationRange: () => ({ start_time: '10:00', end_time: '11:00' }),
@@ -376,22 +378,53 @@ test('paquete: precio de 1 jugador del entrenador con el descuento de siempre', 
   assert.equal(row.price_total, 4080)
 })
 
-test('paquete al agendar: 1 jugador y WhatsApp false (estático)', () => {
-  const src = stripComments(read('lib/packages/schedule.ts'))
-  const insert = src.slice(src.indexOf(".from('reservations')\n    .insert({"), src.indexOf(".select('id')", src.indexOf(".from('reservations')\n    .insert({")))
-  assert.match(insert, /player_count: 1,/)
-  assert.match(insert, /whatsapp_opt_in: false,/)
-  assert.doesNotMatch(insert, /player_id|client_message/)
+// Desde R1/R2 los inserts de reserva de paquete y de propuesta viven en SQL
+// (schedule_package_session / propose_reschedule). La versión vigente de cada
+// función es la de la ÚLTIMA migración que la define; el comportamiento real
+// lo prueba scripts/verify-package-schedule-concurrency.sh contra Postgres.
+function lastSqlFunction(name) {
+  const files = fs.readdirSync(path.join(root, 'migrations')).filter((f) => /^\d{3}[a-z]?_.*\.sql$/.test(f)).sort()
+  let body = null
+  for (const f of files) {
+    const sql = read(`migrations/${f}`).replace(/--[^\n]*/g, '')
+    const start = sql.indexOf(`create or replace function public.${name}(`)
+    if (start >= 0) body = sql.slice(start, sql.indexOf('$$;', sql.indexOf('$$', start) + 2))
+  }
+  return body
+}
+function sqlInsert(body) {
+  const cols = body.match(/insert into public\.reservations \(([^)]*)\)/)[1].split(',').map((c) => c.trim())
+  const valuesSrc = body.slice(body.indexOf(') values (') + ') values ('.length, body.indexOf('returning id'))
+  // valores de primer nivel (sin romper case/coalesce)
+  const vals = []
+  let depth = 0, cur = ''
+  for (const ch of valuesSrc.trim().replace(/\)\s*$/, '')) {
+    if (ch === '(') depth++
+    if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { vals.push(cur.trim()); cur = '' } else cur += ch
+  }
+  vals.push(cur.trim())
+  assert.equal(cols.length, vals.length, 'columnas y valores del insert')
+  return Object.fromEntries(cols.map((c, i) => [c, vals[i]]))
+}
+
+test('paquete al agendar: 1 jugador y WhatsApp false, sin jugador ni mensaje (SQL vigente)', () => {
+  assert.doesNotMatch(stripComments(read('lib/packages/schedule.ts')), /\.from\('reservations'\)\s*\.insert/, 'schedule.ts ya no inserta por su cuenta')
+  const insert = sqlInsert(lastSqlFunction('schedule_package_session'))
+  assert.equal(insert.player_count, '1')
+  assert.equal(insert.whatsapp_opt_in, 'false')
+  assert.ok(!('player_id' in insert) && !('client_message' in insert))
 })
 
-// ─── Propuesta de otra fecha ────────────────────────────────────────────────
-
-test('proponer otra fecha: la reserva nueva copia player_id, client_message, player_count y whatsapp_opt_in', async () => {
+test('proponer otra fecha: una sola RPC; la propuesta copia player_id, client_message, player_count y whatsapp_opt_in (SQL vigente)', async () => {
   const { proposeReschedule } = load('lib/reservations/proposal.ts')
   resetDb()
+  const rpcCalls = []
   db.respond = (table, ops) => {
-    const update = ops.find((o) => o.op === 'update')
-    if (table === 'reservations' && update && update.args[0].status === 'needs_reschedule') return { data: [{ id: 'orig' }], error: null }
+    if (table === 'rpc:propose_reschedule') {
+      rpcCalls.push(ops[0].args[0])
+      return { data: [{ outcome: 'proposed', proposal_id: 'prop', original_slot_id: W, session_date: '2099-01-05', end_time: '13:00:00' }], error: null }
+    }
     return undefined
   }
   const original = {
@@ -400,16 +433,28 @@ test('proponer otra fecha: la reserva nueva copia player_id, client_message, pla
     start_time: '10:00', end_time: '11:00', duration_minutes: 60,
     player_id: P, client_message: 'Quiero trabajar la bandeja', player_count: 3, whatsapp_opt_in: true,
   }
-  const result = await captureConsole(() => proposeReschedule(original, W, '12:00', 'http://localhost:3001'))
-  void result
-  const { row } = db.inserts.find((i) => i.table === 'reservations')
-  assert.equal(row.player_id, P)
-  assert.equal(row.client_message, 'Quiero trabajar la bandeja')
-  assert.equal(row.player_count, 3)
-  assert.equal(row.whatsapp_opt_in, true)
-  assert.equal(row.price, 350)
-  assert.equal(row.status, 'reschedule_proposed')
-  assert.equal(row.rescheduled_from_id, 'orig')
+  let result
+  await captureConsole(async () => { result = await proposeReschedule(original, W, '12:00', 'http://localhost:3001') })
+  assert.equal(result.ok, true)
+  assert.equal(result.proposalId, 'prop')
+  assert.equal(rpcCalls.length, 1)
+  assert.equal(rpcCalls[0].p_original_id, 'orig')
+  assert.equal(rpcCalls[0].p_trainer_id, T)
+  assert.equal(rpcCalls[0].p_slot_id, W)
+  assert.equal(rpcCalls[0].p_start_time, '12:00')
+  assert.match(rpcCalls[0].p_token, /^[A-Za-z0-9_-]{16,64}$/)
+  assert.deepEqual(db.inserts.filter((i) => i.table === 'reservations'), [], 'ningún insert suelto en reservations')
+  assert.deepEqual(db.updates.filter((u) => u.table === 'reservations' || u.table === 'package_sessions'), [], 'ningún update suelto')
+
+  const insert = sqlInsert(lastSqlFunction('propose_reschedule'))
+  assert.equal(insert.player_id, 'v_orig.player_id')
+  assert.equal(insert.client_message, 'v_orig.client_message')
+  assert.equal(insert.player_count, 'coalesce(v_orig.player_count, 1)')
+  assert.equal(insert.whatsapp_opt_in, 'v_orig.whatsapp_opt_in')
+  assert.equal(insert.price, 'v_orig.price')
+  assert.equal(insert.status, "'reschedule_proposed'")
+  assert.equal(insert.rescheduled_from_id, 'v_orig.id')
+  assert.equal(insert.package_session_id, 'v_credit')
 })
 
 test('mover / cancelar / confirmar mantienen los campos (no los escriben) y los selects traen whatsapp_opt_in', () => {
