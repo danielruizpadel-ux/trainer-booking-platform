@@ -79,23 +79,37 @@ Decisiones:
   versión (1b115e9) creaba la ventana, insertaba la reserva y, si fallaba,
   borraba la ventana desde la app: otra petición podía reutilizar esa ventana
   a medias y la limpieza podía fallar y dejarla huérfana. Ahora lo hace la
-  función `create_one_off_reservation` (`migrations/011`) en una sola
+  función `create_one_off_reservation` (`migrations/012`) en una sola
   transacción, con `pg_advisory_xact_lock` por entrenador y día: cualquier
   fallo deshace ventana y reserva juntas y no hay limpieza. Las reservas que
   no pasan por la función (web, manual) las frena `reservations_no_overlap`.
-  Solo la ejecuta `service_role`. Sin la 011 aplicada la ruta responde 503;
+  Solo la ejecuta `service_role`. Sin la 012 aplicada la ruta responde 503;
   no hay camino alternativo no atómico.
-- **Compatibilidad del esquema (revisión de Codex).** `migrations/001` no es
-  lo desplegado (CHECK de `class_type` y `status`, unique con `class_type`).
-  La 011 comprueba al aplicarse, contra el esquema real: la 008 (restricción
-  y trigger), las columnas de la 005/007/010, que `'private'` exista donde
-  apunte la FK de `class_type`, y —con una fila de prueba que siempre se
-  deshace— que los CHECK admitan una ventana `private`/`blocked`. Si no,
-  se para con un mensaje claro. Si el rol no puede usar
-  `session_replication_role`, avisa y sigue sin la prueba de CHECK. La
-  función no depende de la forma del unique: una violación de unicidad sale
-  como `one_off_window_conflict` (409). Referencia del esquema desplegado
-  para pruebas: `scripts/db/deployed-schema.sql`.
+- **Base creada desde cero (revisión de Codex, 2.ª ronda).** Con 001 → 010
+  una base nueva no aceptaba lo que escribe el flujo: CHECK de `class_type`
+  sin `'private'`, unique con `class_type` en vez de `end_time`, sin
+  `client_name`/`client_email`/`client_phone`/`price` en `reservations`, y
+  `client_id`/`session_time`/`class_type` NOT NULL. `migrations/011_schema_compat.sql`
+  la lleva a la forma desplegada, paso a paso y solo si encuentra la de la
+  001 (sobre lo desplegado no cambia nada: probado comparando restricciones,
+  índices y columnas): tabla `class_types` + FK en lugar del CHECK, unique
+  por rango, columnas del cliente, columnas de la 001 sin NOT NULL y
+  `availability_slot_id` NOT NULL (una reserva sin ventana no tiene fecha y
+  escaparía de la 008; si hay datos así, se para sin borrar nada). No toca
+  `reservations_no_overlap` ni su trigger. La función pasa a
+  `migrations/012_one_off_reservation.sql` (renumerada; nunca se aplicó) y
+  exige la 011.
+- **Comprobaciones de la 012 al aplicarse:** la 008 (restricción y
+  trigger), las columnas de la 005/007/010/011, `availability_slot_id` NOT
+  NULL, que `'private'` exista donde apunte la FK de `class_type`, y —con
+  una fila de prueba que siempre se deshace— que los CHECK admitan una
+  ventana `private`/`blocked`. Si el rol no puede usar
+  `session_replication_role`, avisa y sigue sin esa prueba. Una violación de
+  unicidad sale como `one_off_window_conflict` (409).
+- **Modo de dos toques:** tocar una reserva mientras se elige un tramo no
+  hace nada (ni resumen ni detalle, ni cuenta como inicio o fin); se avisa
+  en el texto de ayuda. Al activar el modo se cierra un resumen fijado. Con
+  teclado y fuera del modo, las reservas se abren como siempre.
 - **Validación en servidor** (`lib/reservations/one-off.ts`, reglas en
   `one-off-rules.ts`): entrenador de la sesión (nunca `trainer_id` del
   navegador), duración ofrecida, rejilla de 30 min, mismo día, no pasado (KL),
@@ -111,25 +125,34 @@ Decisiones:
 
 Pruebas: `scripts/verify-one-off.mjs` (código real con dobles de Supabase:
 reglas, servidor, ruta, no publicación, generador) y
-`scripts/verify-one-off-db.sh` (Postgres aislado en Docker:
-`scripts/db/deployed-schema.sql` + la 008 y la 011 tal cual; 50 casos:
-función, atomicidad con fallo después de crear la ventana, permisos, carreras
-deterministas —transacción abierta con `pg_sleep` mientras llega la
-segunda: misma franja con commit y con rollback, reutilización con rollback,
-franjas solapadas, reserva de la web sin cerrojo—, ráfagas de 10 en
-paralelo, y variantes de esquema incompatibles o con el unique de la 001).
+`scripts/verify-one-off-db.sh` (Postgres aislado en Docker, 68 casos): la
+cadena entera 001 → 012 en una base vacía (con `scripts/db/supabase-stubs.sql`:
+roles, `auth`, `extensions`), idempotencia, la 011 sin cambios sobre
+`scripts/db/deployed-schema.sql`, la 012 rechazada sin la 011, la 008
+intacta; fallo de la reserva después de crear o reutilizar la ventana; y
+concurrencia determinista (la primera transacción abierta con `pg_sleep`):
+misma franja con commit y con rollback, 10 reutilizaciones simultáneas de
+una ventana cancelada, reutilización contra una cancelación sin confirmar,
+reutilización contra un DELETE concurrente de la ventana (commit y
+rollback), DELETE contra una reutilización en curso, franjas solapadas,
+reserva de la web sin cerrojo y ráfagas de 10.
 Navegador (desktop y iframe de 375 px, con los POST interceptados en la
 página: no se guardó ninguna reserva): arrastre, clic normal, arrastre desde
 reserva, solape, duración no ofrecida, dos toques, envío de la puntual.
 
 Límites conocidos:
 
-- **La 011 hay que aplicarla en Supabase** (SQL Editor, como postgres, y
-  `notify pgrst, 'reload schema';`). Hasta entonces «Crear clase puntual»
-  fuera del horario responde 503; dentro de una ventana abierta funciona.
-  No se ha probado contra la Supabase real (solo en Postgres aislado).
+- **La 011 y la 012 hay que aplicarlas en Supabase**, en ese orden (SQL
+  Editor, como postgres, y `notify pgrst, 'reload schema';`). Hasta entonces
+  «Crear clase puntual» fuera del horario responde 503; dentro de una
+  ventana abierta funciona. No se han probado contra la Supabase real: la
+  forma desplegada se ha reproducido en `scripts/db/deployed-schema.sql` a
+  partir de la inspección del 26/09 (sin saber, por ejemplo, la acción ON
+  DELETE real de la FK de `availability_slot_id`).
+- La 011 cambia el comentario de la tabla `class_types` también en la base
+  desplegada (lo demás es no-op).
 - No se sabe si el rol `postgres` de Supabase puede usar
-  `session_replication_role`; si no, la 011 lo avisa y se aplica sin la
+  `session_replication_role`; si no, la 012 lo avisa y se aplica sin la
   prueba de CHECK (el resto de comprobaciones sí se hacen). Si luego un CHECK
   rechazara la ventana, cada clase puntual daría 500 y no quedaría nada
   escrito.
@@ -137,14 +160,14 @@ Límites conocidos:
   error pero la clase está creada; al reintentar le sale «franja ocupada» y
   la ve en el calendario al recargar.
 - La purga de huecos legacy (`lib/availability/cleanup.ts`, manual y bajo
-  demanda) no coge el cerrojo de la 011. Solo afecta a ventanas manuales
+  demanda) no coge el cerrojo de la 012. Solo afecta a ventanas manuales
   creadas antes del 20/09/2026 y sin reserva viva: si una de ellas fuera
   además `blocked` y se reutilizara para una clase puntual justo mientras
   la purga está en marcha, su DELETE esperaría al `FOR UPDATE` de la función
-  y después chocaría con la FK de `reservations` (o, si en la base real esa
-  FK fuera ON DELETE CASCADE, borraría la reserva nueva: no se ha podido
-  comprobar sin tocar Supabase). Las ventanas puntuales nuevas no entran en
-  ese criterio.
+  y después fallaría (probado en R9 con la base desde cero: la reserva se
+  queda). En la base real depende de la acción ON DELETE de esa FK, que no
+  se ha podido comprobar sin tocar Supabase; con CASCADE borraría la
+  reserva. Las ventanas puntuales nuevas no entran en ese criterio.
 
 - El arrastre no desplaza la rejilla sola al llegar al borde; un tramo largo
   que no se ve entero se elige con «Elegir tramo» (dos toques, con scroll en
