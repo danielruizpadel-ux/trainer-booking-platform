@@ -356,6 +356,12 @@ test('calendario: arrastre solo con ratón, nunca desde una reserva, sin bloquea
   assert.doesNotMatch(cal, /touch-action|touchAction|touch-none|preventDefault\(\)[^]{0,40}pointerdown/)
   assert.match(cal, /DRAG_THRESHOLD/)
   assert.match(cal, /aria-pressed=\{tapMode\}/)
+  // Modo toques: un toque en una reserva se consume (sin resumen ni detalle) y no marca inicio/fin.
+  const tap = cal.slice(cal.indexOf('function onColumnClickCapture'), cal.indexOf('finishSelection(day, sel.start, sel.end)', cal.indexOf('function onColumnClickCapture')))
+  assert.match(tap, /if \(!tapMode \|\| event\.detail === 0\) return\s+event\.preventDefault\(\)\s+event\.stopPropagation\(\)/)
+  assert.match(tap, /closest\('\[data-reservation\]'\)\) \{\s+setTapOnBooking\(true\)\s+return/)
+  assert.ok(tap.indexOf("closest('[data-reservation]')") < tap.indexOf('setTapStart('), 'la reserva se descarta antes de marcar inicio')
+  assert.match(cal, /setTapOnBooking\(false\)\s+[^]{0,160}setSummary\(null\)/, 'al activar el modo se cierra el resumen fijado')
   const dialog = code('components/dashboard/reservations/RangeSelectionDialog.tsx')
   assert.match(dialog, /Crear clase puntual/)
   assert.match(dialog, /href="\/dashboard\/disponibilidad"/)

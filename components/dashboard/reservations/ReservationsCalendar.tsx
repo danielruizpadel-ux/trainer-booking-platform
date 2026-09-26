@@ -264,6 +264,8 @@ export function ReservationsCalendar({
   const [draft, setDraft] = useState<Draft | null>(null)
   const [tapMode, setTapMode] = useState(false)
   const [tapStart, setTapStart] = useState<{ day: string; minute: number } | null>(null)
+  // Toque sobre una reserva en modo toques: se ignora y se avisa (ver onColumnClickCapture).
+  const [tapOnBooking, setTapOnBooking] = useState(false)
   const suppressClick = useRef(false)
   const endDrag = useRef<(() => void) | null>(null)
   useEffect(() => () => endDrag.current?.(), [])
@@ -325,10 +327,18 @@ export function ReservationsCalendar({
       event.stopPropagation()
       return
     }
-    // Modo toques: las reservas siguen abriéndose; el teclado (detail 0) también va como siempre.
-    if (!tapMode || event.detail === 0 || (event.target as Element).closest('[data-reservation]')) return
+    // El teclado (detail 0) va como siempre, también en modo toques.
+    if (!tapMode || event.detail === 0) return
     event.preventDefault()
     event.stopPropagation()
+    // Modo toques: tocar una reserva no hace nada (ni abre su resumen o su
+    // detalle, ni cuenta como inicio o fin); solo se avisa. Para abrirla, se
+    // sale del modo con «Cancelar tramo».
+    if ((event.target as Element).closest('[data-reservation]')) {
+      setTapOnBooking(true)
+      return
+    }
+    setTapOnBooking(false)
     // Centro de la celda de 30 min tocada: así el tramo incluye esa celda en las dos direcciones.
     const minute = Math.floor(minuteAt(event.clientY, event.currentTarget) / ONE_OFF_STEP) * ONE_OFF_STEP + ONE_OFF_STEP / 2
     if (!tapStart || tapStart.day !== day) {
@@ -416,6 +426,9 @@ export function ReservationsCalendar({
               onClick={() => {
                 setTapMode((on) => !on)
                 setTapStart(null)
+                setTapOnBooking(false)
+                // Un resumen fijado por toque no debe quedarse abierto (con su «Ver detalle») mientras se elige.
+                setSummary(null)
               }}
               className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                 tapMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 hover:text-gray-900'
@@ -453,6 +466,7 @@ export function ReservationsCalendar({
 
       {tapMode && (
         <p aria-live="polite" className="-mt-1 text-sm text-blue-700">
+          {tapOnBooking && 'Eso es una reserva: no puede ser inicio ni fin del tramo. '}
           {tapStart
             ? `Inicio: ${fromMinutes(tapStart.minute - ONE_OFF_STEP / 2)}. Toca dónde termina (en el mismo día).`
             : 'Toca en el calendario la hora de inicio del tramo.'}
