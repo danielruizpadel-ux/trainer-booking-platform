@@ -106,23 +106,7 @@ export async function updateAvailabilitySlot(
   }
 }
 
-export async function deleteAvailabilitySlot(slotId: string): Promise<boolean> {
-  try {
-    const supabase = getSupabaseServerClient()
-
-    const { error } = await supabase
-      .from('availability_slots')
-      .delete()
-      .eq('id', slotId)
-
-    if (error) {
-      console.error('Error deleting availability slot:', error)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    console.error('Unexpected error in deleteAvailabilitySlot:', error)
-    return false
-  }
-}
+// deleteAvailabilitySlot (borrado directo de una ventana) se eliminó el
+// 26/09/2026: no tenía ningún consumidor y, con la FK ON DELETE CASCADE de la
+// base real, borraba también las reservas de la ventana. Todo borrado de
+// ventanas pasa por lib/availability/delete-windows.ts.

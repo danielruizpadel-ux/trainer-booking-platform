@@ -190,12 +190,13 @@ Caminos que borran ventanas (revisados todos):
 |---|---|---|
 | Generador semanal (`lib/availability/generate.ts`; lo llaman las rutas de horario, excepciones y «Sincronizar huecos») | borraba ventanas sin reserva **viva**: se llevaba las canceladas (historial) y, en carrera, una reserva nueva | solo pide borrar ventanas **sin ninguna** reserva; si el patrón ya no quiere una con historial, la cierra (`blocked`, «retirada») y la reabre/reutiliza si la vuelve a querer |
 | Purga legacy (`lib/availability/cleanup.ts`, botón «Sincronizar huecos») | igual que el generador | no propone ventanas con historial (`skippedWithHistory`) |
-| `deleteAvailabilitySlot` (`lib/services/availability.service.ts`) | nadie lo importa | sin cambios (código muerto) |
+| `deleteAvailabilitySlot` (`lib/services/availability.service.ts`) | borrado directo, sin consumidores (ni imports, ni barrels, ni otras ramas locales) | **eliminado** (revisión de Codex); `scripts/verify-slot-deletes.mjs` falla si reaparece un `.from('availability_slots')…delete(` fuera de `delete-windows.ts` |
 | `scripts/verify-max-capacity-fix.mjs` | borra reservas y después ventanas | compatible con RESTRICT |
 
 Ninguno necesitaba el CASCADE. Los dos borrados reales pasan por
 `lib/availability/delete-windows.ts`: lote y, si la base lo rechaza por la
-FK (23503), una a una; las ventanas que ganaron una reserva se conservan y
+FK de reservations (23503 **de `reservations_availability_slot_id_fkey`**;
+un 23503 de otra restricción se propaga como error), una a una; las ventanas que ganaron una reserva se conservan y
 se cuentan (`keptReferenced` / `skippedReferenced`, visible en el resumen de
 «Sincronizar huecos»). Cualquier otro error sigue abortando.
 
@@ -228,6 +229,37 @@ Límites:
   en la 001) ya no puede arrastrar reservas a través de sus ventanas: si
   tiene reservas, fallará. Ninguna ruta borra entrenadores.
 - Las ventanas «retiradas» (cerradas con historial) se quedan en la base.
+
+### Sincronización parcial del generador (análisis, sin cambios)
+
+`generateSlotsForTrainer` escribe en cinco pasos, cada uno una petición (y
+una transacción) aparte: INSERT (lote) → DELETE (lote; una a una si la FK
+lo rechaza) → UPDATE de `end_time` (una a una) → CLOSE `blocked` (lote) →
+REOPEN `available` (lote). El cambio de horario que lo dispara (weekly /
+overrides) ya está guardado antes. Si un paso falla, los anteriores se
+quedan y la ruta responde 500. Estados concretos:
+
+| Falla en | Queda | Efecto |
+|---|---|---|
+| INSERT | nada escrito | faltan las ventanas nuevas (se ofrece de menos) |
+| DELETE (o a mitad del una a una) | ventanas nuevas + las que sobraban, abiertas | **se ofrece de más**: horas que el entrenador quitó siguen reservables |
+| UPDATE `end_time` a mitad | unas con el fin nuevo, otras con el viejo | de más si el rango se acortó; de menos si se alargó |
+| CLOSE | ventanas con reserva viva de un día apagado, y (desde 389211d) ventanas con solo historial que sobran, siguen `available` | **se ofrece de más**: el tiempo libre alrededor de la reserva, o la ventana entera con historial |
+| REOPEN | ventanas que el patrón vuelve a querer siguen `blocked` | se ofrece de menos |
+
+En ningún caso se pierden datos (013) ni hay dos reservas solapadas (008),
+y el generador recalcula todo desde la base en cada llamada: la siguiente
+ejecución correcta (cualquier cambio de horario o «Sincronizar huecos»)
+deja el estado bien. Es anterior a esta rama (el orden no ha cambiado); lo
+único nuevo es que una ventana con historial que sobra se cierra en el paso
+CLOSE en vez de borrarse en DELETE, así que ahora también la afecta un
+fallo del UPDATE.
+
+Conclusión: no bloquea la integración (transitorio, sin pérdida de datos ni
+doble reserva). Si se quiere que un fallo deje siempre el lado seguro, el
+arreglo mínimo es reordenar los pasos: CLOSE y DELETE primero, INSERT y
+REOPEN al final (el UPDATE en medio sigue pudiendo ofrecer de más si acorta
+un rango). No se ha hecho: queda como propuesta.
 
 ## Numeración de migraciones (pendiente al unir ramas)
 

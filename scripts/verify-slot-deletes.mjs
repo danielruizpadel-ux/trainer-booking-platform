@@ -18,7 +18,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fakeSupabase, load } from './lib/ts-harness.mjs'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fakeSupabase, load, read, root } from './lib/ts-harness.mjs'
 
 const T = '11111111-1111-4111-8111-111111111111'
 const { deleteEmptyWindows } = load('lib/availability/delete-windows.ts')
@@ -37,11 +39,21 @@ const plusDays = (date, n) => {
 const DAY = plusDays(localToday, 3)
 const DOW = (new Date(`${DAY}T00:00:00`).getDay() + 6) % 7
 
+// Errores con el texto real de PostgREST/Postgres.
+const fkError = (constraint, table) => ({
+  code: '23503',
+  message: `update or delete on table "availability_slots" violates foreign key constraint "${constraint}" on table "${table}"`,
+  details: 'Key (id)=(x) is still referenced from table "' + table + '".',
+})
+const RES_FK = fkError('reservations_availability_slot_id_fkey', 'reservations')
+const OTHER_FK = fkError('slot_notes_availability_slot_id_fkey', 'slot_notes')
+
 /**
- * Base falsa: `referenced` = ids de ventana que la base se niega a borrar
- * (23503, como con RESTRICT). Registra deletes y updates.
+ * Base falsa: `referenced` = ids que la base se niega a borrar por la FK de
+ * reservations (RESTRICT, 013); `otherFk` = ids que rechaza por OTRA FK.
+ * Registra deletes y updates.
  */
-function db({ slots = [], weekly = [], referenced = [], otherError = null } = {}) {
+function db({ slots = [], weekly = [], referenced = [], otherFk = [], otherError = null } = {}) {
   const log = { deleteCalls: [], deleted: [], updates: [], inserts: [] }
   const supabase = fakeSupabase((table, ops) => {
     const op = (name) => ops.find((o) => o.op === name)
@@ -49,9 +61,9 @@ function db({ slots = [], weekly = [], referenced = [], otherError = null } = {}
       const ids = op('in')?.args[1] ?? [op('eq')?.args[1]]
       log.deleteCalls.push(ids)
       if (otherError) return { error: otherError, count: null }
-      if (ids.some((id) => referenced.includes(id))) {
-        return { error: { code: '23503', message: 'update or delete on table "availability_slots" violates foreign key constraint' }, count: null }
-      }
+      // Como Postgres: el error es el de la primera fila que choca.
+      const first = ids.find((id) => otherFk.includes(id) || referenced.includes(id))
+      if (first) return { error: otherFk.includes(first) ? OTHER_FK : RES_FK, count: null }
       log.deleted.push(...ids)
       return { error: null, count: ids.length }
     }
@@ -92,6 +104,30 @@ test('deleteEmptyWindows: 23503 en el lote → una a una; la que tiene reserva s
   const { supabase, log } = db({ referenced: ['b'] })
   assert.deepEqual(await deleteEmptyWindows(supabase, ['a', 'b', 'c']), { deleted: 2, kept: ['b'] })
   assert.deepEqual(log.deleted, ['a', 'c'])
+})
+
+test('deleteEmptyWindows: el 23503 de OTRA restricción en el lote se propaga (sin reintentar una a una)', async () => {
+  const { supabase, log } = db({ otherFk: ['b'] })
+  await assert.rejects(deleteEmptyWindows(supabase, ['a', 'b', 'c']), /slot_notes_availability_slot_id_fkey/)
+  assert.deepEqual(log.deleteCalls, [['a', 'b', 'c']], 'un solo intento')
+  assert.deepEqual(log.deleted, [])
+})
+
+test('deleteEmptyWindows: el 23503 de OTRA restricción al ir una a una también se propaga', async () => {
+  // El lote falla por la FK de reservations (b); al ir una a una, c falla por otra FK.
+  const { supabase, log } = db({ referenced: ['b'], otherFk: ['c'] })
+  await assert.rejects(deleteEmptyWindows(supabase, ['a', 'b', 'c', 'd']), /slot_notes_availability_slot_id_fkey/)
+  assert.deepEqual(log.deleted, ['a'], 'se para en c: no sigue ni cuenta c como conservada')
+})
+
+test('isWindowHasReservationsError: solo el 23503 de reservations_availability_slot_id_fkey', () => {
+  const { isWindowHasReservationsError } = load('lib/availability/delete-windows.ts')
+  assert.equal(isWindowHasReservationsError(RES_FK), true)
+  assert.equal(isWindowHasReservationsError({ code: '23503', message: 'x', details: 'y reservations_availability_slot_id_fkey' }), true, 'también si el nombre viene en details')
+  assert.equal(isWindowHasReservationsError(OTHER_FK), false)
+  assert.equal(isWindowHasReservationsError({ code: '23503', message: 'violates foreign key constraint' }), false, 'sin nombre de restricción')
+  assert.equal(isWindowHasReservationsError({ code: '23505', message: 'reservations_availability_slot_id_fkey' }), false)
+  assert.equal(isWindowHasReservationsError(null), false)
 })
 
 test('deleteEmptyWindows: otro error se lanza (no se traga)', async () => {
@@ -183,4 +219,26 @@ test('purga: si una candidata ganó una reserva, la base la rechaza y se conserv
   const r = await executeLegacyPurge(supabase, T, klToday)
   assert.deepEqual(r, { removed: 2, skippedOccupied: 0, skippedWithHistory: 0, skippedReferenced: 1 })
   assert.deepEqual(log.deleted, ['e1', 'e3'])
+})
+
+// ─── 4. Ningún otro camino borra ventanas ────────────────────────────────────
+
+test('ningún código de la app borra availability_slots fuera de delete-windows.ts', () => {
+  const files = []
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(rel)
+      else if (/\.(ts|tsx|js|mjs)$/.test(entry.name)) files.push(rel)
+    }
+  }
+  for (const dir of ['app', 'lib', 'components']) walk(dir)
+  const offenders = files.filter((rel) => {
+    if (rel === path.join('lib', 'availability', 'delete-windows.ts')) return false
+    // Sin comentarios; cualquier .from('availability_slots') seguido de .delete( en la misma cadena.
+    const code = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+    return /from\(\s*['"`]availability_slots['"`]\s*\)[\s\S]{0,200}?\.delete\(/.test(code)
+  })
+  assert.deepEqual(offenders, [])
+  assert.doesNotMatch(read('lib/services/availability.service.ts'), /export async function deleteAvailabilitySlot/)
 })

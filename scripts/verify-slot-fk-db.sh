@@ -127,7 +127,7 @@ run onupdate < migrations/013_reservations_slot_fk_restrict.sql >/dev/null
 checkre "M6 conserva la acción ON UPDATE que tuviera" "ON UPDATE CASCADE ON DELETE RESTRICT" "$(fkdef onupdate)"
 
 # ─── P. Después de la 013 ────────────────────────────────────────────────────
-checkre "P1 borrar una ventana con reserva viva → 23503" "violates foreign key constraint" "$(q $DB "delete from availability_slots where id = '$W_LIVE'")"
+checkre "P1 borrar una ventana con reserva viva → 23503 de reservations_availability_slot_id_fkey" "violates foreign key constraint \"reservations_availability_slot_id_fkey\"" "$(q $DB "delete from availability_slots where id = '$W_LIVE'")"
 checkre "P1 con reserva cancelada (historial) → 23503" "violates foreign key constraint" "$(q $DB "delete from availability_slots where id = '$W_CANC'")"
 check "P1 las dos reservas siguen" "1/1" "$(res $DB Viva)/$(res $DB Cancelada)"
 q $DB "delete from availability_slots where id = '$W_EMPTY'" >/dev/null
@@ -175,5 +175,16 @@ check "P9 ninguna reserva perdida" "1/1/1/1/1/1" \
 q $DB "delete from reservations where client_name = 'Web2'" >/dev/null
 q $DB "delete from availability_slots where id = '$W_OPEN2'" >/dev/null
 check "P10 borrando antes sus reservas, la ventana se puede borrar" "0" "$(slots $DB $W_OPEN2)"
+
+# El texto real que clasifica lib/availability/delete-windows.ts: otra FK hacia
+# availability_slots da un 23503 SIN el nombre de la de reservations.
+W_NOTE=00000000-0000-4000-8000-0000000000bb
+q $DB "create table slot_notes (id serial primary key, slot_id uuid not null references availability_slots (id))" >/dev/null
+q $DB "insert into availability_slots (id, trainer_id, session_date, start_time, end_time, status, generated_by_pattern) values ('$W_NOTE', '$T', '$D', '21:00', '22:00', 'available', true)" >/dev/null
+q $DB "insert into slot_notes (slot_id) values ('$W_NOTE')" >/dev/null
+r=$(docker exec -i "$NAME" psql -U postgres -d $DB -v ON_ERROR_STOP=1 -qtA -v VERBOSITY=verbose -c "delete from availability_slots where id = '$W_NOTE'" 2>&1 | tr '\n' ' ')
+checkre "P11 otra FK hacia availability_slots → 23503 de slot_notes_slot_id_fkey" "23503.*slot_notes_slot_id_fkey" "$r"
+[[ "$r" == *23503* && "$r" != *reservations_availability_slot_id_fkey* ]] && pass "P11 y su texto no lleva el nombre de la FK de reservations (no se confunde)" || bad "P11 texto inesperado: $r"
+check "P11 la ventana sigue" "1" "$(slots $DB $W_NOTE)"
 
 exit $fail
