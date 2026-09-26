@@ -11,12 +11,22 @@ import { generateSlotsForTrainer, WindowSyncError, type GenerateSummary } from '
  *                  lo escribió); lo que falló es pasarlo a los huecos.
  *   saved = false  «Sincronizar huecos»: no había nada más que guardar.
  *
- * Respuesta de fallo: 500 { success: false, code: 'sync_failed', saved, error }.
+ * Respuesta de fallo: 500 { success: false, code: 'sync_failed', saved, outcome, error }.
+ *   outcome = 'not_applied'  la base rechazó el plan: la transacción se deshizo.
+ *   outcome = 'unknown'      se perdió la respuesta tras mandar el plan: pudo
+ *                            aplicarse o no. El mensaje NO dice que no cambió.
  * La interfaz no debe presentarlo como guardado/sincronizado.
  */
 export const SYNC_FAILED_CODE = 'sync_failed'
 
-export function syncFailedMessage(saved: boolean, missingMigration: boolean): string {
+export type SyncFailureOutcome = 'not_applied' | 'unknown'
+
+export function syncFailedMessage(saved: boolean, missingMigration: boolean, outcome: SyncFailureOutcome = 'not_applied'): string {
+  if (outcome === 'unknown') {
+    return saved
+      ? 'Tu cambio se ha guardado, pero no hemos podido confirmar si tu disponibilidad publicada se ha actualizado (se perdió la respuesta). Recarga la página para ver cómo ha quedado y, si hace falta, pulsa «Sincronizar huecos».'
+      : 'No hemos podido confirmar si la sincronización se ha aplicado (se perdió la respuesta). Recarga la página para ver tu disponibilidad actual y vuelve a sincronizar si hace falta.'
+  }
   const base = saved
     ? 'Tu cambio se ha guardado, pero tu disponibilidad publicada NO se ha actualizado: sigue exactamente como antes.'
     : 'No se ha sincronizado: tu disponibilidad publicada no ha cambiado.'
@@ -43,11 +53,14 @@ export async function syncWindows(supabase: SupabaseClient, trainerId: string, s
     }
   } catch (error) {
     const missingMigration = error instanceof WindowSyncError && error.missingMigration
-    console.error('Sincronización de ventanas fallida:', error instanceof Error ? error.message : String(error))
+    // Solo es "desconocido" si el plan llegó a mandarse sin respuesta de la
+    // base; cualquier fallo anterior (lecturas, cálculo) no escribió nada.
+    const outcome: SyncFailureOutcome = error instanceof WindowSyncError && error.outcomeUnknown ? 'unknown' : 'not_applied'
+    console.error('Sincronización de ventanas fallida:', { outcome, message: error instanceof Error ? error.message : String(error) })
     return {
       ok: false,
       response: NextResponse.json(
-        { success: false, code: SYNC_FAILED_CODE, saved, error: syncFailedMessage(saved, missingMigration) },
+        { success: false, code: SYNC_FAILED_CODE, saved, outcome, error: syncFailedMessage(saved, missingMigration, outcome) },
         { status: 500 }
       ),
     }

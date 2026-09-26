@@ -229,6 +229,22 @@ revalidando: una ventana a borrar con reservas se cierra; un acortamiento que
 dejaría fuera una reserva viva cierra la ventana. Si algo falla, no cambia
 nada. Solo `service_role`. La usa `lib/availability/generate.ts`.
 
+## Migración 015 — reservas siempre dentro de su ventana (pendiente de aplicar)
+
+Triggers `reservations_within_window` (reservations: INSERT/UPDATE de
+ventana, horas o estado; bloquea la ventana FOR SHARE) y
+`availability_slots_keep_reservations_inside` (UPDATE de inicio/fin). Una
+reserva viva nunca queda fuera del rango de su ventana. Error 23514 con
+`reservations_within_window` en el mensaje → la app responde 409.
+
+## Migración 016 — revisión del horario (pendiente de aplicar; requiere la 014)
+
+`trainers.availability_revision` (bigint, 0), subida por triggers en
+`trainer_weekly_hours` y `trainer_availability_overrides`.
+`apply_window_plan(p_trainer_id, p_plan, p_revision bigint)` rechaza con
+`window_plan_stale` un plan calculado con otra revisión; la versión de dos
+argumentos de la 014 se elimina.
+
 ## `email_logs` y `whatsapp_logs`
 
 | `email_logs` | `whatsapp_logs` |

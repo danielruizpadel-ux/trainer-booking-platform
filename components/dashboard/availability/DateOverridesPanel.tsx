@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AvailabilityOverride } from '@/lib/availability/overrides'
 import { formatDayShort, formatTime } from '@/lib/reservations/format'
 import { AddOverrideDialog } from './AddOverrideDialog'
+import { UNKNOWN_SAVE_MESSAGE, callApi } from './api'
 
 interface DateOverridesPanelProps {
   overrides: AvailabilityOverride[]
@@ -21,12 +22,16 @@ export function DateOverridesPanel({ overrides, loading, onChanged }: DateOverri
     setRemovingId(id)
     setError(null)
     try {
-      const response = await fetch(`/api/dashboard/availability/overrides/${id}`, { method: 'DELETE' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) {
+      const result = await callApi(`/api/dashboard/availability/overrides/${id}`, { method: 'DELETE' }, 'No se pudo quitar la excepción')
+      if (result.kind === 'unknown') {
+        // No se sabe si se quitó: se recarga la lista y se dice.
+        onChanged()
+        throw new Error(UNKNOWN_SAVE_MESSAGE)
+      }
+      if (result.kind === 'failed') {
         // Quitada, pero los huecos no se sincronizaron: se recarga la lista y se avisa.
-        if (data.code === 'sync_failed' && data.saved) onChanged()
-        throw new Error(data.error || 'No se pudo quitar la excepción')
+        if (result.data.code === 'sync_failed' && result.data.saved) onChanged()
+        throw new Error(result.message)
       }
       onChanged()
     } catch (err) {

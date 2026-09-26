@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { WeeklyRange } from '@/lib/availability/weekly'
 import { Toggle } from './Toggle'
+import { UNKNOWN_SAVE_MESSAGE, callApi } from './api'
 
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const DEFAULT_START = '09:00'
@@ -184,10 +185,18 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
     } catch (err) {
       if (err instanceof SyncFailedError) {
         // El horario sí se guardó (todos los pasos anteriores fueron bien):
-        // se recarga, pero sin mensaje de éxito y diciendo qué NO pasó.
+        // se recarga, pero sin mensaje de éxito y diciendo qué NO pasó (o que
+        // no se sabe, si se perdió la respuesta de la sincronización).
         setDirty(false)
         onSaved()
-        setError(SAVED_NOT_PUBLISHED)
+        setError(err.outcome === 'unknown' ? err.message : SAVED_NOT_PUBLISHED)
+        return
+      }
+      if (err instanceof UnknownOutcomeError) {
+        // No se sabe qué pasos llegaron a guardarse: se recarga lo que hay.
+        setDirty(false)
+        onSaved()
+        setError(UNKNOWN_SAVE_MESSAGE)
         return
       }
       setError(err instanceof Error ? err.message : 'No se pudo guardar')
@@ -306,7 +315,14 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
 }
 
 /** El cambio se guardó pero los huecos no se sincronizaron (code 'sync_failed', ver lib/availability/sync-response.ts). */
-class SyncFailedError extends Error {}
+class SyncFailedError extends Error {
+  constructor(message: string, readonly outcome: 'not_applied' | 'unknown') {
+    super(message)
+  }
+}
+
+/** Se perdió la respuesta: no se sabe si ese paso se guardó. */
+class UnknownOutcomeError extends Error {}
 
 /**
  * Pasos del guardado que escriben el horario: si solo falla la
@@ -319,14 +335,15 @@ const SAVED_NOT_PUBLISHED =
   'Tu horario se ha guardado, pero tu disponibilidad publicada NO se ha actualizado: sigue exactamente como antes. Vuelve a intentarlo con «Sincronizar huecos».'
 
 async function call(url: string, init?: RequestInit, options: { tolerateSyncFailure?: boolean } = {}) {
-  const response = await fetch(url, init)
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok || !data.success) {
+  const result = await callApi(url, init, 'No se pudo guardar el cambio')
+  if (result.kind === 'unknown') throw new UnknownOutcomeError(UNKNOWN_SAVE_MESSAGE)
+  if (result.kind === 'failed') {
+    const data = result.data
     if (data.code === 'sync_failed') {
-      if (options.tolerateSyncFailure && data.saved) return data
-      throw new SyncFailedError(data.error || 'La disponibilidad publicada no se ha actualizado')
+      if (options.tolerateSyncFailure && data.saved) return data as { summary?: undefined }
+      throw new SyncFailedError(result.message, data.outcome === 'unknown' ? 'unknown' : 'not_applied')
     }
-    throw new Error(data.error || 'No se pudo guardar el cambio')
+    throw new Error(result.message)
   }
-  return data
+  return result.data as { summary?: { created: number; removed: number; keptOccupied: number; closed: number; reopened: number } }
 }

@@ -231,6 +231,21 @@ test('errores de la función: se traducen y la app no intenta limpiar nada (la t
   }
 })
 
+test('respuesta perdida tras mandar la clase (sin código de la base): no dice que no se creó', async () => {
+  const { ONE_OFF_UNKNOWN_MESSAGE } = load('lib/reservations/one-off.ts')
+  reset({ rpcError: { code: '', message: 'TypeError: fetch failed' } })
+  let r = await createOneOffReservation(T, input('18:00', 60))
+  assert.equal(r.status, 500)
+  assert.equal(r.message, ONE_OFF_UNKNOWN_MESSAGE)
+  assert.match(r.message, /No hemos podido confirmar si la clase se ha creado/)
+  reset({ rpcError: { code: '23502', message: 'null value' } })
+  r = await createOneOffReservation(T, input('18:00', 60))
+  assert.equal(r.message, 'No se pudo crear la reserva', 'con código de la base sí se sabe que no se creó')
+  const dialog = read('components/dashboard/reservations/NewReservationDialog.tsx')
+  assert.match(dialog, /if \(!data\) throw new UnconfirmedCreate\(\)/)
+  assert.match(dialog, /disabled=\{sending \|\| unconfirmed \|\|/, 'no se deja reenviar')
+})
+
 test('ya hay una fila con ese rango exacto: aviso rápido si no es reutilizable; si lo es, decide la función', async () => {
   const exact = (extra) => ({
     id: 'w-exact', trainer_id: T, session_date: DAY, start_time: '18:00:00', end_time: '19:00:00', class_type: 'private',

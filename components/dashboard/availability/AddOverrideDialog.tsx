@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { DialogShell, dialogButton, fieldClass, labelClass } from '@/components/dashboard/DialogShell'
 import { toDateStr } from '@/lib/dateUtils'
+import { UNKNOWN_SAVE_MESSAGE, callApi } from './api'
 
 interface AddOverrideDialogProps {
   onClose: () => void
@@ -28,22 +29,21 @@ export function AddOverrideDialog({ onClose, onCreated }: AddOverrideDialogProps
       const body = blocked
         ? { override_date: date, is_blocked: true }
         : { override_date: date, is_blocked: false, start_time: start, end_time: end }
-      const response = await fetch('/api/dashboard/availability/overrides', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) {
-        if (data.code === 'sync_failed' && data.saved) {
-          onCreated()
-          setSavedNotSynced(true)
-          setSending(false)
-          setError(data.error)
-          return
-        }
-        throw new Error(data.error || 'No se pudo añadir la excepción')
+      const result = await callApi(
+        '/api/dashboard/availability/overrides',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+        'No se pudo añadir la excepción'
+      )
+      // Guardada pero sin sincronizar, o no se sabe si se guardó: se recarga la
+      // lista y no se deja reenviar (podría duplicarla).
+      if (result.kind === 'unknown' || (result.kind === 'failed' && result.data.code === 'sync_failed' && result.data.saved)) {
+        onCreated()
+        setSavedNotSynced(true)
+        setSending(false)
+        setError(result.kind === 'unknown' ? UNKNOWN_SAVE_MESSAGE : result.message)
+        return
       }
+      if (result.kind === 'failed') throw new Error(result.message)
       onCreated()
       onClose()
     } catch (err) {
@@ -68,7 +68,7 @@ export function AddOverrideDialog({ onClose, onCreated }: AddOverrideDialogProps
               Cancelar
             </button>
             <button type="button" onClick={create} disabled={sending || savedNotSynced} className={dialogButton.primary}>
-              {sending ? 'Guardando…' : savedNotSynced ? 'Guardada, sin sincronizar' : 'Añadir excepción'}
+              {sending ? 'Guardando…' : savedNotSynced ? 'Sin confirmar: recarga' : 'Añadir excepción'}
             </button>
           </div>
         </>

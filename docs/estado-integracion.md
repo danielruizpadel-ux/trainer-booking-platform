@@ -303,10 +303,59 @@ Límites:
 - `refreshAllWindows` (available/full) después de sincronizar sigue siendo
   aparte; no reabre ventanas `blocked`.
 
+### Revisión de Codex sobre 58fcaea (26/09/2026)
+
+1. **Reserva fuera de su ventana (C4)** — `migrations/015_reservations_within_window.sql`.
+   La base impide en los dos sentidos que una reserva viva quede fuera del
+   rango vigente de su ventana: trigger en `reservations` (INSERT / UPDATE
+   de ventana, horas o estado: bloquea la ventana `FOR SHARE` y comprueba el
+   rango) y en `availability_slots` (UPDATE de inicio/fin: rechaza dejar
+   fuera una reserva viva). Cubre web pública, manual, clase puntual,
+   mover/proponer y paquetes. La app lo trata como «franja no disponible»
+   (409, `isSlotConflictError`). La migración se niega si ya hay reservas
+   vivas fuera de su ventana (consulta en su cabecera). Probado en los dos
+   órdenes (reserva → acortamiento y acortamiento → reserva), con la
+   sincronización y con un UPDATE directo: `scripts/verify-window-range-db.sh`.
+2. **Plan desfasado** — `migrations/016_availability_revision.sql`.
+   `trainers.availability_revision` sube con cada cambio de horario o
+   excepción (triggers); el generador la lee antes que el horario y
+   `apply_window_plan(trainer, plan, revision)` rechaza el plan
+   (`window_plan_stale`) si cambió. Se borra la versión sin revisión.
+   `syncWindows` recalcula hasta 3 veces. Probado con planes del
+   `generate.ts` real (A calcula → B apaga el día y sincroniza → A
+   rechazado; el día no se publica) y en los dos órdenes de concurrencia:
+   `scripts/verify-schedule-revision-db.sh`.
+3. **«Sincronizar huecos»** en serie: primero la sincronización; la
+   limpieza de huecos antiguos solo si se confirmó. Cada una se informa por
+   separado (`components/dashboard/availability/sync-report.ts`).
+4. **Respuesta perdida**: `sync_failed` lleva `outcome`. `not_applied` solo
+   si la base respondió con código (SQLSTATE / PGRST); si el error llega
+   sin código después de mandar el plan, `unknown` y el mensaje dice «no
+   hemos podido confirmar…», nunca «no ha cambiado». En el navegador, red
+   caída o respuesta ilegible = desconocido (`components/dashboard/availability/api.ts`):
+   horario, excepciones y «Sincronizar huecos» recargan y lo dicen. La
+   clase puntual hace lo mismo (servidor y diálogo, que no deja reenviar).
+   Pruebas: `scripts/verify-sync-outcome.mjs`.
+
+Límites:
+
+- Hay que aplicar 011 → 016 en orden antes de desplegar este código.
+- La 015 se para si la base real ya tiene reservas vivas fuera de su
+  ventana; habrá que resolverlas a mano antes (no se toca ningún dato).
+- `FOR SHARE` en cada reserva viva que se crea o mueve: una reserva espera
+  mientras se sincroniza o se acorta su ventana (milisegundos en la
+  práctica; las pruebas lo alargan con `pg_sleep`).
+- La revisión sube con cualquier escritura del horario, aunque no cambie
+  nada que afecte a las ventanas: puede provocar un recálculo de más.
+- El resultado desconocido se detecta por la forma del error (sin código).
+  Un proxy que devolviera un JSON propio con código parecido no se
+  distinguiría. La reserva manual y la web pública no se han tocado en
+  este aspecto (siguen diciendo «no se pudo…» ante un error sin código).
+
 ## Numeración de migraciones (pendiente al unir ramas)
 
 Esta rama: `011_schema_compat`, `012_one_off_reservation` (requiere 011) y
-`013_reservations_slot_fk_restrict` y `014_apply_window_plan` (requiere la 013). La rama `emdash/pagos-paquetes-t3o2n`
+`013_reservations_slot_fk_restrict`, `014_apply_window_plan` (requiere la 013), `015_reservations_within_window` y `016_availability_revision` (requiere la 014). La rama `emdash/pagos-paquetes-t3o2n`
 tiene `011_package_session_atomic_schedule.sql` (commit 44888db) y, sin
 commitear en su worktree, `012a_package_credit_preparation.sql` y
 `012b_package_credit_single_live.sql`. Ninguna de las tres toca

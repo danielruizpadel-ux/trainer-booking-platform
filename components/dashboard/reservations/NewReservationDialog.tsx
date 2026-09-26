@@ -60,6 +60,8 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
   const [confirmed, setConfirmed] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Se perdió la respuesta al crear: no se deja reenviar (podría duplicarla).
+  const [unconfirmed, setUnconfirmed] = useState(false)
 
   async function create() {
     if (!slot) return
@@ -78,13 +80,22 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ slot_id: slot.window_id, start_time: slot.start_time, duration_minutes: duration, ...client, confirmed }),
           })
-      const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => null)
+      if (!data) throw new UnconfirmedCreate()
       if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo crear la reserva')
       router.refresh()
       onCreated?.()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear la reserva')
+      // fetch rechazado (red) o respuesta ilegible: puede haberse creado.
+      if (err instanceof UnconfirmedCreate || err instanceof TypeError) {
+        setUnconfirmed(true)
+        router.refresh()
+        onCreated?.()
+        setError(UNCONFIRMED_CREATE_MESSAGE)
+      } else {
+        setError(err instanceof Error ? err.message : 'No se pudo crear la reserva')
+      }
       setSending(false)
     }
   }
@@ -132,7 +143,7 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
               <button
                 type="button"
                 onClick={create}
-                disabled={sending || !client.client_name.trim() || !client.client_email.trim()}
+                disabled={sending || unconfirmed || !client.client_name.trim() || !client.client_email.trim()}
                 className={dialogButton.primary}
               >
                 {sending ? 'Creando…' : confirmed ? 'Crear confirmada' : 'Crear pendiente'}
@@ -227,3 +238,9 @@ export function NewReservationDialog({ durations, onClose, initialSlot = null, i
     </DialogShell>
   )
 }
+
+/** Sin respuesta legible del servidor al crear: no se sabe si se creó. */
+class UnconfirmedCreate extends Error {}
+
+const UNCONFIRMED_CREATE_MESSAGE =
+  'No hemos podido confirmar si la reserva se ha creado (se perdió la respuesta). Revisa el calendario antes de volver a intentarlo.'

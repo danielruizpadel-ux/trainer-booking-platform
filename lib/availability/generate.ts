@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseDateStr, toDateStr } from '@/lib/dateUtils'
 import { isSlotOpen, reservationHoldsSlot } from './slot-status'
+import { isDatabaseErrorCode } from '@/lib/supabase/error-codes'
 
 /**
  * Generador: a partir de la plantilla semanal + excepciones (migración 005),
@@ -354,12 +355,19 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
   // Todo el plan en UNA transacción (migrations/014, apply_window_plan): o se
   // aplica entero o no cambia nada. Antes eran cinco escrituras sueltas y un
   // fallo a mitad dejaba publicadas horas que el entrenador había quitado.
-  const { data, error } = await supabase.rpc(WINDOW_PLAN_FUNCTION, {
-    p_trainer_id: trainerId,
-    p_plan: { insert: toInsert, delete: toDelete, update_end: toUpdateEndTime, close: toClose, reopen: toReopen },
-    p_revision: revision,
-  })
-  if (error) throw new WindowSyncError(error)
+  let result: { data: unknown; error: { code?: string; message?: string } | null }
+  try {
+    result = await supabase.rpc(WINDOW_PLAN_FUNCTION, {
+      p_trainer_id: trainerId,
+      p_plan: { insert: toInsert, delete: toDelete, update_end: toUpdateEndTime, close: toClose, reopen: toReopen },
+      p_revision: revision,
+    })
+  } catch (thrown) {
+    // La llamada salió y no hay respuesta: la transacción pudo confirmarse.
+    throw new WindowSyncError({ message: thrown instanceof Error ? thrown.message : String(thrown) }, { afterSend: true })
+  }
+  const { data, error } = result
+  if (error) throw new WindowSyncError(error, { afterSend: true })
   const applied = (data ?? {}) as Partial<Record<'created' | 'removed' | 'kept' | 'closed' | 'shrink_blocked' | 'reopened', number>>
 
   return {
@@ -374,6 +382,8 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
 
 export const WINDOW_PLAN_FUNCTION = 'apply_window_plan'
 
+export { isDatabaseErrorCode }
+
 /**
  * La sincronización no se ha aplicado (nada ha cambiado en las ventanas).
  * `missingMigration`: la 014 no está en la base (o PostgREST no ha recargado
@@ -384,7 +394,13 @@ export class WindowSyncError extends Error {
   readonly missingMigration: boolean
   /** El plan se calculó con un horario que ya cambió (016): no se aplicó nada; se puede recalcular. */
   readonly stale: boolean
-  constructor(error: { code?: string; message?: string }) {
+  /**
+   * No se sabe si se aplicó: el error llegó DESPUÉS de mandar el plan y no
+   * trae código de Postgres/PostgREST (red cortada, respuesta perdida, 5xx
+   * de un proxy). Con código, la base lo rechazó y la transacción se deshizo.
+   */
+  readonly outcomeUnknown: boolean
+  constructor(error: { code?: string; message?: string }, options: { afterSend?: boolean } = {}) {
     // PGRST202 / 42883: falta la función (014/016) o su firma nueva (016);
     // 42703: falta trainers.availability_revision (016).
     const missingMigration = error.code === 'PGRST202' || error.code === '42883' || error.code === '42703'
@@ -394,6 +410,7 @@ export class WindowSyncError extends Error {
     this.code = error.code ?? null
     this.missingMigration = missingMigration
     this.stale = stale
+    this.outcomeUnknown = Boolean(options.afterSend) && !isDatabaseErrorCode(error.code)
   }
 }
 

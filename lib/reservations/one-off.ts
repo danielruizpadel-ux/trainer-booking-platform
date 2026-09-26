@@ -9,6 +9,7 @@ import { parseDetails, type ReservationDetailsInput } from './edit'
 import { createManualReservation, type ManualResult } from './manual'
 import { OVERLAP_MESSAGE, WINDOW_SELECT, isSlotConflictError, toLoadedWindow, type WindowReservation, type WindowRow } from './slots'
 import { checkOneOffRange } from './one-off-rules'
+import { isDatabaseErrorCode } from '@/lib/supabase/error-codes'
 
 /**
  * Clase puntual: el entrenador reserva un tramo para un cliente aunque esté
@@ -130,19 +131,26 @@ export async function createOneOffReservation(trainerId: string, input: OneOffRe
 
   const confirmed = input.confirmed === true
   const status = confirmed ? RESERVATION_STATUS.CONFIRMED : RESERVATION_STATUS.PENDING_CONFIRMATION
-  const { data: created, error: rpcError } = await supabase.rpc(ONE_OFF_FUNCTION, {
-    p_trainer_id: trainerId,
-    p_session_date: date,
-    p_start_time: range.start_time,
-    p_end_time: range.end_time,
-    p_duration_minutes: duration,
-    p_client_name: parsed.updates.client_name,
-    p_client_email: parsed.updates.client_email,
-    p_client_phone: parsed.updates.client_phone ?? null,
-    p_notes: parsed.updates.notes ?? null,
-    p_price: calculateBookingPrice(1, base.price, { durationMinutes: duration }).discountedPricePerSession,
-    p_status: status,
-  })
+  let rpcResult: { data: unknown; error: DbError | null }
+  try {
+    rpcResult = await supabase.rpc(ONE_OFF_FUNCTION, {
+      p_trainer_id: trainerId,
+      p_session_date: date,
+      p_start_time: range.start_time,
+      p_end_time: range.end_time,
+      p_duration_minutes: duration,
+      p_client_name: parsed.updates.client_name,
+      p_client_email: parsed.updates.client_email,
+      p_client_phone: parsed.updates.client_phone ?? null,
+      p_notes: parsed.updates.notes ?? null,
+      p_price: calculateBookingPrice(1, base.price, { durationMinutes: duration }).discountedPricePerSession,
+      p_status: status,
+    })
+  } catch {
+    // La llamada salió y no hubo respuesta: la clase pudo crearse o no.
+    return oneOffError({ message: 'rpc_threw' })
+  }
+  const { data: created, error: rpcError } = rpcResult
   if (rpcError) return oneOffError(rpcError)
   const row = (Array.isArray(created) ? created[0] : created) as { reservation_id?: string } | null
   if (!row?.reservation_id) {
@@ -153,6 +161,8 @@ export async function createOneOffReservation(trainerId: string, input: OneOffRe
 }
 
 export const ONE_OFF_FUNCTION = 'create_one_off_reservation'
+export const ONE_OFF_UNKNOWN_MESSAGE =
+  'No hemos podido confirmar si la clase se ha creado (se perdió la respuesta). Revisa el calendario antes de volver a intentarlo.'
 const WINDOW_CONFLICT_MESSAGE = 'Ya hay una ventana con ese mismo horario ese día. Elige otro tramo.'
 
 type DbError = { code?: string; message?: string; details?: string | null }
@@ -172,6 +182,12 @@ export function oneOffError(error: DbError): Extract<OneOffResult, { ok: false }
   if (error.code === 'PGRST202' || error.code === '42883') {
     console.error('Falta la migración 012 (create_one_off_reservation)')
     return { ok: false, status: 503, message: 'Las clases puntuales aún no están activadas (falta la migración 012).' }
+  }
+  // Sin código de la base: se perdió la respuesta después de mandar la
+  // escritura. No se dice que no se creó: puede que sí.
+  if (!isDatabaseErrorCode(error.code)) {
+    console.error('create_one_off_reservation sin respuesta de la base:', { message: error.message ?? null })
+    return { ok: false, status: 500, message: ONE_OFF_UNKNOWN_MESSAGE }
   }
   console.error('create_one_off_reservation falló:', { code: error.code ?? null })
   return { ok: false, status: 500, message: 'No se pudo crear la reserva' }
