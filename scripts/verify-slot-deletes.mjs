@@ -53,8 +53,8 @@ const OTHER_FK = fkError('slot_notes_availability_slot_id_fkey', 'slot_notes')
  * reservations (RESTRICT, 013); `otherFk` = ids que rechaza por OTRA FK.
  * Registra deletes y updates.
  */
-function db({ slots = [], weekly = [], referenced = [], otherFk = [], otherError = null } = {}) {
-  const log = { deleteCalls: [], deleted: [], updates: [], inserts: [] }
+function db({ slots = [], weekly = [], referenced = [], otherFk = [], otherError = null, rpcResult = null, rpcError = null } = {}) {
+  const log = { deleteCalls: [], deleted: [], updates: [], inserts: [], rpcs: [] }
   const supabase = fakeSupabase((table, ops) => {
     const op = (name) => ops.find((o) => o.op === name)
     if (op('delete')) {
@@ -80,7 +80,20 @@ function db({ slots = [], weekly = [], referenced = [], otherFk = [], otherError
     if (table === 'availability_slots') return { data: slots, error: null }
     return { data: [], error: null }
   })
+  // apply_window_plan (014): el generador ya no escribe tablas; manda el plan.
+  supabase.rpc = async (name, args) => {
+    log.rpcs.push({ name, args })
+    if (rpcError) return { data: null, error: rpcError }
+    return { data: rpcResult ?? { created: 0, removed: args.p_plan.delete.length, kept: 0, closed: args.p_plan.close.length, shrink_blocked: 0, reopened: args.p_plan.reopen.length, missing: 0 }, error: null }
+  }
   return { supabase, log }
+}
+const planOf = (log) => {
+  assert.equal(log.rpcs.length, 1, 'una sola llamada')
+  assert.equal(log.rpcs[0].name, 'apply_window_plan')
+  assert.equal(log.rpcs[0].args.p_trainer_id, T)
+  assert.equal(log.deleteCalls.length + log.updates.length + log.inserts.length, 0, 'ninguna escritura directa en tablas')
+  return log.rpcs[0].args.p_plan
 }
 
 const slot = (id, extra = {}) => ({
@@ -137,7 +150,7 @@ test('deleteEmptyWindows: otro error se lanza (no se traga)', async () => {
 
 // ─── 2. Generador ────────────────────────────────────────────────────────────
 
-test('generador, el patrón ya no quiere el día: borra solo ventanas sin ninguna reserva', async () => {
+test('generador, el patrón ya no quiere el día: el plan solo borra ventanas sin ninguna reserva', async () => {
   const { supabase, log } = db({
     slots: [
       slot('empty'),
@@ -148,11 +161,11 @@ test('generador, el patrón ya no quiere el día: borra solo ventanas sin ningun
     ],
   })
   const summary = await generateSlotsForTrainer(supabase, T, 1)
-  assert.deepEqual(log.deleteCalls, [['empty', 'full-empty']], 'nunca pide borrar una ventana con reservas')
-  assert.deepEqual(updatedTo(log, 'blocked').sort(), ['booked', 'history'], 'con historial o reserva viva: se cierra')
-  assert.equal(log.updates.some((u) => u.ids.includes('retired')), false, 'la ya retirada no se toca')
+  const plan = planOf(log)
+  assert.deepEqual(plan.delete, ['empty', 'full-empty'], 'nunca pide borrar una ventana con reservas')
+  assert.deepEqual([...plan.close].sort(), ['booked', 'history'], 'con historial o reserva viva: se cierra')
+  assert.equal(JSON.stringify(plan).includes('retired'), false, 'la ya retirada no se toca')
   assert.equal(summary.removed, 2)
-  assert.equal(summary.keptReferenced, 0)
 })
 
 test('generador, el patrón vuelve a querer una ventana retirada: la reabre, sin duplicar', async () => {
@@ -161,9 +174,10 @@ test('generador, el patrón vuelve a querer una ventana retirada: la reabre, sin
     weekly: [{ day_of_week: DOW, start_time: '09:00:00', end_time: '13:00:00', class_type: 'private' }],
   })
   await generateSlotsForTrainer(supabase, T, 1)
-  assert.deepEqual(updatedTo(log, 'available'), ['retired'])
-  assert.equal(log.inserts.filter((i) => i.session_date === DAY).length, 0, 'no inserta otra con el mismo rango')
-  assert.equal(log.deleteCalls.length, 0)
+  const plan = planOf(log)
+  assert.deepEqual(plan.reopen, ['retired'])
+  assert.equal(plan.insert.filter((i) => i.session_date === DAY).length, 0, 'no inserta otra con el mismo rango')
+  assert.deepEqual(plan.delete, [])
 })
 
 test('generador, la retirada tiene otro fin: se reutiliza (nuevo fin + reabierta)', async () => {
@@ -172,9 +186,10 @@ test('generador, la retirada tiene otro fin: se reutiliza (nuevo fin + reabierta
     weekly: [{ day_of_week: DOW, start_time: '09:00:00', end_time: '17:00:00', class_type: 'private' }],
   })
   await generateSlotsForTrainer(supabase, T, 1)
-  assert.deepEqual(log.updates.filter((u) => u.values.end_time === '17:00:00').flatMap((u) => u.ids), ['retired'])
-  assert.deepEqual(updatedTo(log, 'available'), ['retired'])
-  assert.equal(log.inserts.filter((i) => i.session_date === DAY).length, 0)
+  const plan = planOf(log)
+  assert.deepEqual(plan.update_end, [{ id: 'retired', end_time: '17:00:00' }])
+  assert.deepEqual(plan.reopen, ['retired'])
+  assert.equal(plan.insert.filter((i) => i.session_date === DAY).length, 0)
 })
 
 test('generador, duplicado del mismo grupo con historial: se cierra en vez de borrarse', async () => {
@@ -183,21 +198,30 @@ test('generador, duplicado del mismo grupo con historial: se cierra en vez de bo
     weekly: [{ day_of_week: DOW, start_time: '09:00:00', end_time: '13:00:00', class_type: 'private' }],
   })
   await generateSlotsForTrainer(supabase, T, 1)
-  assert.deepEqual(log.deleteCalls, [['dup-empty']])
-  assert.deepEqual(updatedTo(log, 'blocked'), ['dup'])
+  const plan = planOf(log)
+  assert.deepEqual(plan.delete, ['dup-empty'])
+  assert.deepEqual(plan.close, ['dup'])
 })
 
-test('generador: si la base rechaza un borrado (ganó una reserva), se conserva y no aborta', async () => {
-  const { supabase, log } = db({ slots: [slot('a'), slot('b', { start_time: '14:00:00', end_time: '15:00:00' })], referenced: ['b'] })
+test('generador: lo que la base decide al aplicar (ganó una reserva, acortar imposible) va al resumen', async () => {
+  const { supabase } = db({
+    slots: [slot('a'), slot('b', { start_time: '14:00:00', end_time: '15:00:00' })],
+    rpcResult: { created: 0, removed: 1, kept: 1, closed: 0, shrink_blocked: 1, reopened: 0, missing: 0 },
+  })
   const summary = await generateSlotsForTrainer(supabase, T, 1)
-  assert.deepEqual(log.deleted, ['a'])
   assert.equal(summary.removed, 1)
   assert.equal(summary.keptReferenced, 1)
+  assert.equal(summary.closed, 1, 'un acortamiento imposible se cuenta como cerrada')
 })
 
-test('generador: otro error al borrar sigue abortando (como antes)', async () => {
-  const { supabase } = db({ slots: [slot('a')], otherError: { code: '42501', message: 'permission denied' } })
-  await assert.rejects(generateSlotsForTrainer(supabase, T, 1), /permission denied/)
+test('generador: si la función falla (cualquier error, también un 23503 de otra FK) se lanza WindowSyncError', async () => {
+  const { WindowSyncError } = load('lib/availability/generate.ts')
+  for (const rpcError of [OTHER_FK, RES_FK, { code: '57014', message: 'canceling statement due to statement timeout' }]) {
+    const { supabase } = db({ slots: [slot('a')], rpcError })
+    await assert.rejects(generateSlotsForTrainer(supabase, T, 1), (e) => e instanceof WindowSyncError && !e.missingMigration)
+  }
+  const { supabase } = db({ slots: [slot('a')], rpcError: { code: 'PGRST202', message: 'Could not find the function public.apply_window_plan' } })
+  await assert.rejects(generateSlotsForTrainer(supabase, T, 1), (e) => e instanceof WindowSyncError && e.missingMigration)
 })
 
 // ─── 3. Purga legacy ─────────────────────────────────────────────────────────

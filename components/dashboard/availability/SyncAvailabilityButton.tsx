@@ -24,25 +24,30 @@ export function SyncAvailabilityButton() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Los huecos se sincronizaron pero la limpieza de huecos antiguos falló.
+  const [warning, setWarning] = useState<string | null>(null)
 
   const run = async () => {
     setBusy(true)
     setError(null)
+    setWarning(null)
     setResult(null)
     try {
+      const json = (r: Response) => r.json().catch(() => ({ success: false }))
       const [genRes, purgeRes] = await Promise.all([
-        fetch('/api/dashboard/availability/generate', { method: 'POST' }).then((r) => r.json()),
-        fetch('/api/dashboard/availability/purge-legacy', { method: 'POST' }).then((r) => r.json()),
+        fetch('/api/dashboard/availability/generate', { method: 'POST' }).then(json, () => ({ success: false })),
+        fetch('/api/dashboard/availability/purge-legacy', { method: 'POST' }).then(json, () => ({ success: false })),
       ])
-      if (!genRes.success) throw new Error(genRes.error || 'No se pudo regenerar')
-      if (!purgeRes.success) throw new Error(purgeRes.error || 'No se pudo limpiar')
+      // La sincronización es atómica (migrations/014): si falló, no cambió nada.
+      if (!genRes.success) throw new Error(genRes.error || 'No se ha sincronizado: tu disponibilidad publicada no ha cambiado.')
+      if (!purgeRes.success) setWarning('Huecos sincronizados, pero no se pudieron limpiar los huecos antiguos. Vuelve a intentarlo.')
       setResult({
         created: genRes.summary?.created ?? 0,
         removed: genRes.summary?.removed ?? 0,
-        legacyRemoved: purgeRes.removed ?? 0,
+        legacyRemoved: purgeRes.success ? (purgeRes.removed ?? 0) : 0,
         closed: genRes.summary?.closed ?? 0,
         reopened: genRes.summary?.reopened ?? 0,
-        kept: (genRes.summary?.keptReferenced ?? 0) + (purgeRes.skippedWithHistory ?? 0) + (purgeRes.skippedReferenced ?? 0),
+        kept: (genRes.summary?.keptReferenced ?? 0) + (purgeRes.success ? (purgeRes.skippedWithHistory ?? 0) + (purgeRes.skippedReferenced ?? 0) : 0),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al sincronizar')
@@ -69,7 +74,16 @@ export function SyncAvailabilityButton() {
           {result.kept > 0 ? `, ${result.kept} conservados porque tienen reservas` : ''}.
         </p>
       )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {warning && !error && (
+        <p role="status" className="text-xs text-amber-700">
+          {warning}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="max-w-sm text-right text-xs text-red-600">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

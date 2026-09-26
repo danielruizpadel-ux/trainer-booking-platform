@@ -18,6 +18,8 @@ export function AddOverrideDialog({ onClose, onCreated }: AddOverrideDialogProps
   const [end, setEnd] = useState('17:00')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Guardada, pero los huecos no se sincronizaron: no se deja volver a enviarla.
+  const [savedNotSynced, setSavedNotSynced] = useState(false)
 
   async function create() {
     setSending(true)
@@ -32,7 +34,16 @@ export function AddOverrideDialog({ onClose, onCreated }: AddOverrideDialogProps
         body: JSON.stringify(body),
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo añadir la excepción')
+      if (!response.ok || !data.success) {
+        if (data.code === 'sync_failed' && data.saved) {
+          onCreated()
+          setSavedNotSynced(true)
+          setSending(false)
+          setError(data.error)
+          return
+        }
+        throw new Error(data.error || 'No se pudo añadir la excepción')
+      }
       onCreated()
       onClose()
     } catch (err) {
@@ -56,8 +67,8 @@ export function AddOverrideDialog({ onClose, onCreated }: AddOverrideDialogProps
             <button type="button" onClick={onClose} disabled={sending} className={dialogButton.secondary}>
               Cancelar
             </button>
-            <button type="button" onClick={create} disabled={sending} className={dialogButton.primary}>
-              {sending ? 'Guardando…' : 'Añadir excepción'}
+            <button type="button" onClick={create} disabled={sending || savedNotSynced} className={dialogButton.primary}>
+              {sending ? 'Guardando…' : savedNotSynced ? 'Guardada, sin sincronizar' : 'Añadir excepción'}
             </button>
           </div>
         </>

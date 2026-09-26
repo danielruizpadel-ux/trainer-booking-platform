@@ -219,6 +219,16 @@ real (confirmado el 26/09/2026): borrar una ventana borraba sus reservas. La
 ventanas (generador y purga) solo piden borrar ventanas sin reservas y
 manejan el 23503 conservando la ventana (`lib/availability/delete-windows.ts`).
 
+## Migración 014 — sincronizar ventanas en una transacción (pendiente de aplicar; requiere la 013)
+
+Función `public.apply_window_plan(p_trainer_id, p_plan jsonb)` → jsonb
+`{ created, removed, kept, closed, shrink_blocked, reopened, missing }`. Aplica
+el plan del generador semanal (insert / delete / update_end / close / reopen)
+en una transacción, con cerrojo por entrenador y las ventanas bloqueadas,
+revalidando: una ventana a borrar con reservas se cierra; un acortamiento que
+dejaría fuera una reserva viva cierra la ventana. Si algo falla, no cambia
+nada. Solo `service_role`. La usa `lib/availability/generate.ts`.
+
 ## `email_logs` y `whatsapp_logs`
 
 | `email_logs` | `whatsapp_logs` |

@@ -325,9 +325,15 @@ test('generador semanal: nunca borra, reabre ni cambia una ventana puntual (manu
       if (table === 'availability_slots') return { data: [oneOff], error: null }
       return { data: [], error: null }
     })
+    const plans = []
+    supabase.rpc = async (name, args) => {
+      plans.push(args.p_plan)
+      return { data: { created: 0, removed: 0, kept: 0, closed: 0, shrink_blocked: 0, reopened: 0, missing: 0 }, error: null }
+    }
     await generateSlotsForTrainer(supabase, T, 1)
     const touching = writes.filter((w) => JSON.stringify(w.filter).includes('w-one'))
     assert.deepEqual(touching, [], `con patrón ${weekly.length ? 'que la quiere' : 'vacío'}`)
+    assert.equal(JSON.stringify(plans).includes('w-one'), false, 'ni en el plan de apply_window_plan (014)')
   }
 })
 

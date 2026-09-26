@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseDateStr, toDateStr } from '@/lib/dateUtils'
 import { isSlotOpen, reservationHoldsSlot } from './slot-status'
-import { deleteEmptyWindows } from './delete-windows'
 
 /**
  * Generador: a partir de la plantilla semanal + excepciones (migración 005),
@@ -42,10 +41,15 @@ import { deleteEmptyWindows } from './delete-windows'
  * solo pide borrar ventanas SIN NINGUNA fila en reservations. Una ventana
  * que el patrón ya no quiere y solo tiene reservas no vivas se CIERRA
  * (`blocked`) en vez de borrarse ("retirada"); si el patrón la vuelve a
- * querer, se reabre y se reutiliza como una libre. El borrado va por
- * deleteEmptyWindows: con la migración 013 (ON DELETE RESTRICT) la base
- * rechaza borrar una ventana con reservas y esa ventana se conserva
- * (`keptReferenced`) en vez de abortar el regenerado.
+ * querer, se reabre y se reutiliza como una libre.
+ *
+ * 26/09/2026 (sincronización parcial, revisión de Codex): el plan (qué
+ * insertar, borrar, acortar/alargar, cerrar y reabrir) se aplica con
+ * apply_window_plan (migrations/014) en UNA transacción que bloquea las
+ * ventanas y revalida: una ventana a borrar que ya tiene reservas se cierra
+ * (`keptReferenced`); un acortamiento que dejaría fuera una reserva viva
+ * cierra la ventana. Si algo falla, no cambia nada y se lanza
+ * WindowSyncError: las rutas lo devuelven como `sync_failed`.
  *
  * 21/09/2026 (prompt 20, fix de regenerar): `rangeKey` solo mira
  * start_time + class_type, no end_time. Si dos filas `generated_by_pattern`
@@ -336,57 +340,42 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     cursor = addDays(cursor, 1)
   }
 
-  if (toInsert.length > 0) {
-    const { error } = await supabase.from('availability_slots').insert(
-      toInsert.map((slot) => ({
-        ...slot,
-        status: 'available',
-        current_bookings: 0,
-        max_capacity: 1,
-        generated_by_pattern: true,
-        created_at: new Date().toISOString(),
-      }))
-    )
-    if (error) throw new Error(`INSERT failed (${toInsert.length} rows): ${error.message}. sample=${JSON.stringify(toInsert.slice(0,3))}`)
-  }
-
-  // Solo ventanas sin ninguna reserva (según lo leído). Si alguna ganó una
-  // reserva mientras tanto, con la 013 la base lo rechaza y se conserva.
-  const deleted = await deleteEmptyWindows(supabase, toDelete)
-
-  for (const update of toUpdateEndTime) {
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ end_time: update.end_time, updated_at: new Date().toISOString() })
-      .eq('id', update.id)
-    if (error) throw new Error(`UPDATE failed id=${update.id} end_time=${update.end_time}: ${error.message}`)
-  }
-
-  if (toClose.length > 0) {
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ status: 'blocked', updated_at: new Date().toISOString() })
-      .in('id', toClose)
-    if (error) throw new Error(`UPDATE (blocked) failed (${toClose.length} rows): ${error.message}`)
-  }
-
-  if (toReopen.length > 0) {
-    // 'available' de partida; refreshAllWindows (llamado justo después en
-    // la ruta) recalcula si de verdad queda `available` o `full`.
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ status: 'available', updated_at: new Date().toISOString() })
-      .in('id', toReopen)
-    if (error) throw new Error(`UPDATE (reopen) failed (${toReopen.length} rows): ${error.message}`)
-  }
+  // Todo el plan en UNA transacción (migrations/014, apply_window_plan): o se
+  // aplica entero o no cambia nada. Antes eran cinco escrituras sueltas y un
+  // fallo a mitad dejaba publicadas horas que el entrenador había quitado.
+  const { data, error } = await supabase.rpc(WINDOW_PLAN_FUNCTION, {
+    p_trainer_id: trainerId,
+    p_plan: { insert: toInsert, delete: toDelete, update_end: toUpdateEndTime, close: toClose, reopen: toReopen },
+  })
+  if (error) throw new WindowSyncError(error)
+  const applied = (data ?? {}) as Partial<Record<'created' | 'removed' | 'kept' | 'closed' | 'shrink_blocked' | 'reopened', number>>
 
   return {
-    created: toInsert.length,
-    removed: deleted.deleted,
+    created: applied.created ?? 0,
+    removed: applied.removed ?? 0,
     keptOccupied,
-    closed: toClose.length,
-    reopened: toReopen.length,
-    keptReferenced: deleted.kept.length,
+    closed: (applied.closed ?? 0) + (applied.shrink_blocked ?? 0),
+    reopened: applied.reopened ?? 0,
+    keptReferenced: applied.kept ?? 0,
+  }
+}
+
+export const WINDOW_PLAN_FUNCTION = 'apply_window_plan'
+
+/**
+ * La sincronización no se ha aplicado (nada ha cambiado en las ventanas).
+ * `missingMigration`: la 014 no está en la base (o PostgREST no ha recargado
+ * el esquema). No hay camino alternativo no atómico.
+ */
+export class WindowSyncError extends Error {
+  readonly code: string | null
+  readonly missingMigration: boolean
+  constructor(error: { code?: string; message?: string }) {
+    const missingMigration = error.code === 'PGRST202' || error.code === '42883'
+    super(missingMigration ? 'Falta la migración 014 (apply_window_plan)' : `apply_window_plan falló (${error.code ?? 'sin código'}): ${error.message ?? ''}`)
+    this.name = 'WindowSyncError'
+    this.code = error.code ?? null
+    this.missingMigration = missingMigration
   }
 }
 

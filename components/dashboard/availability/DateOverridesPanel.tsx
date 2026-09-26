@@ -23,7 +23,11 @@ export function DateOverridesPanel({ overrides, loading, onChanged }: DateOverri
     try {
       const response = await fetch(`/api/dashboard/availability/overrides/${id}`, { method: 'DELETE' })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo quitar la excepción')
+      if (!response.ok || !data.success) {
+        // Quitada, pero los huecos no se sincronizaron: se recarga la lista y se avisa.
+        if (data.code === 'sync_failed' && data.saved) onChanged()
+        throw new Error(data.error || 'No se pudo quitar la excepción')
+      }
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo quitar la excepción')

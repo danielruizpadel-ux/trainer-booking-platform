@@ -230,41 +230,83 @@ Límites:
   tiene reservas, fallará. Ninguna ruta borra entrenadores.
 - Las ventanas «retiradas» (cerradas con historial) se quedan en la base.
 
-### Sincronización parcial del generador (análisis, sin cambios)
+### Sincronización atómica de ventanas (migración 014, revisión de Codex)
 
-`generateSlotsForTrainer` escribe en cinco pasos, cada uno una petición (y
-una transacción) aparte: INSERT (lote) → DELETE (lote; una a una si la FK
-lo rechaza) → UPDATE de `end_time` (una a una) → CLOSE `blocked` (lote) →
-REOPEN `available` (lote). El cambio de horario que lo dispara (weekly /
-overrides) ya está guardado antes. Si un paso falla, los anteriores se
-quedan y la ruta responde 500. Estados concretos:
+Antes, `generateSlotsForTrainer` aplicaba su plan en cinco escrituras
+sueltas (INSERT → DELETE → UPDATE fin → CLOSE → REOPEN). Un fallo a mitad
+dejaba estados mixtos; el peor: ventanas nuevas creadas y las retiradas sin
+borrar ni cerrar, es decir, **horas que el entrenador quitó, publicadas**.
 
-| Falla en | Queda | Efecto |
-|---|---|---|
-| INSERT | nada escrito | faltan las ventanas nuevas (se ofrece de menos) |
-| DELETE (o a mitad del una a una) | ventanas nuevas + las que sobraban, abiertas | **se ofrece de más**: horas que el entrenador quitó siguen reservables |
-| UPDATE `end_time` a mitad | unas con el fin nuevo, otras con el viejo | de más si el rango se acortó; de menos si se alargó |
-| CLOSE | ventanas con reserva viva de un día apagado, y (desde 389211d) ventanas con solo historial que sobran, siguen `available` | **se ofrece de más**: el tiempo libre alrededor de la reserva, o la ventana entera con historial |
-| REOPEN | ventanas que el patrón vuelve a querer siguen `blocked` | se ofrece de menos |
+Evaluado:
 
-En ningún caso se pierden datos (013) ni hay dos reservas solapadas (008),
-y el generador recalcula todo desde la base en cada llamada: la siguiente
-ejecución correcta (cualquier cambio de horario o «Sincronizar huecos»)
-deja el estado bien. Es anterior a esta rama (el orden no ha cambiado); lo
-único nuevo es que una ventana con historial que sobra se cierra en el paso
-CLOSE en vez de borrarse en DELETE, así que ahora también la afecta un
-fallo del UPDATE.
+- *Reordenar* (cerrar/borrar primero, abrir al final) solo cambia hacia
+  qué lado cae el fallo: un paso por lotes o una a una puede quedarse a
+  medias, el UPDATE de fin puede ir en los dos sentidos, y el plan sale de
+  una lectura que puede estar desfasada (una reserva pública entra entre la
+  lectura y la escritura). No basta.
+- *Atomicidad en PostgreSQL*: elegido. `migrations/014_apply_window_plan.sql`,
+  `apply_window_plan(trainer, plan)`: el generador sigue calculando el plan
+  en TypeScript y la función lo aplica en UNA transacción, con cerrojo por
+  entrenador, `FOR UPDATE` de las ventanas afectadas y revalidación con las
+  filas bloqueadas (borrar una que ya tiene reservas → se cierra; acortar
+  dejando fuera una reserva viva → se cierra; insertar algo ya creado → se
+  ignora; filas ajenas o manuales → error). Cualquier error, incluido un
+  23503 de otra FK, deshace todo: lo publicado queda como estaba.
+  Sin la 014 aplicada no hay camino alternativo: la sincronización falla y
+  se dice (no se vuelve a las escrituras sueltas).
 
-Conclusión: no bloquea la integración (transitorio, sin pérdida de datos ni
-doble reserva). Si se quiere que un fallo deje siempre el lado seguro, el
-arreglo mínimo es reordenar los pasos: CLOSE y DELETE primero, INSERT y
-REOPEN al final (el UPDATE en medio sigue pudiendo ofrecer de más si acorta
-un rango). No se ha hecho: queda como propuesta.
+Queda un estado parcial que la función no puede cubrir: el cambio de
+horario/excepción se guarda (otra escritura) y la sincronización falla. Las
+7 rutas lo devuelven como `500 { code: 'sync_failed', saved }` con un
+mensaje que dice que la disponibilidad publicada NO ha cambiado
+(`lib/availability/sync-response.ts`), y la interfaz no lo presenta como
+hecho: «Guardar cambios» del horario no muestra «Guardado» sino «Tu horario
+se ha guardado, pero tu disponibilidad publicada NO se ha actualizado…»;
+«Añadir excepción» avisa y no deja reenviarla; quitar una excepción recarga
+la lista y avisa; «Sincronizar huecos» dice «No se ha sincronizado…» y no
+enseña resumen (si solo falla la limpieza de huecos antiguos, lo dice
+aparte).
+
+Pruebas: `scripts/verify-window-plan-db.sh` (Postgres aislado, 47):
+- fallos inyectados en cada fase (cerrar, borrar, fin, insertar, reabrir),
+  un 23503 de otra FK y un fallo después de la función en la misma
+  transacción: ventanas, reservas y lo publicado exactamente igual;
+- plan completo con un plan viejo (ventana que ganó una reserva → cerrada)
+  y un acortamiento imposible (→ cerrada); publicado solo lo que el patrón
+  quiere; ninguna reserva perdida, historial incluido; aplicar el mismo
+  plan otra vez no cambia nada;
+- concurrencia: reserva pública en curso contra el borrado (la
+  sincronización espera y cierra), sincronización primero (la reserva
+  espera y la base la rechaza), cinco sincronizaciones a la vez;
+- el plan que produce el `generate.ts` real (`scripts/lib/capture-window-plan.mjs`)
+  aplicado por la función real;
+- permisos y filas ajenas/manuales.
+`scripts/verify-window-sync.mjs` (6, dobles): las 7 rutas con fallo →
+`sync_failed` y `saved` correcto, sin detalles internos; mensaje de la 014
+sin aplicar; el generador hace una sola llamada y ninguna escritura directa;
+comprobaciones de la interfaz. Navegador (escrituras interceptadas, nada
+llegó al servidor): «Sincronizar huecos», «Guardar cambios» y «Añadir
+excepción» con la sincronización fallando.
+
+Límites:
+
+- **Hay que aplicar la 014 (después de la 013)** antes de desplegar este
+  código: sin ella, cualquier cambio de horario se guarda pero no se
+  sincroniza (y se avisa).
+- Una reserva pública validada con el rango viejo de una ventana puede
+  entrar justo después de acortarla (la FK solo comprueba que la ventana
+  exista; probado en C4): la reserva queda fuera del rango, pero no se
+  publica más tiempo. Es la carrera general entre la validación en la app
+  y la escritura, no algo nuevo de la 014.
+- La purga de huecos legacy sigue aparte (solo borra ventanas manuales
+  vacías: si se queda a medias, se ofrece de menos, nunca de más).
+- `refreshAllWindows` (available/full) después de sincronizar sigue siendo
+  aparte; no reabre ventanas `blocked`.
 
 ## Numeración de migraciones (pendiente al unir ramas)
 
 Esta rama: `011_schema_compat`, `012_one_off_reservation` (requiere 011) y
-`013_reservations_slot_fk_restrict`. La rama `emdash/pagos-paquetes-t3o2n`
+`013_reservations_slot_fk_restrict` y `014_apply_window_plan` (requiere la 013). La rama `emdash/pagos-paquetes-t3o2n`
 tiene `011_package_session_atomic_schedule.sql` (commit 44888db) y, sin
 commitear en su worktree, `012a_package_credit_preparation.sql` y
 `012b_package_credit_single_live.sql`. Ninguna de las tres toca

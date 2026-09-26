@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { requireTrainer } from '@/lib/auth/current-trainer'
-import { generateSlotsForTrainer } from '@/lib/availability/generate'
+import { syncWindows } from '@/lib/availability/sync-response'
 import { refreshAllWindows } from '@/lib/reservations/slots'
 import { toDateStr } from '@/lib/dateUtils'
 
@@ -19,7 +19,9 @@ export async function POST() {
     if (trainer instanceof Response) return trainer
 
     const supabase = getSupabaseServerClient()
-    const summary = await generateSlotsForTrainer(supabase, trainer.id)
+    const sync = await syncWindows(supabase, trainer.id, false)
+    if (!sync.ok) return sync.response
+    const summary = sync.summary
     const refreshedWindows = await refreshAllWindows(supabase, trainer.id, toDateStr(new Date()))
     return NextResponse.json({ success: true, summary: { ...summary, refreshedWindows } })
   } catch (error) {
