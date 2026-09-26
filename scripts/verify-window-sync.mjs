@@ -20,12 +20,13 @@ import assert from 'node:assert/strict'
 import { load, mock, read } from './lib/ts-harness.mjs'
 
 const T = '11111111-1111-4111-8111-111111111111'
-const state = { fail: null }
+const state = { fail: null, calls: 0, staleTimes: 0 }
 
 class WindowSyncError extends Error {
-  constructor(missingMigration) {
+  constructor(missingMigration, stale = false) {
     super('apply_window_plan falló')
     this.missingMigration = missingMigration
+    this.stale = stale
   }
 }
 const SUMMARY = { created: 1, removed: 0, keptOccupied: 0, closed: 0, reopened: 0, keptReferenced: 0 }
@@ -35,6 +36,11 @@ mock('lib/auth/current-trainer.ts', { requireTrainer: async () => ({ id: T, clas
 mock('lib/availability/generate.ts', {
   WindowSyncError,
   generateSlotsForTrainer: async () => {
+    state.calls += 1
+    if (state.staleTimes > 0) {
+      state.staleTimes -= 1
+      throw new WindowSyncError(false, true)
+    }
     if (state.fail === 'sync') throw new WindowSyncError(false)
     if (state.fail === 'migration') throw new WindowSyncError(true)
     if (state.fail === 'other') throw new Error('socket hang up')
@@ -75,12 +81,12 @@ test('rutas: si la sincronización falla, 500 sync_failed con saved correcto y m
   }
 })
 
-test('rutas: con la 014 sin aplicar, el mensaje lo dice', async () => {
+test('rutas: con la 014/016 sin aplicar, el mensaje lo dice', async () => {
   state.fail = 'migration'
   for (const [name, call] of ROUTES) {
     const body = await (await call()).json()
     assert.equal(body.code, 'sync_failed', name)
-    assert.match(body.error, /Falta aplicar la migración 014/, name)
+    assert.match(body.error, /Falta aplicar las migraciones 014 y 016/, name)
   }
 })
 
@@ -93,6 +99,25 @@ test('rutas: si va bien, success con el resumen', async () => {
     assert.equal(body.success, true, name)
     assert.deepEqual({ ...body.summary, refreshedWindows: undefined }, { ...SUMMARY, refreshedWindows: undefined }, name)
   }
+})
+
+test('plan desfasado (016): se recalcula; si sigue desfasado tras 3 intentos, sync_failed', async () => {
+  const { syncWindows, STALE_RETRIES } = load('lib/availability/sync-response.ts')
+  assert.equal(STALE_RETRIES, 3)
+  state.fail = null
+  state.calls = 0
+  state.staleTimes = 2
+  let r = await syncWindows({}, T, true)
+  assert.equal(r.ok, true, 'a la tercera, con el horario ya estable')
+  assert.equal(state.calls, 3)
+  state.calls = 0
+  state.staleTimes = 5
+  r = await syncWindows({}, T, true)
+  assert.equal(r.ok, false)
+  assert.equal(state.calls, 3, 'no reintenta sin fin')
+  const body = await r.response.json()
+  assert.equal(body.code, 'sync_failed')
+  state.staleTimes = 0
 })
 
 test('rutas: ninguna llama al generador por su cuenta (todas por syncWindows)', () => {

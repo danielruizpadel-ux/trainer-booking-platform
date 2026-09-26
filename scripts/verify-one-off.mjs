@@ -322,6 +322,7 @@ test('generador semanal: nunca borra, reabre ni cambia una ventana puntual (manu
         writes.push({ table, op: write.op, values: write.args[0], filter: ops.filter((o) => o.op === 'in' || o.op === 'eq').map((o) => o.args) })
         return { data: null, error: null }
       }
+      if (table === 'trainers') return { data: { availability_revision: 0 }, error: null }
       if (table === 'trainer_weekly_hours') return { data: weekly, error: null }
       if (table === 'trainer_availability_overrides') return { data: [], error: null }
       if (table === 'availability_slots') return { data: [oneOff], error: null }

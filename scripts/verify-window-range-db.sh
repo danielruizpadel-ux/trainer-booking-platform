@@ -37,7 +37,7 @@ checkre() { if [[ "$3" =~ $2 ]]; then pass "$1"; else bad "$1: no casa /$2/ con 
 setup() { # setup <db> <hasta>: esquema desplegado + migraciones 008, 011.. hasta <hasta> (sin la 015 si hasta=014)
   qd postgres "create database $1" >/dev/null
   rund "$1" < scripts/db/deployed-schema.sql >/dev/null
-  for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan 015_reservations_within_window; do
+  for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan 015_reservations_within_window 016_availability_revision; do
     [[ "$f" > "$2" ]] && break
     out=$(rund "$1" < migrations/$f.sql) || { bad "$1: $f: $out"; return 1; }
   done
@@ -59,7 +59,7 @@ check "M1 y no toca nada (ni datos ni triggers)" "$before|0" "$(qd legacy "selec
 qd legacy "update reservations set status = 'cancelled'" >/dev/null
 out=$(rund legacy < migrations/015_reservations_within_window.sql); [[ $? -eq 0 ]] && pass "M1 una cancelada fuera de la ventana no impide aplicarla" || bad "M1: $out"
 
-setup $DB 015_zzz && pass "M2 esquema desplegado + 008, 011 … 015"
+setup $DB 016_zzz && pass "M2 esquema desplegado + 008, 011 … 016"
 out=$(rund $DB < migrations/015_reservations_within_window.sql); [[ $? -eq 0 ]] && pass "M2 idempotente" || bad "M2: $out"
 
 q "insert into trainers (id, slug) values ('$T', 't');
@@ -110,14 +110,14 @@ timed() { # timed <sql>: resultado + waited_ms
 
 # Reserva → acortamiento (sincronización 014): el plan espera y, al ver la reserva, cierra en vez de acortar.
 hold "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W3', '$T', 'C1', 'x@x', 'pending_confirmation', '13:00', '14:00')" commit
-r=$(timed "perform apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W3\",\"end_time\":\"12:00\"}]}'::jsonb)"); wait
+r=$(timed "perform apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W3\",\"end_time\":\"12:00\"}]}'::jsonb, (select availability_revision from trainers where id = '$T'))"); wait
 checkre "C1 reserva → acortamiento (014): el plan espera a la reserva" "^ok" "$r"
 [[ $(ms "$r") -ge 800 ]] && pass "C1 esperó $(ms "$r") ms" || bad "C1 no esperó ($(ms "$r") ms)"
 check "C1 la ventana no se acorta: se cierra; la reserva sigue dentro" "15:00:00|blocked|1" \
   "$(q "select end_time || '|' || status from availability_slots where id = '$W3'")|$(q "select count(*) from reservations where client_name = 'C1'")"
 
 # Acortamiento (014) → reserva: la reserva espera y ve el rango nuevo.
-hold "select apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W4\",\"end_time\":\"12:00\"}]}'::jsonb)" commit
+hold "select apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W4\",\"end_time\":\"12:00\"}]}'::jsonb, (select availability_revision from trainers where id = '$T'))" commit
 r=$(timed "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W4', '$T', 'C2', 'x@x', 'pending_confirmation', '13:00', '14:00')"); wait
 checkre "C2 acortamiento (014) → reserva validada con el rango viejo: la base la rechaza (antes entraba, C4)" "^23514 reservations_within_window" "$r"
 [[ $(ms "$r") -ge 800 ]] && pass "C2 la reserva esperó al acortamiento ($(ms "$r") ms)" || bad "C2 no esperó ($(ms "$r") ms)"

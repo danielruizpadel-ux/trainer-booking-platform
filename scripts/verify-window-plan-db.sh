@@ -42,10 +42,10 @@ checkre() { if [[ "$3" =~ $2 ]]; then pass "$1"; else bad "$1: no casa /$2/ con 
 
 docker exec "$NAME" psql -U postgres -qc "create database $DB" >/dev/null
 run < scripts/db/deployed-schema.sql >/dev/null
-for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan 015_reservations_within_window; do
+for f in 008_reservations_no_overlap 011_schema_compat 012_one_off_reservation 013_reservations_slot_fk_restrict 014_apply_window_plan 015_reservations_within_window 016_availability_revision; do
   out=$(run < migrations/$f.sql) || { bad "$f: $out"; exit 1; }
 done
-pass "esquema desplegado + 008, 011, 012, 013, 014 y 015"
+pass "esquema desplegado + 008, 011, 012, 013, 014, 015 y 016"
 checkre "014 se niega sin la 013" "014 requiere la 013" "$(docker exec "$NAME" psql -U postgres -qc 'create database no013' >/dev/null; docker exec -i "$NAME" psql -U postgres -d no013 -q < scripts/db/deployed-schema.sql >/dev/null 2>&1; docker exec -i "$NAME" psql -U postgres -d no013 -v ON_ERROR_STOP=1 -q < migrations/014_apply_window_plan.sql 2>&1)"
 
 T=11111111-1111-4111-8111-111111111111
@@ -108,7 +108,7 @@ PLAN=$(cat <<JSON
  "reopen":["$RET"]}
 JSON
 )
-apply() { q "select apply_window_plan('$T', '$PLAN'::jsonb)"; }
+apply() { q "select apply_window_plan('$T', '$PLAN'::jsonb, (select availability_revision from trainers where id = '$T'))"; }
 public() { q "select string_agg(x, ' | ' order by x) from public_state"; }
 snapshot() { q "select md5(coalesce((select string_agg(s::text, '|' order by s.id) from availability_slots s), '') || '#' || coalesce((select string_agg(r::text, '|' order by r.id) from reservations r), ''))"; }
 res_total() { q "select count(*) from reservations"; }
@@ -135,7 +135,7 @@ check "F 23503 otra FK: lo publicado no cambia" "$BASE_PUBLIC" "$(public)"
 q "delete from slot_notes" >/dev/null
 BASE=$(snapshot)
 checkre "F fallo DESPUÉS de la función, en la misma transacción (p. ej. la red antes del commit)" "division by zero" \
-  "$(q "begin; select apply_window_plan('$T', '$PLAN'::jsonb); select 1/0; commit;")"
+  "$(q "begin; select apply_window_plan('$T', '$PLAN'::jsonb, (select availability_revision from trainers where id = '$T')); select 1/0; commit;")"
 check "F después: nada cambia" "$BASE" "$(snapshot)"
 check "F después: lo publicado no cambia" "$BASE_PUBLIC" "$(public)"
 
@@ -168,20 +168,20 @@ W1=$(id 21); W2=$(id 22); W3=$(id 23)
 q "insert into availability_slots (id, trainer_id, session_date, start_time, end_time, status, generated_by_pattern) values ('$W1', '$T', '$D2', '09:00', '10:00', 'available', true), ('$W2', '$T', '$D2', '10:00', '11:00', 'available', true), ('$W3', '$T', '$D2', '11:00', '15:00', 'available', true)" >/dev/null
 
 hold "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W1', '$T', 'Web1', 'w@x', 'pending_confirmation', '09:00', '10:00')" commit
-out=$(q "select apply_window_plan('$T', '{\"delete\":[\"$W1\"]}'::jsonb)"); wait
+out=$(q "select apply_window_plan('$T', '{\"delete\":[\"$W1\"]}'::jsonb, (select availability_revision from trainers where id = '$T'))"); wait
 checkre "C1 reserva pública en curso: la sincronización espera y, al verla, cierra en vez de borrar" '"kept": 1.*"removed": 0' "$out"
 check "C1 la reserva sigue, en su ventana (cerrada)" "1|blocked" "$(q "select count(*) from reservations where client_name = 'Web1'")|$(q "select status from availability_slots where id = '$W1'")"
 
-hold "select apply_window_plan('$T', '{\"delete\":[\"$W2\"]}'::jsonb)" commit
+hold "select apply_window_plan('$T', '{\"delete\":[\"$W2\"]}'::jsonb, (select availability_revision from trainers where id = '$T'))" commit
 r=$(q "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W2', '$T', 'Web2', 'w@x', 'pending_confirmation', '10:00', '11:00')"); wait
 checkre "C2 la sincronización borra primero: la reserva pública espera y la base la rechaza (sin reserva huérfana)" "violates foreign key constraint" "$r"
 check "C2 ni ventana ni reserva" "0/0" "$(q "select count(*) from availability_slots where id = '$W2'")/$(q "select count(*) from reservations where client_name = 'Web2'")"
 
-res=$(for i in 1 2 3 4 5; do q "select apply_window_plan('$T', '{\"insert\":[{\"session_date\":\"$D2\",\"start_time\":\"16:00\",\"end_time\":\"17:00\"}]}'::jsonb)" & done; wait)
+res=$(for i in 1 2 3 4 5; do q "select apply_window_plan('$T', '{\"insert\":[{\"session_date\":\"$D2\",\"start_time\":\"16:00\",\"end_time\":\"17:00\"}]}'::jsonb, (select availability_revision from trainers where id = '$T'))" & done; wait)
 check "C3 cinco sincronizaciones a la vez: todas sin error" "0" "$(grep -c ERROR <<<"$res")"
 check "C3 una sola ventana nueva" "1" "$(q "select count(*) from availability_slots where session_date = '$D2' and start_time = '16:00'")"
 
-hold "select apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W3\",\"end_time\":\"12:00\"}]}'::jsonb)" commit
+hold "select apply_window_plan('$T', '{\"update_end\":[{\"id\":\"$W3\",\"end_time\":\"12:00\"}]}'::jsonb, (select availability_revision from trainers where id = '$T'))" commit
 r=$(q "insert into reservations (availability_slot_id, trainer_id, client_name, client_email, status, start_time, end_time) values ('$W3', '$T', 'Web3', 'w@x', 'pending_confirmation', '13:00', '14:00') returning 'insertada'"); wait
 checkre "C4 una reserva validada con el rango viejo tras acortar: la 015 la rechaza (antes entraba)" "reservations_within_window" "$r"
 check "C4 ventana 11-12 y ninguna reserva fuera" "12:00:00|0" "$(q "select end_time from availability_slots where id = '$W3'")|$(q "select count(*) from reservations where client_name = 'Web3'")"
@@ -204,19 +204,21 @@ ROWS=$(q "select json_agg(json_build_object('id', s.id, 'session_date', s.sessio
           'generated_by_pattern', s.generated_by_pattern,
           'reservations', coalesce((select json_agg(json_build_object('id', r.id, 'status', r.status)) from reservations r where r.availability_slot_id = s.id), '[]'::json)))
      from availability_slots s where s.trainer_id = '$T' and s.session_date = '$G'")
-GPLAN=$(printf '{"trainerId":"%s","slots":%s,"weekly":[{"day_of_week":%s,"start_time":"09:00:00","end_time":"10:00:00","class_type":"private"},{"day_of_week":%s,"start_time":"13:00:00","end_time":"15:00:00","class_type":"private"},{"day_of_week":%s,"start_time":"17:00:00","end_time":"18:00:00","class_type":"private"}]}' "$T" "$ROWS" "$DOW" "$DOW" "$DOW" \
+GOUT=$(printf '{"trainerId":"%s","revision":'"$(q "select availability_revision from trainers where id = '$T'")"',"slots":%s,"weekly":[{"day_of_week":%s,"start_time":"09:00:00","end_time":"10:00:00","class_type":"private"},{"day_of_week":%s,"start_time":"13:00:00","end_time":"15:00:00","class_type":"private"},{"day_of_week":%s,"start_time":"17:00:00","end_time":"18:00:00","class_type":"private"}]}' "$T" "$ROWS" "$DOW" "$DOW" "$DOW" \
   | (source ~/.nvm/nvm.sh >/dev/null 2>&1; nvm use 20 >/dev/null 2>&1; node scripts/lib/capture-window-plan.mjs))
+GPLAN=$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["plan"], separators=(",", ":")))' <<<"$GOUT")
+GREV=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["revision"])' <<<"$GOUT")
 checkre "G generate.ts produce un plan (borrar la vacía, cerrar la del historial, acortar, reabrir)" "\"delete\":\\[\"$GDEL\"\\].*\"close\":\\[\"$GHIST\"\\].*\"reopen\":\\[\"$GRET\"\\]" "$GPLAN"
-out=$(q "select apply_window_plan('$T', '$GPLAN'::jsonb)")
+out=$(q "select apply_window_plan('$T', '$GPLAN'::jsonb, $GREV)")
 checkre "G la función real acepta el plan real" '"removed": 1' "$out"
 check "G publicado ese día: 09-10, 13-15 y 17-18" "open 09:00-10:00,13:00-15:00,17:00-18:00" \
   "$(q "select 'open ' || string_agg(to_char(start_time, 'HH24:MI') || '-' || to_char(end_time, 'HH24:MI'), ',' order by start_time) from availability_slots where trainer_id = '$T' and session_date = '$G' and status not in ('blocked', 'full', 'cancelled', 'pending')")"
 
 # ─── S. Permisos y filas ajenas ──────────────────────────────────────────────
-checkre "S anon no puede ejecutarla" "permission denied for function" "$(q "set role anon; select apply_window_plan('$T', '{}'::jsonb)")"
+checkre "S anon no puede ejecutarla" "permission denied for function" "$(q "set role anon; select apply_window_plan('$T', '{}'::jsonb, (select availability_revision from trainers where id = '$T'))")"
 BASE=$(snapshot)
-checkre "S fila de otro entrenador en el plan → error" "window_plan_foreign_row" "$(q "select apply_window_plan('$T', '{\"delete\":[\"$FOREIGN\"],\"insert\":[{\"session_date\":\"$D\",\"start_time\":\"23:00\",\"end_time\":\"23:30\"}]}'::jsonb)")"
-checkre "S fila manual (clase puntual) en el plan → error" "window_plan_foreign_row" "$(q "select apply_window_plan('$T', '{\"close\":[\"$MANUAL\"]}'::jsonb)")"
+checkre "S fila de otro entrenador en el plan → error" "window_plan_foreign_row" "$(q "select apply_window_plan('$T', '{\"delete\":[\"$FOREIGN\"],\"insert\":[{\"session_date\":\"$D\",\"start_time\":\"23:00\",\"end_time\":\"23:30\"}]}'::jsonb, (select availability_revision from trainers where id = '$T'))")"
+checkre "S fila manual (clase puntual) en el plan → error" "window_plan_foreign_row" "$(q "select apply_window_plan('$T', '{\"close\":[\"$MANUAL\"]}'::jsonb, (select availability_revision from trainers where id = '$T'))")"
 check "S y no cambia nada" "$BASE" "$(snapshot)"
 
 exit $fail

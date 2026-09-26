@@ -75,6 +75,7 @@ function db({ slots = [], weekly = [], referenced = [], otherFk = [], otherError
       log.inserts.push(...op('insert').args[0])
       return { error: null }
     }
+    if (table === 'trainers') return { data: { availability_revision: 7 }, error: null }
     if (table === 'trainer_weekly_hours') return { data: weekly, error: null }
     if (table === 'trainer_availability_overrides') return { data: [], error: null }
     if (table === 'availability_slots') return { data: slots, error: null }
@@ -92,6 +93,7 @@ const planOf = (log) => {
   assert.equal(log.rpcs.length, 1, 'una sola llamada')
   assert.equal(log.rpcs[0].name, 'apply_window_plan')
   assert.equal(log.rpcs[0].args.p_trainer_id, T)
+  assert.equal(log.rpcs[0].args.p_revision, 7, 'con la revisión del horario leída antes (016)')
   assert.equal(log.deleteCalls.length + log.updates.length + log.inserts.length, 0, 'ninguna escritura directa en tablas')
   return log.rpcs[0].args.p_plan
 }

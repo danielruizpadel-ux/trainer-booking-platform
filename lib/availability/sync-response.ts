@@ -21,15 +21,26 @@ export function syncFailedMessage(saved: boolean, missingMigration: boolean): st
     ? 'Tu cambio se ha guardado, pero tu disponibilidad publicada NO se ha actualizado: sigue exactamente como antes.'
     : 'No se ha sincronizado: tu disponibilidad publicada no ha cambiado.'
   return missingMigration
-    ? `${base} Falta aplicar la migración 014 en la base de datos.`
+    ? `${base} Falta aplicar las migraciones 014 y 016 en la base de datos.`
     : `${base} Vuelve a intentarlo con «Sincronizar huecos».`
 }
 
 export type SyncOutcome = { ok: true; summary: GenerateSummary } | { ok: false; response: NextResponse }
 
+/** Intentos si el plan llega viejo (otro cambio de horario entre medias, 016). */
+export const STALE_RETRIES = 3
+
 export async function syncWindows(supabase: SupabaseClient, trainerId: string, saved: boolean): Promise<SyncOutcome> {
   try {
-    return { ok: true, summary: await generateSlotsForTrainer(supabase, trainerId) }
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return { ok: true, summary: await generateSlotsForTrainer(supabase, trainerId) }
+      } catch (error) {
+        // Plan calculado con un horario que ya cambió: no se aplicó nada; se recalcula.
+        if (error instanceof WindowSyncError && error.stale && attempt < STALE_RETRIES) continue
+        throw error
+      }
+    }
   } catch (error) {
     const missingMigration = error instanceof WindowSyncError && error.missingMigration
     console.error('Sincronización de ventanas fallida:', error instanceof Error ? error.message : String(error))

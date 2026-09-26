@@ -80,6 +80,34 @@ create table public.reservations (
   whatsapp_opt_in boolean
 );
 
+-- Horario semanal y excepciones (migración 005, tal cual).
+create table public.trainer_weekly_hours (
+  id uuid primary key default gen_random_uuid(),
+  trainer_id uuid not null references public.trainers (id) on delete cascade,
+  day_of_week smallint not null check (day_of_week between 0 and 6),
+  start_time time not null,
+  end_time time not null,
+  class_type text not null default 'private',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint trainer_weekly_hours_range check (end_time > start_time)
+);
+create table public.trainer_availability_overrides (
+  id uuid primary key default gen_random_uuid(),
+  trainer_id uuid not null references public.trainers (id) on delete cascade,
+  override_date date not null,
+  is_blocked boolean not null default false,
+  start_time time,
+  end_time time,
+  class_type text default 'private',
+  created_at timestamptz not null default now(),
+  constraint trainer_availability_overrides_shape check (
+    (is_blocked and start_time is null and end_time is null)
+    or (not is_blocked and start_time is not null and end_time is not null and end_time > start_time)
+  )
+);
+
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to service_role;
 grant select on all tables in schema public to anon, authenticated;

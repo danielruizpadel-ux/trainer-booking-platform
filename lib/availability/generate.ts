@@ -116,6 +116,17 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
   const today = toDateStr(new Date())
   const endDate = toDateStr(addDays(parseDateStr(today), weeksAhead * 7))
 
+  // Revisión del horario ANTES de leerlo (migrations/016): el plan se aplica
+  // solo si nadie lo ha cambiado desde aquí. Si cambia entre esta lectura y
+  // la del horario, el plan se rechaza (y syncWindows lo recalcula).
+  const { data: trainerRow, error: revisionError } = await supabase
+    .from('trainers')
+    .select('availability_revision')
+    .eq('id', trainerId)
+    .maybeSingle()
+  if (revisionError || !trainerRow) throw new WindowSyncError(revisionError ?? { code: 'P0002', message: 'trainer_not_found' })
+  const revision = Number((trainerRow as { availability_revision: number | string }).availability_revision)
+
   const [{ data: weeklyData, error: weeklyError }, { data: overrideData, error: overrideError }, { data: slotData, error: slotError }] =
     await Promise.all([
       supabase
@@ -346,6 +357,7 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
   const { data, error } = await supabase.rpc(WINDOW_PLAN_FUNCTION, {
     p_trainer_id: trainerId,
     p_plan: { insert: toInsert, delete: toDelete, update_end: toUpdateEndTime, close: toClose, reopen: toReopen },
+    p_revision: revision,
   })
   if (error) throw new WindowSyncError(error)
   const applied = (data ?? {}) as Partial<Record<'created' | 'removed' | 'kept' | 'closed' | 'shrink_blocked' | 'reopened', number>>
@@ -370,12 +382,18 @@ export const WINDOW_PLAN_FUNCTION = 'apply_window_plan'
 export class WindowSyncError extends Error {
   readonly code: string | null
   readonly missingMigration: boolean
+  /** El plan se calculó con un horario que ya cambió (016): no se aplicó nada; se puede recalcular. */
+  readonly stale: boolean
   constructor(error: { code?: string; message?: string }) {
-    const missingMigration = error.code === 'PGRST202' || error.code === '42883'
-    super(missingMigration ? 'Falta la migración 014 (apply_window_plan)' : `apply_window_plan falló (${error.code ?? 'sin código'}): ${error.message ?? ''}`)
+    // PGRST202 / 42883: falta la función (014/016) o su firma nueva (016);
+    // 42703: falta trainers.availability_revision (016).
+    const missingMigration = error.code === 'PGRST202' || error.code === '42883' || error.code === '42703'
+    const stale = error.code === 'P0001' && String(error.message ?? '').includes('window_plan_stale')
+    super(missingMigration ? 'Faltan las migraciones 014/016 (apply_window_plan)' : `apply_window_plan falló (${error.code ?? 'sin código'}): ${error.message ?? ''}`)
     this.name = 'WindowSyncError'
     this.code = error.code ?? null
     this.missingMigration = missingMigration
+    this.stale = stale
   }
 }
 
