@@ -51,7 +51,7 @@ No existen: `is_available`, `is_booked`, `price`.
 |---|---|---|
 | `id` | uuid | |
 | `trainer_id` | uuid | |
-| `availability_slot_id` | uuid | |
+| `availability_slot_id` | uuid NOT NULL | FK a `availability_slots(id)`: **ON DELETE CASCADE** en la base real hasta aplicar la 013, que la pasa a RESTRICT |
 | `client_name`, `client_email`, `client_phone` | text | el cliente vive en la propia fila |
 | `price` | numérico | lo calcula el servidor al crear (`lib/reservations/pricing.ts`): precio por sesión ya con descuento; 1 h 30 = precio de 1 h × 1,5 |
 | `start_time`, `end_time` | time | **migración 007**: rango real de la clase dentro de su ventana. NULL solo en reservas anteriores (se leen como ventana.start_time + 60 min) |
@@ -210,6 +210,14 @@ reserva dentro. Sin tablas ni columnas nuevas. Solo `service_role`. Errores:
 23P01 (`reservations_no_overlap`), `one_off_window_conflict`, 22023
 `one_off_invalid_*`. La usa `lib/reservations/one-off.ts`; probadas las dos
 en `scripts/verify-one-off-db.sh`.
+
+## Migración 013 — ventana con reservas no se puede borrar (pendiente de aplicar)
+
+`reservations_availability_slot_id_fkey` era **ON DELETE CASCADE** en la base
+real (confirmado el 26/09/2026): borrar una ventana borraba sus reservas. La
+013 la cambia a **ON DELETE RESTRICT** sin tocar filas. Los que borran
+ventanas (generador y purga) solo piden borrar ventanas sin reservas y
+manejan el 23503 conservando la ventana (`lib/availability/delete-windows.ts`).
 
 ## `email_logs` y `whatsapp_logs`
 

@@ -12,7 +12,8 @@
 --     (generate.ts ya escribe 'blocked').
 --   * unique (trainer_id, session_date, start_time, end_time) — el que nombra
 --     el error "..._start_time_end_t_key" de generate.ts.
---   * reservations: availability_slot_id NOT NULL (FK), columnas de la 007,
+--   * reservations: availability_slot_id NOT NULL (FK ON DELETE CASCADE,
+--     confirmado el 26/09), columnas de la 007,
 --     la 010 (player_count 1..4 NOT NULL default 1, whatsapp_opt_in, player_id,
 --     client_message). session_date y la restricción llegan con la 008.
 -- Las variantes incompatibles (forma de la 001) las monta
@@ -56,7 +57,9 @@ create table public.availability_slots (
 
 create table public.reservations (
   id uuid primary key default gen_random_uuid(),
-  availability_slot_id uuid not null references public.availability_slots (id),
+  -- ON DELETE CASCADE: confirmado en la base real el 26/09/2026 (consulta de
+  -- solo lectura). La 013 lo cambia a RESTRICT.
+  availability_slot_id uuid not null references public.availability_slots (id) on delete cascade,
   trainer_id uuid not null references public.trainers (id),
   client_name text not null,
   client_email text not null,

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { reservationHoldsSlot } from './slot-status'
+import { deleteEmptyWindows } from './delete-windows'
 
 /**
  * Purga puntual (21/09/2026, a petición de Daniel tras encontrar el hallazgo
@@ -12,6 +13,15 @@ import { reservationHoldsSlot } from './slot-status'
  * Nunca toca: huecos con una reserva viva encima (`reservationHoldsSlot`),
  * ni huecos de fechas pasadas. Solo futuros, libres, y creados antes del
  * cutoff (el rediseño de horario semanal, Fase D, es del 20/09/2026).
+ *
+ * 26/09/2026: la FK de reservations a availability_slots era ON DELETE
+ * CASCADE en la base real. Un hueco con reservas NO vivas (canceladas) se
+ * borraba llevándose ese historial, y una reserva que entrase entre la
+ * lectura y el borrado (p. ej. una clase puntual que reutiliza la ventana)
+ * se borraba también. Ahora tampoco se proponen huecos con cualquier
+ * reserva (`skippedWithHistory`), y el borrado va por deleteEmptyWindows:
+ * con la migración 013 (ON DELETE RESTRICT) la base rechaza el de una
+ * ventana que ganó una reserva y esa ventana se queda (`skippedReferenced`).
  */
 
 const REDESIGN_CUTOFF = '2026-09-20T00:00:00Z'
@@ -29,6 +39,8 @@ interface CandidateRow {
 export interface LegacyPurgeResult {
   candidates: Array<{ id: string; session_date: string; start_time: string; end_time: string; created_at: string }>
   skippedOccupied: number
+  /** Sin reserva viva pero con reservas canceladas/terminadas: no se borran (historial) */
+  skippedWithHistory: number
 }
 
 async function findLegacyManualSlots(supabase: SupabaseClient, trainerId: string, today: string): Promise<LegacyPurgeResult> {
@@ -47,11 +59,16 @@ async function findLegacyManualSlots(supabase: SupabaseClient, trainerId: string
   const rows = (data ?? []) as unknown as CandidateRow[]
   const candidates: LegacyPurgeResult['candidates'] = []
   let skippedOccupied = 0
+  let skippedWithHistory = 0
 
   for (const row of rows) {
     const holder = (row.reservations ?? []).find((r) => reservationHoldsSlot(r.status))
     if (holder) {
       skippedOccupied += 1
+      continue
+    }
+    if ((row.reservations ?? []).length > 0) {
+      skippedWithHistory += 1
       continue
     }
     candidates.push({
@@ -63,20 +80,21 @@ async function findLegacyManualSlots(supabase: SupabaseClient, trainerId: string
     })
   }
 
-  return { candidates, skippedOccupied }
+  return { candidates, skippedOccupied, skippedWithHistory }
 }
 
 export async function dryRunLegacyPurge(supabase: SupabaseClient, trainerId: string, today: string): Promise<LegacyPurgeResult> {
   return findLegacyManualSlots(supabase, trainerId, today)
 }
 
-export async function executeLegacyPurge(supabase: SupabaseClient, trainerId: string, today: string): Promise<{ removed: number; skippedOccupied: number }> {
-  const { candidates, skippedOccupied } = await findLegacyManualSlots(supabase, trainerId, today)
-  if (candidates.length === 0) return { removed: 0, skippedOccupied }
+export async function executeLegacyPurge(
+  supabase: SupabaseClient,
+  trainerId: string,
+  today: string
+): Promise<{ removed: number; skippedOccupied: number; skippedWithHistory: number; skippedReferenced: number }> {
+  const { candidates, skippedOccupied, skippedWithHistory } = await findLegacyManualSlots(supabase, trainerId, today)
+  if (candidates.length === 0) return { removed: 0, skippedOccupied, skippedWithHistory, skippedReferenced: 0 }
 
-  const ids = candidates.map((c) => c.id)
-  const { error } = await supabase.from('availability_slots').delete().in('id', ids)
-  if (error) throw new Error(`DELETE legacy failed (${ids.length} rows): ${error.message}`)
-
-  return { removed: candidates.length, skippedOccupied }
+  const result = await deleteEmptyWindows(supabase, candidates.map((c) => c.id))
+  return { removed: result.deleted, skippedOccupied, skippedWithHistory, skippedReferenced: result.kept.length }
 }

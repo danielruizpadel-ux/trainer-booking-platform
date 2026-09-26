@@ -8,6 +8,8 @@ interface SyncResult {
   legacyRemoved: number
   closed: number
   reopened: number
+  /** No borrados porque tienen reservas (vivas o historial) */
+  kept: number
 }
 
 /**
@@ -40,6 +42,7 @@ export function SyncAvailabilityButton() {
         legacyRemoved: purgeRes.removed ?? 0,
         closed: genRes.summary?.closed ?? 0,
         reopened: genRes.summary?.reopened ?? 0,
+        kept: (genRes.summary?.keptReferenced ?? 0) + (purgeRes.skippedWithHistory ?? 0) + (purgeRes.skippedReferenced ?? 0),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al sincronizar')
@@ -61,8 +64,9 @@ export function SyncAvailabilityButton() {
       {result && !error && (
         <p className="text-xs text-gray-500">
           {result.created} creados, {result.removed + result.legacyRemoved} eliminados
-          {result.closed > 0 ? `, ${result.closed} cerrados por reserva` : ''}
-          {result.reopened > 0 ? `, ${result.reopened} reabiertos` : ''}.
+          {result.closed > 0 ? `, ${result.closed} cerrados` : ''}
+          {result.reopened > 0 ? `, ${result.reopened} reabiertos` : ''}
+          {result.kept > 0 ? `, ${result.kept} conservados porque tienen reservas` : ''}.
         </p>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}

@@ -159,15 +159,9 @@ Límites conocidos:
 - Si la respuesta se pierde después del commit (red), el entrenador ve un
   error pero la clase está creada; al reintentar le sale «franja ocupada» y
   la ve en el calendario al recargar.
-- La purga de huecos legacy (`lib/availability/cleanup.ts`, manual y bajo
-  demanda) no coge el cerrojo de la 012. Solo afecta a ventanas manuales
-  creadas antes del 20/09/2026 y sin reserva viva: si una de ellas fuera
-  además `blocked` y se reutilizara para una clase puntual justo mientras
-  la purga está en marcha, su DELETE esperaría al `FOR UPDATE` de la función
-  y después fallaría (probado en R9 con la base desde cero: la reserva se
-  queda). En la base real depende de la acción ON DELETE de esa FK, que no
-  se ha podido comprobar sin tocar Supabase; con CASCADE borraría la
-  reserva. Las ventanas puntuales nuevas no entran en ese criterio.
+- (Resuelto en la 013, ver abajo.) La purga de huecos legacy y el
+  generador podían llevarse reservas por el ON DELETE CASCADE de la base
+  real.
 
 - El arrastre no desplaza la rejilla sola al llegar al borde; un tramo largo
   que no se ve entero se elige con «Elegir tramo» (dos toques, con scroll en
@@ -183,6 +177,77 @@ Límites conocidos:
   misma clase.
 - La reserva puntual se crea sin `player_id` (igual que la manual); la
   vinculación con cuentas de jugador sigue en FUTURO.
+
+## Borrar ventanas sin llevarse reservas (26/09/2026)
+
+Una consulta de solo lectura a la base real confirmó
+`reservations_availability_slot_id_fkey → ON DELETE CASCADE`: borrar una
+fila de `availability_slots` borraba en silencio todas sus reservas.
+
+Caminos que borran ventanas (revisados todos):
+
+| Camino | Antes | Ahora |
+|---|---|---|
+| Generador semanal (`lib/availability/generate.ts`; lo llaman las rutas de horario, excepciones y «Sincronizar huecos») | borraba ventanas sin reserva **viva**: se llevaba las canceladas (historial) y, en carrera, una reserva nueva | solo pide borrar ventanas **sin ninguna** reserva; si el patrón ya no quiere una con historial, la cierra (`blocked`, «retirada») y la reabre/reutiliza si la vuelve a querer |
+| Purga legacy (`lib/availability/cleanup.ts`, botón «Sincronizar huecos») | igual que el generador | no propone ventanas con historial (`skippedWithHistory`) |
+| `deleteAvailabilitySlot` (`lib/services/availability.service.ts`) | nadie lo importa | sin cambios (código muerto) |
+| `scripts/verify-max-capacity-fix.mjs` | borra reservas y después ventanas | compatible con RESTRICT |
+
+Ninguno necesitaba el CASCADE. Los dos borrados reales pasan por
+`lib/availability/delete-windows.ts`: lote y, si la base lo rechaza por la
+FK (23503), una a una; las ventanas que ganaron una reserva se conservan y
+se cuentan (`keptReferenced` / `skippedReferenced`, visible en el resumen de
+«Sincronizar huecos»). Cualquier otro error sigue abortando.
+
+`migrations/013_reservations_slot_fk_restrict.sql` cambia la FK a ON DELETE
+RESTRICT: mismo nombre, columnas y ON UPDATE; NOT VALID + VALIDATE en la
+misma transacción; no toca filas; idempotente; también convierte el SET
+NULL de una base creada desde la 001. Con RESTRICT la base rechaza borrar
+una ventana con cualquier reserva, también una recién confirmada por otra
+transacción.
+
+Pruebas: `scripts/verify-slot-fk-db.sh` (Postgres aislado, 30 casos):
+antes de la 013 con CASCADE se pierde el historial y una reserva viva que
+entra durante el borrado; la 013 no cambia la huella de ninguna fila, es
+idempotente, conserva ON UPDATE y funciona desde la 001; después, borrados
+con reserva viva/cancelada → 23503 y sin reservas → se borra; lote que falla
+entero y una a una; purga contra clase puntual que reutiliza la ventana en
+los dos órdenes (commit y rollback); reserva de la web durante el borrado;
+cancelación. `scripts/verify-slot-deletes.mjs` (11, dobles): generador,
+purga y helper, con prueba de mutación (volver a borrar ventanas con
+historial hace fallar 2 casos).
+
+Límites:
+
+- **Hasta aplicar la 013 en Supabase el CASCADE sigue activo.** El código
+  nuevo ya no pide borrar ventanas con reservas, pero una reserva que entre
+  entre la lectura y el borrado se la seguiría llevando.
+- La 013 bloquea `reservations` un momento (DROP/ADD CONSTRAINT y
+  validación): aplicarla en un momento tranquilo.
+- Borrar un entrenador (`availability_slots.trainer_id` ON DELETE CASCADE
+  en la 001) ya no puede arrastrar reservas a través de sus ventanas: si
+  tiene reservas, fallará. Ninguna ruta borra entrenadores.
+- Las ventanas «retiradas» (cerradas con historial) se quedan en la base.
+
+## Numeración de migraciones (pendiente al unir ramas)
+
+Esta rama: `011_schema_compat`, `012_one_off_reservation` (requiere 011) y
+`013_reservations_slot_fk_restrict`. La rama `emdash/pagos-paquetes-t3o2n`
+tiene `011_package_session_atomic_schedule.sql` (commit 44888db) y, sin
+commitear en su worktree, `012a_package_credit_preparation.sql` y
+`012b_package_credit_single_live.sql`. Ninguna de las tres toca
+`reservations.availability_slot_id` ni lo que cambian las nuestras (sus
+funciones insertan reservas con `availability_slot_id` y dependen de la
+008/010; con la 013 una ventana con reservas de paquete tampoco se puede
+borrar, que es lo deseado).
+
+No se ha aplicado ni integrado ninguna. Al unir, hay que darles números
+únicos y un orden: las de pagos-paquetes solo requieren 004/006/007/008/010,
+así que pueden ir antes o después de las nuestras; nuestra 012 requiere
+nuestra 011, y la 013 es independiente. Los mensajes de error de cada
+migración (`'011 requiere…'`, `'012 requiere…'`) y las referencias en
+`lib/reservations/one-off.ts`, `docs/` y los `scripts/verify-*` llevan el
+número y habrá que renumerarlos a la vez.
 
 ## FUTURO (no implementado)
 
