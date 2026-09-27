@@ -82,6 +82,13 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
 - `getSupabaseServerClient()` falla cerrado sin `SUPABASE_SERVICE_ROLE_KEY`.
   Desde la 010, anon/authenticated no pueden escribir `reservations` ni
   `trainer_session_prices`: toda escritura va por el servidor.
+- `POST /api/reservations` (migración 021): exige `Idempotency-Key` y crea
+  las reservas **solo** con la rpc `create_booking_request` (clave + filas +
+  respuesta en una transacción); nunca `from('reservations').insert` en esa
+  ruta. La clave se busca antes de revalidar; el límite
+  (`lib/reservations/rate-limit.ts`) va en Postgres, nunca en memoria ni con
+  `X-Forwarded-For`. Tras mandar la escritura, un fallo sin evidencia de
+  rechazo es `outcome_unknown` (no decir "no se creó").
 - Tocar ventanas desde el dashboard solo con `lib/reservations/slots.ts`
   (`loadOwnedOpenWindow` comprueba dueño + abierta + que el rango cabe sin
   solapar; `refreshWindowStatus` recalcula contador y `full`). El estado

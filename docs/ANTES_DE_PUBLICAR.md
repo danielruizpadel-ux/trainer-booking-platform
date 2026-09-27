@@ -86,16 +86,19 @@ el 404 sin revisarlo; el permiso de administrador ya está en la ruta.
       no está en ninguna migración): tiene nombre, email y teléfono de
       clientes y está expuesta por PostgREST. RLS la protege hoy, pero no hace
       falta mantenerla.
-- [ ] Límite de peticiones en `POST /api/reservations`: hoy no hay ninguno
-      (spam de reservas / mensajes al entrenador). Obligatorio antes de publicar.
+- [ ] Límite de peticiones en `POST /api/reservations` — IMPLEMENTADO el
+      27/09/2026 (migración 021), **falta aplicar la 021**. Contadores en
+      Postgres compartidos entre instancias; 429 con `Retry-After`. Cuenta
+      por jugador de la sesión, email y teléfono del invitado (con hash) y un
+      techo por entrenador; la IP solo si se configura
+      `TRUSTED_CLIENT_IP_HEADER` (punto 8). Detalle en
+      `docs/estado-integracion.md` («Reserva idempotente y límite»).
 - [ ] Idempotencia de `POST /api/reservations` (revisión de Codex, 25/09,
-      MEDIUM): un reintento de red tras un insert que sí llegó puede crear
-      la reserva dos veces en franjas distintas o devolver un 409 engañoso
-      en la misma franja. Hoy lo mitigan: el botón se desactiva mientras se
-      envía, la restricción `reservations_no_overlap` (008) impide dos
-      reservas vivas solapadas y el 23P01 se traduce a 409. Antes de
-      producción: clave de idempotencia por checkout (p. ej. un UUID del
-      navegador guardado con la reserva y único en BD).
+      MEDIUM) — IMPLEMENTADA el 27/09/2026 (migración 021), **falta aplicar
+      la 021**. El navegador manda `Idempotency-Key` (un UUID por intento);
+      repetir tras perder la respuesta devuelve la reserva original sin crear
+      otra. **Aplicar la 021 ANTES de desplegar el código:** sin ella la ruta
+      responde 503 a todas las reservas (falla cerrada).
 - [ ] Limpieza técnica: `components/trainer/BookingSection.tsx`,
       `components/trainer/BookingForm.tsx` (formulario antiguo con "$99" y
       POST con date/time) y `lib/services/reservations.service.ts` ya no los
@@ -152,6 +155,11 @@ En `components/mauri/CoursesSection.tsx` son `<button>` sin `onClick`.
 - [ ] `NEXT_PUBLIC_SUPABASE_URL`
 - [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` ← **la nueva, la rotada**
+- [ ] `TRUSTED_CLIENT_IP_HEADER=x-real-ip` (opcional, recomendada en Vercel):
+      añade al límite de reservas un cubo por IP. Solo el nombre de una
+      cabecera que ponga la **plataforma** (Vercel sobrescribe `x-real-ip`);
+      nunca `x-forwarded-for`, que la puede escribir el cliente. Sin ella el
+      límite funciona igual, sin IP.
 
 `SUPABASE_SERVICE_ROLE_KEY` **nunca** lleva el prefijo `NEXT_PUBLIC_`. Ese
 prefijo mete la variable en el JavaScript que descarga el navegador.

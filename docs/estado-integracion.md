@@ -352,7 +352,7 @@ Límites:
 
 Límites:
 
-- Hay que aplicar 011 → 020 en orden antes de desplegar este código (ver
+- Hay que aplicar 011 → 021 en orden antes de desplegar este código (ver
   «Orden de aplicación en Supabase» más abajo).
 - La 015 se para si la base real ya tiene reservas vivas fuera de su
   ventana; habrá que resolverlas a mano antes (no se toca ningún dato).
@@ -435,8 +435,11 @@ correcto es:
    como `viva_sin_clasificar`.
 3. **Ventana de mantenimiento:** detener escritores → (si no se hizo el paso
    1: 011 → 018 y el paso 2) → repasar el informe de la 018 y decidir lo
-   nuevo → **019** → `notify pgrst, 'reload schema';` → **020** (o antes: es
-   independiente) → desplegar el código → reabrir escritores.
+   nuevo → **019** → `notify pgrst, 'reload schema';` → **020** y **021** (o
+   antes: son independientes; la 021 solo añade tablas y funciones y se puede
+   aplicar con la app en marcha) → `notify pgrst, 'reload schema';` →
+   desplegar el código → reabrir escritores. **El código nuevo exige la 021:**
+   sin ella `POST /api/reservations` responde 503 (falla cerrado).
 4. **Comprobar:** `select * from public.package_credit_integrity_check where bloquea;`
    (vacío) y el informe de la 018 (solo `muerta_sin_clasificar`).
 5. **Administradores:** alta en `public.admins` (SQL en la cabecera de la 020)
@@ -471,6 +474,84 @@ autenticaba y enseñaba credenciales de demo.
   página o ruta nueva no comprueba el permiso). La 020 se aplica en
   `scripts/verify-integration-chain-db.sh` (cadena 001 → 020: RLS, anon y
   authenticated sin acceso, service_role sí, SQL de alta idempotente).
+
+## Reserva idempotente y límite de peticiones (`POST /api/reservations`) — 27/09/2026
+
+Pendientes de `docs/ANTES_DE_PUBLICAR.md` (punto 4). Migración **021**.
+Consumidores de la ruta: solo `components/booking/BookingFlow.tsx` (el widget
+de `/mauri` y `/[trainerSlug]`, invitado y jugador con cuenta).
+`components/trainer/BookingForm.tsx` también la llama, pero no la usa ninguna
+página (limpieza pendiente); sin clave recibiría un 400.
+
+**Idempotencia**
+
+- **Clave:** cabecera `Idempotency-Key`, un UUID v4 que genera el navegador
+  por intento de reserva (`lib/reservations/idempotency-client.ts`). Se
+  reutiliza mientras el cuerpo de la petición no cambie (reintentos) y se
+  descarta al confirmarse la reserva; si el cliente cambia algo, clave nueva.
+  Sin clave o sin formato UUID → 400 `idempotency_key_required`.
+- **Scope (de quién es la clave):** `player:<players.id>` con cuenta (sale
+  de la sesión) o `guest:<sha256 del email>` para invitados. Nunca del body.
+  La misma clave en otro scope es otra petición: no enseña nada ajeno.
+- **Huella:** sha256 del JSON canónico de lo que decide la reserva
+  (entrenador, sesiones ordenadas con la hora normalizada, duración,
+  jugadores, mensaje y contacto o jugador). Misma clave con otra huella →
+  422 `idempotency_key_reused`, sin enseñar la respuesta original.
+- **Orden en la ruta:** clave → body e identidad → **buscar la clave** (si
+  está y la huella coincide, se devuelve la respuesta guardada con
+  `Idempotent-Replayed: true`, sin revalidar la disponibilidad —las horas ya
+  las ocupa la propia reserva— y sin gastar el límite) → límite → validación
+  de siempre → `create_booking_request`.
+- **Atomicidad:** `create_booking_request` registra la clave, inserta las
+  reservas y guarda la respuesta en UNA transacción. Un 23P01 (008) o 23514
+  (015) deshace todo, también la clave (se puede reintentar). Dos peticiones
+  con la misma clave a la vez: la segunda espera en el índice único y recibe
+  `replayed` (si la primera confirmó) o reserva ella (si se deshizo).
+- **Resultado desconocido:** si la escritura ya salió y no hay evidencia
+  fiable de rechazo (excepción, timeout, error sin nuestro código, fallo
+  posterior al vincular), la ruta responde 500 `outcome_unknown` con «We
+  couldn't confirm your booking. Tap Confirm booking again: it won't book
+  twice.». El navegador trata igual un error de red o una respuesta ilegible
+  (`readCheckoutOutcome`): nunca dice que la reserva no se creó y conserva
+  la clave para el reintento.
+- **Retención:** 7 días (limpieza oportunista dentro de la función).
+
+**Límite de peticiones**
+
+- Contadores de ventana fija (10 min) en `rate_limit_counters`, sumados con
+  `INSERT … ON CONFLICT DO UPDATE` en `rate_limit_consume`: compartidos
+  entre todas las instancias; nada en memoria.
+- Cubos, en este orden (`lib/reservations/rate-limit.ts`): `player:<id>` (6)
+  o `email:<sha256>` (6) + `phone:<sha256 de los dígitos>` (6); `ip:<sha256>`
+  (12) solo si `TRUSTED_CLIENT_IP_HEADER` está configurada; y por último
+  `trainer:<id>` (60), un techo que no se salta cambiando de email o IP. Se
+  para en el primer cubo agotado: quien ya está bloqueado no gasta el cupo
+  del entrenador. Ninguna cabecera que pueda escribir el cliente
+  (`X-Forwarded-For`) cuenta por defecto.
+- Agotado → 429 `rate_limited` con `Retry-After` (segundos hasta la
+  siguiente ventana). Si el contador falla → 503 (falla cerrado). Las
+  repeticiones con la misma clave no cuentan.
+- Límite conocido: el techo por entrenador lo puede agotar alguien que vaya
+  cambiando de email y teléfono (60 reservas en 10 min bloquearían ese
+  entrenador hasta la ventana siguiente). Con `TRUSTED_CLIENT_IP_HEADER`
+  ese abuso se para antes por IP.
+
+**Pruebas**
+
+- `scripts/verify-booking-idempotency.mjs` (código real, base doble): clave
+  obligatoria, repetición sin revalidar ni crear ni contar, 422 por huella,
+  scopes aislados (jugador / otro jugador / invitado), 429 + Retry-After,
+  503 si falla el límite, IP solo con cabecera de confianza, outcome_unknown,
+  cliente (clave estable, clasificación del resultado), `BookingFlow` y una
+  mutación (sin la búsqueda previa, la repetición revalida).
+- `scripts/verify-booking-idempotency-db.sh` (Postgres aislado, cadena
+  001 → 021): crear / repetir / key_reused / scopes; atomicidad con 23P01 y
+  23514; misma clave con la primera abierta (commit y rollback, espera
+  medida); 10 a la vez → 1 created + 9 replayed; 20 a la vez con límite 5 →
+  exactamente 5; parada en el primer cubo; ventana siguiente; anon y
+  authenticated sin acceso aunque Supabase dé permisos por defecto.
+- Las pruebas de la ruta ya existentes mandan la cabecera y pasan por la rpc
+  (`withBookingRpc` en `scripts/lib/ts-harness.mjs`).
 
 ## FUTURO (no implementado)
 

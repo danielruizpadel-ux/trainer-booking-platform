@@ -299,6 +299,21 @@ timestamptz. Una fila = permiso de administrador para `/admin` y `/api/admin`
 políticas y sin GRANT para anon/authenticated. Se concede y retira a mano en
 el SQL Editor (ver la cabecera de la migración); ninguna ruta escribe aquí.
 
+## Migración 021 — reserva idempotente y límite de peticiones (pendiente de aplicar)
+
+`public.booking_requests`: PK (`scope` text, `idempotency_key` uuid),
+`request_hash` text, `response` jsonb (ids y precios; sin contacto),
+`reservation_ids` uuid[], `created_at`. Una fila por intento de reserva que
+se completó (retención 7 días). `public.rate_limit_counters`: PK (`bucket`
+text, `window_start` timestamptz), `hits` int.
+
+Funciones: `create_booking_request(scope, key, hash, rows jsonb, response
+jsonb)` → `created | replayed | key_reused` (clave + reservas + respuesta en
+una transacción) y `rate_limit_consume(buckets text[], limits int[],
+window_seconds int)` → `allowed, bucket, retry_after`. Las dos tablas con RLS
+sin políticas y sin GRANT para anon/authenticated; las funciones solo para
+service_role. Requiere 008 y 010. Detalle: `docs/estado-integracion.md`.
+
 ## `email_logs` y `whatsapp_logs`
 
 | `email_logs` | `whatsapp_logs` |
