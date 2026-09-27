@@ -17,7 +17,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fakeSupabase, load, mock, read } from './lib/ts-harness.mjs'
+import { fakeSupabase, load, mock, read, idempotencyKey, withBookingRpc } from './lib/ts-harness.mjs'
 
 const TRAINER = '11111111-1111-4111-8111-111111111111'
 const WINDOW = '22222222-2222-4222-8222-222222222222'
@@ -56,7 +56,7 @@ function respond(table, ops) {
   return { data: null, error: null }
 }
 
-mock('lib/supabase/client.ts', { getSupabaseServerClient: () => fakeSupabase(respond), supabaseClient: null })
+mock('lib/supabase/client.ts', { getSupabaseServerClient: () => fakeSupabase(withBookingRpc(respond)), supabaseClient: null })
 mock('lib/auth/current-player.ts', { findBookingPlayer: async () => ({ status: 'anonymous' }) })
 mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () => [60, 90] })
 // OJO: lib/availability/booking.ts NO se sustituye: es el cálculo real.
@@ -68,7 +68,7 @@ async function post(sessions, duration = 60) {
   const response = await route.POST(
     new Request('http://localhost/api/reservations', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey() },
       body: JSON.stringify({
         trainer_id: TRAINER,
         sessions,

@@ -20,7 +20,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { captureConsole, fakeSupabase, load, mock } from './lib/ts-harness.mjs'
+import { captureConsole, fakeSupabase, load, mock, idempotencyKey, withBookingRpc } from './lib/ts-harness.mjs'
 
 const TRAINER_ID = '11111111-1111-4111-8111-111111111111'
 const WINDOW_ID = '22222222-2222-4222-8222-222222222222'
@@ -62,7 +62,7 @@ function respond(table, ops) {
   return { data: null, error: null }
 }
 
-mock('lib/supabase/client.ts', { getSupabaseServerClient: () => fakeSupabase(respond), supabaseClient: null })
+mock('lib/supabase/client.ts', { getSupabaseServerClient: () => fakeSupabase(withBookingRpc(respond)), supabaseClient: null })
 mock('lib/auth/current-player.ts', { findBookingPlayer: async () => state.lookup })
 mock('lib/availability/trainer-durations.ts', { getTrainerDurations: async () => state.durations })
 mock('lib/availability/booking.ts', {
@@ -77,7 +77,7 @@ async function post(body) {
   const response = await route.POST(
     new Request('http://localhost/api/reservations', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey() },
       body: JSON.stringify(body),
     })
   )
@@ -233,7 +233,7 @@ test('23P01 con cuenta de jugador → 409 igual, y no se crea la relación', asy
   assert.equal(state.upserts.length, 0)
 })
 
-test('otros errores del insert siguen siendo 500 (no se disfrazan de 409)', async () => {
+test('otros errores del insert siguen siendo 500 (no se disfrazan de 409) y no afirman que no se creó', async () => {
   for (const dbError of [
     { code: '23P01', message: 'conflicting key value violates exclusion constraint "otra_exclusion"' },
     { code: '23505', message: 'duplicate key value violates unique constraint' },
@@ -245,7 +245,11 @@ test('otros errores del insert siguen siendo 500 (no se disfrazan de 409)', asyn
     await captureConsole(async () => {
       const { status, body } = await post(ANON)
       assert.equal(status, 500, JSON.stringify(dbError))
-      assert.match(body.error, /couldn't create your booking/)
+      // Sin prueba de que la base lo rechazó, el resultado es desconocido
+      // (migración 021): se dice que se puede repetir, no que falló.
+      assert.equal(body.code, 'outcome_unknown', JSON.stringify(dbError))
+      assert.match(body.error, /couldn't confirm your booking/)
+      assert.doesNotMatch(body.error, /couldn't create|not created|wasn't created/)
     })
   }
 })

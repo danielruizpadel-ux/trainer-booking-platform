@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Integración de emdash/pagos-paquetes-t3o2n en emdash/integracion-programa:
-# la cadena COMPLETA de migraciones 001 → 019 desde una base vacía y la
+# la cadena COMPLETA de migraciones 001 → 021 desde una base vacía y la
 # interacción entre los triggers de reservas de la 015 (reserva siempre
 # dentro de su ventana), la sincronización atómica (014/016) y la
 # programación y los créditos de paquetes (017 → 019).
@@ -56,11 +56,11 @@ for f in migrations/0*.sql; do
   out=$(run < "$f") || { bad "A1 $f no se aplica: $out"; exit 1; }
   applied+=("$(basename "$f" .sql | cut -c1-3)")
 done
-check "A1 cadena completa desde vacío, en orden (001 → 020)" "001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020" "${applied[*]}"
-for f in migrations/01[1-9]_*.sql migrations/020_*.sql; do
+check "A1 cadena completa desde vacío, en orden (001 → 021)" "001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020 021" "${applied[*]}"
+for f in migrations/01[1-9]_*.sql migrations/02[0-9]_*.sql; do
   out=$(run < "$f") || bad "A2 $f no se puede reaplicar: $out"
 done
-pass "A2 011 → 020 se pueden reaplicar"
+pass "A2 011 → 021 se pueden reaplicar"
 check "A3 triggers BEFORE de reservations (orden de disparo)" \
   "reservations_inherit_package_credit,reservations_legacy_quarantine,reservations_package_no_revive,reservations_set_session_date,reservations_within_window,update_reservations_updated_at" \
   "$(q "select string_agg(tgname, ',' order by tgname) from pg_trigger where tgrelid = 'reservations'::regclass and not tgisinternal and (tgtype & 2) = 2")"

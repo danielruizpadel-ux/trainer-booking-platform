@@ -7,6 +7,7 @@ import type { SessionPriceRow } from '@/lib/reservations/pricing'
 import type { BookingAccount } from '@/lib/players/booking-contact'
 import type { BookingDraft } from '@/lib/booking/draft'
 import { overlapsSelection } from '@/lib/availability/windows'
+import { UNCONFIRMED_BOOKING_MESSAGE, attemptKeyFor, readCheckoutOutcome, type AttemptKey } from '@/lib/reservations/idempotency-client'
 
 type ViewType = 'month' | 'week' | 'day'
 
@@ -69,6 +70,9 @@ export default function BookingFlow({
   // selección vacía inicial borraría el borrador antes de usarlo.
   const [restoreDone, setRestoreDone] = useState(false)
   const onSelectionChangeRef = useRef(onSelectionChange)
+  // Clave de idempotencia del intento de reserva en curso (migración 021): la
+  // misma en los reintentos, nueva si cambia la petición.
+  const attemptKeyRef = useRef<AttemptKey | null>(null)
   onSelectionChangeRef.current = onSelectionChange
 
   // Tabla de precios vigente del entrenador: solo vista previa.
@@ -172,15 +176,21 @@ export default function BookingFlow({
             client_whatsapp_opt_in: guest?.whatsapp ?? false,
           }
 
-    const response = await fetch('/api/reservations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok || !data.success) {
-      throw new CheckoutError(data.error || "We couldn't create your booking. Please try again.", response.status)
-    }
+    const payload = JSON.stringify(body)
+    const attempt = attemptKeyFor(attemptKeyRef.current, payload)
+    attemptKeyRef.current = attempt
+    const outcome = await readCheckoutOutcome(() =>
+      fetch('/api/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key },
+        body: payload,
+      })
+    )
+    // Sin respuesta o sin confirmar: no se afirma que no se creó; repetir con
+    // la misma clave es seguro (el servidor devuelve la reserva si ya existía).
+    if (outcome.kind === 'unconfirmed') throw new CheckoutError(UNCONFIRMED_BOOKING_MESSAGE, 0)
+    if (outcome.kind === 'failed') throw new CheckoutError(outcome.message, outcome.status)
+    attemptKeyRef.current = null
     onBooked?.()
   }
 

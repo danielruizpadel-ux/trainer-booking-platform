@@ -100,3 +100,27 @@ export async function captureConsole(fn) {
   }
   return lines.join('\n')
 }
+
+/**
+ * POST /api/reservations (migración 021) en pruebas que solo miran la reserva:
+ * cabecera Idempotency-Key nueva en cada petición y un `respond` envuelto que
+ * deja pasar el límite, no encuentra claves guardadas y traduce
+ * create_booking_request a un insert en 'reservations' con las mismas filas
+ * (su error → error de la rpc; si no, 'created' con ids r-1…).
+ */
+export const idempotencyKey = () => crypto.randomUUID()
+
+export function withBookingRpc(respond) {
+  return (table, ops) => {
+    if (table === 'rpc:rate_limit_consume') return { data: [{ allowed: true, bucket: null, retry_after: 0 }], error: null }
+    if (table === 'booking_requests') return { data: null, error: null }
+    if (table === 'rpc:create_booking_request') {
+      const params = ops[0].args[0]
+      const result = respond('reservations', [{ op: 'insert', args: [params.p_rows] }])
+      if (result?.error) return { data: null, error: result.error }
+      const ids = (result?.data ?? params.p_rows).map((row, i) => row.id ?? `r-${i + 1}`)
+      return { data: [{ outcome: 'created', response: { ...params.p_response, reservationIds: ids }, reservation_ids: ids }], error: null }
+    }
+    return respond(table, ops)
+  }
+}

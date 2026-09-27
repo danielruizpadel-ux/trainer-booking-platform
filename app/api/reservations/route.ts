@@ -12,6 +12,9 @@ import { isClassDuration } from '@/lib/availability/durations'
 import { addMinutes, findSelectionOverlap } from '@/lib/availability/windows'
 import { isSlotConflictError, refreshWindowStatus } from '@/lib/reservations/slots'
 import { isPastMalaysiaSession } from '@/lib/dateUtils'
+import { bookingScope, findStoredBooking, readIdempotencyKey, requestFingerprint } from '@/lib/reservations/idempotency'
+import { consumeRateLimit, trustedClientIp } from '@/lib/reservations/rate-limit'
+import { isConfirmedRejection } from '@/lib/supabase/error-codes'
 
 /**
  * POST /api/reservations — checkout público (widget de reserva).
@@ -32,6 +35,20 @@ import { isPastMalaysiaSession } from '@/lib/dateUtils'
  *   mensaje        client_message validado (≤ 500); nunca en logs.
  *
  * Los mensajes de error van en inglés: los enseña el checkout público.
+ *
+ * Idempotencia y límite (migración 021, 27/09/2026):
+ *   - Cabecera `Idempotency-Key` (UUID) obligatoria. Con la misma clave y la
+ *     misma petición se devuelve la respuesta original (sin crear nada), también
+ *     si la primera se guardó pero su respuesta se perdió. Misma clave con otra
+ *     petición → 422. La clave vive dentro de un scope (jugador de la sesión o
+ *     email del invitado): la de un cliente no enseña la respuesta de otro.
+ *     Se busca ANTES de revalidar la disponibilidad (en un reintento las horas
+ *     ya las ocupa la propia reserva). Clave + reservas + respuesta se
+ *     escriben en una transacción (create_booking_request).
+ *   - Límite compartido en Postgres (lib/reservations/rate-limit.ts): 429 con
+ *     Retry-After. Una repetición con la misma clave no cuenta.
+ *   - Si falla sin evidencia fiable de rechazo después de mandar la escritura,
+ *     el resultado no está confirmado: se dice así y que repetir es seguro.
  */
 
 interface Session {
@@ -69,9 +86,14 @@ function normalizeTime(value: unknown): string {
   return String(value ?? '').trim().slice(0, 5)
 }
 
-function bad(error: string, status = 400) {
-  return Response.json({ success: false, error }, { status })
+function bad(error: string, status = 400, extra: Record<string, unknown> = {}, headers?: HeadersInit) {
+  return Response.json({ success: false, error, ...extra }, { status, headers })
 }
+
+const UNAVAILABLE_EN = 'Booking is temporarily unavailable. Please try again in a moment.'
+const UNCONFIRMED_EN =
+  "We couldn't confirm your booking. Tap Confirm booking again: it won't book twice."
+const CREATE_FUNCTION = 'create_booking_request'
 
 function parseSessions(value: unknown): Session[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SESSIONS) return null
@@ -86,7 +108,13 @@ function parseSessions(value: unknown): Session[] | null {
 }
 
 export async function POST(request: Request) {
+  // true desde que se manda la escritura: a partir de ahí un fallo no prueba
+  // que no se creara la reserva.
+  let writeSent = false
   try {
+    const idempotencyKey = readIdempotencyKey(request)
+    if (!idempotencyKey) return bad('Missing or invalid Idempotency-Key header.', 400, { code: 'idempotency_key_required' })
+
     const body = (await request.json().catch(() => null)) as ReservationRequest | null
     if (!body || typeof body !== 'object') return bad('Invalid request')
 
@@ -133,6 +161,30 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseServerClient()
 
+    // Idempotencia: scope (quién) + huella (qué). Con cuenta, el scope sale de
+    // la sesión; invitado, de su email. La huella cubre todo lo que decide la
+    // reserva (el contacto de un jugador ya va en su scope).
+    const scope = playerId ? bookingScope({ playerId }) : bookingScope({ guestEmail: client_email })
+    const requestHash = requestFingerprint({
+      trainer: trainerParam,
+      sessions: sessions.map((s) => `${s.date} ${normalizeTime(s.time)}`).sort(),
+      duration: body.duration_minutes ?? null,
+      players: playerCount,
+      message: message.value,
+      contact: playerId
+        ? { player: playerId }
+        : { name: client_name, email: client_email.toLowerCase(), phone: client_phone, whatsapp: whatsappOptIn },
+    })
+    const stored = await findStoredBooking(supabase, scope, idempotencyKey, requestHash)
+    if ('error' in stored) return bad(UNAVAILABLE_EN, 503)
+    if (stored.found) {
+      if (!stored.sameRequest) {
+        return bad('This booking request was already used with different details. Please start again.', 422, { code: 'idempotency_key_reused' })
+      }
+      // Repetición: la reserva ya existe; se devuelve lo mismo, sin crear nada.
+      return Response.json(stored.response, { headers: { 'Idempotent-Replayed': 'true' } })
+    }
+
     // trainer_id puede venir como uuid o como slug.
     let trainerId = trainerParam
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trainerParam)) {
@@ -143,6 +195,25 @@ export async function POST(request: Request) {
         .single()
       if (trainerError || !trainerData) return bad('Coach not found.', 404)
       trainerId = trainerData.id
+    }
+
+    // Límite de peticiones (compartido entre instancias). Falla cerrado.
+    const rate = await consumeRateLimit(supabase, {
+      playerId,
+      guestEmail: playerId ? null : client_email,
+      guestPhone: playerId ? null : client_phone,
+      trainerId,
+      clientIp: trustedClientIp(request),
+    })
+    if ('error' in rate) return bad(UNAVAILABLE_EN, 503)
+    if (!rate.allowed) {
+      const minutes = Math.max(1, Math.ceil(rate.retryAfter / 60))
+      return bad(
+        `Too many booking attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+        429,
+        { code: 'rate_limited', retryAfter: rate.retryAfter },
+        { 'Retry-After': String(rate.retryAfter) }
+      )
     }
 
     // Duración: una de las que ofrece el entrenador (migración 007).
@@ -239,14 +310,41 @@ export async function POST(request: Request) {
       created_at: createdAt,
     }))
 
-    const { data: reservations, error: insertError } = await supabase
-      .from('reservations')
-      .insert(reservationsToInsert)
-      .select('id')
+    const successBody = {
+      success: true,
+      message: "Booking request received. Your coach will review it and confirm once the court is booked.",
+      status: RESERVATION_STATUS.PENDING_CONFIRMATION,
+      count: sessions.length,
+      durationMinutes: duration,
+      playerCount,
+      pricePerSession: price.pricePerSession,
+      discountedPricePerSession: price.discountedPricePerSession,
+      total: price.total,
+      discountPercent: price.discountPercent,
+    }
+
+    // Clave + reservas + respuesta en UNA transacción (migración 021). Si otra
+    // petición con la misma clave va por delante, esta espera y recibe su
+    // respuesta ('replayed').
+    let rpcResult: { data: unknown; error: { code?: string; message?: string; details?: string | null } | null }
+    writeSent = true
+    try {
+      rpcResult = await supabase.rpc(CREATE_FUNCTION, {
+        p_scope: scope,
+        p_key: idempotencyKey,
+        p_request_hash: requestHash,
+        p_rows: reservationsToInsert,
+        p_response: successBody,
+      })
+    } catch {
+      // La llamada salió sin respuesta: pudo guardarse. Repetir con la misma clave es seguro.
+      return bad(UNCONFIRMED_EN, 500, { code: 'outcome_unknown' })
+    }
+    const insertError = rpcResult.error
 
     // Otra petición se quedó la franja entre la comprobación de arriba y este
-    // insert: lo rechaza la restricción de la 008. El insert es uno solo, así
-    // que no se ha creado ninguna de las sesiones.
+    // insert: lo rechaza la restricción de la 008 (o la 015). La transacción
+    // es una sola, así que no se ha creado ninguna de las sesiones.
     if (isSlotConflictError(insertError)) {
       console.warn('Reserva rechazada por solapamiento (23P01 reservations_no_overlap):', {
         trainerId,
@@ -255,14 +353,33 @@ export async function POST(request: Request) {
       return bad(OVERLAP_MESSAGE_EN, 409)
     }
 
-    if (insertError || !reservations) {
-      // Solo code + message: `details` puede traer la fila entera ("Failing
-      // row contains …") con el contacto y el mensaje del cliente.
-      console.error('Error creando reservas:', { code: insertError?.code ?? null, message: insertError?.message ?? 'sin filas' })
-      return bad("We couldn't create your booking. Please try again.", 500)
+    if (insertError) {
+      // Solo el código: `details` puede traer la fila entera ("Failing row
+      // contains …") con el contacto y el mensaje del cliente.
+      console.error('Error creando reservas:', { code: insertError.code ?? null })
+      // Falta la migración 021: nada se ejecutó.
+      if (isConfirmedRejection(insertError, [{ code: 'PGRST202', marker: CREATE_FUNCTION }, { code: '42883', marker: CREATE_FUNCTION }])) {
+        return bad(UNAVAILABLE_EN, 503)
+      }
+      // Cualquier otro error después de mandar la escritura: sin evidencia
+      // fiable de que se deshiciera. Repetir con la misma clave es seguro.
+      return bad(UNCONFIRMED_EN, 500, { code: 'outcome_unknown' })
     }
 
-    const reservationIds = reservations.map((res) => res.id as string)
+    const row = (Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data) as
+      | { outcome?: string; response?: Record<string, unknown> | null; reservation_ids?: string[] | null }
+      | null
+    if (row?.outcome === 'key_reused') {
+      return bad('This booking request was already used with different details. Please start again.', 422, { code: 'idempotency_key_reused' })
+    }
+    if (row?.outcome === 'replayed' && row.response) {
+      return Response.json(row.response, { headers: { 'Idempotent-Replayed': 'true' } })
+    }
+    if (row?.outcome !== 'created' || !row.response || !row.reservation_ids?.length) {
+      return bad(UNCONFIRMED_EN, 500, { code: 'outcome_unknown' })
+    }
+
+    const reservationIds = row.reservation_ids
 
     // Reserva con cuenta: queda la relación jugador ↔ entrenador (source
     // `booking`). Idempotente y sin reactivar archivadas; si falla, la
@@ -280,21 +397,10 @@ export async function POST(request: Request) {
       await refreshWindowStatus(supabase, windowId, offered)
     }
 
-    return Response.json({
-      success: true,
-      message: "Booking request received. Your coach will review it and confirm once the court is booked.",
-      status: RESERVATION_STATUS.PENDING_CONFIRMATION,
-      reservationIds,
-      count: sessions.length,
-      durationMinutes: duration,
-      playerCount,
-      pricePerSession: price.pricePerSession,
-      discountedPricePerSession: price.discountedPricePerSession,
-      total: price.total,
-      discountPercent: price.discountPercent,
-    })
+    return Response.json(row.response)
   } catch (error) {
     console.error('Reservations API error:', error instanceof Error ? error.message : 'error desconocido')
+    if (writeSent) return bad(UNCONFIRMED_EN, 500, { code: 'outcome_unknown' })
     return bad('Something went wrong. Please try again.', 500)
   }
 }
