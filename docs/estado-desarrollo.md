@@ -1,6 +1,47 @@
 # Estado de desarrollo — Dashboard del Entrenador
 
-Creado: 19/09/2026 · Última actualización: 21/09/2026 (prompt 22) · Estado: **Fases A, B, C, C+ y D hechas y verificadas. Migraciones 002–007 aplicadas. Duraciones 1h/1h30 verificadas de extremo a extremo contra Supabase real. Calendario del dashboard legible por duración (prompt 22, mismo patrón que la web pública) y corregido un bug real de doble reserva cuando hay ventanas de disponibilidad solapadas el mismo día (prompt 22, verificado con una reserva de prueba antes/después del fix). Bloqueante 1 de seguridad (service role key en claro) resuelto (prompt 21); rotar la clave y limpiar el historial de git siguen pendientes de Daniel.**
+## Estado actual de A2 y UI (25/09/2026)
+
+### HECHO
+
+- La base existente de reservas, disponibilidad, dashboard, paquetes y
+  calendario sigue siendo la referencia funcional del proyecto.
+- El estilo visual del calendario de reservas queda establecido como referencia
+  para la web pública, la cuenta del jugador y el dashboard.
+- Existe un prototipo visual no conectado del futuro Player Development Plan en
+  `/programa`; no crea reservas, no guarda datos y no implementa cobros.
+
+### VERIFICADO
+
+- Codex hizo una revisión independiente de solo lectura del worktree: `git
+  status`, diff, rutas públicas, flujo compartido, calendarios y comprobaciones
+  estáticas.
+- En este worktree no aparece el diff completo de A2 reportado por Claude:
+  no están presentes aquí la integración de precios por entrenador, los campos
+  de identidad/metadatos de A2 ni los scripts de verificación de A2.
+- `/mauri` conserva el flujo compartido y la resolución del entrenador por
+  `mauri`; no se detectó una regresión introducida por el diff actual.
+- La ruta genérica `/[trainerSlug]` sigue usando el flujo legacy y envía un
+  payload distinto del que espera la API moderna. Esto afecta a
+  `/daniel-ruiz` y debe resolverse antes de probar una reserva completa.
+- `npm run type-check` mantiene errores existentes; `npm run lint` no funciona
+  con el script actual de Next.
+
+### PENDIENTE
+
+- Consolidar la implementación A2 y la UI en este worktree, y revisar de nuevo
+  el diff real resultante.
+- Confirmar las migraciones y el esquema desplegado antes de usar los campos de
+  A2.
+- Verificar en un entorno de prueba el flujo completo: disponibilidad,
+  selección, duración, identidad, precio, creación, confirmación,
+  cancelación y reprogramación.
+- No se ha probado una reserva completa de extremo a extremo en este estado.
+- Pendientes de UI: accesibilidad del modal de horas; fecha mostrada por el
+  mini calendario; botón **Book Session**; y registro de credenciales en la
+  consola del admin. No guardar credenciales en esta documentación.
+
+Creado: 19/09/2026 · Última actualización: 25/09/2026 · Estado: **Fases A, B, C, C+ y D hechas y verificadas. Migraciones 002–007 aplicadas. Duraciones 1h/1h30 verificadas de extremo a extremo contra Supabase real. Calendario del dashboard legible por duración (prompt 22, mismo patrón que la web pública) y corregido un bug real de doble reserva cuando hay ventanas de disponibilidad solapadas el mismo día (prompt 22, verificado con una reserva de prueba antes/después del fix). Bloqueante 1 de seguridad (service role key en claro) resuelto (prompt 21); rotar la clave y limpiar el historial de git siguen pendientes de Daniel. El estado específico de A2 y UI está resumido arriba.**
 
 ## Decisión de alcance
 
