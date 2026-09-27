@@ -12,19 +12,28 @@ Marca cada casilla antes de hacer deploy. Los bloqueantes son bloqueantes.
 
 ## 🔴 BLOQUEANTES — sin esto NO se publica
 
-### 1. La service role key sigue en el historial de git — pendiente de rotar
+### 1. La service role key antigua sigue en el historial de git — ROTADA el 27/09/2026
 
 - [x] Los 3 scripts que la llevaban en claro se borraron (21/09/2026, Claude
       Cowork): estaban superados por `POST /api/admin/setup-mauri` (que ya usa
       `getSupabaseServerClient()` / `SUPABASE_SERVICE_ROLE_KEY` desde
       `.env.local`, ver `docs/SETUP_TRAINER.md`) y escribían además contra
       columnas que ya no existen (`is_available`, `price` en `trainers`).
-- [ ] Rotar la clave en Supabase → Settings → API — sigue siendo la misma que
-      estuvo escrita en claro; hay que asumirla comprometida aunque el repo no
-      haya tenido remoto nunca.
-- [ ] Limpiar el historial de git (`git filter-repo`, o más simple al no tener
-      remoto todavía: empezar un repo nuevo sin historial) antes de configurar
-      cualquier remoto.
+- [x] Rotar la clave en Supabase → Settings → API: rotada el 27/09/2026
+      (lo confirma Dani). La clave nueva solo está en `.env.local` y en las
+      variables del despliegue; no se escribe en ningún archivo versionado.
+- [ ] **Verificar la revocación de la clave antigua**: comprobar en el panel
+      de Supabase que la antigua ya no aparece como activa y que una
+      petición con ella se rechaza (401). Pendiente: no se ha comprobado
+      desde este repo (sin acceso a Supabase ni a la clave).
+- [ ] **Limpiar el historial de git**: `git filter-repo` o un repo nuevo sin
+      historial. Ya no basta con hacerlo en local: el repo tiene un remoto
+      `origin` en GitHub y, según las referencias remotas guardadas en local
+      (26/09/2026), sus ramas (`origin/main` incluida) contienen los commits
+      antiguos que añadieron la clave (d9af7f8, aeb59a6, f262bfe, 9a5261f,
+      d80133b). Hay que reescribir también las ramas remotas y revisar forks
+      o clones. Con la clave rotada y revocada, el valor antiguo deja de dar
+      acceso, pero el historial debe limpiarse igualmente.
 
 **Archivos borrados:** `scripts/quick-setup.sh`, `scripts/setup-mauri.sh`,
 `scripts/setup-mauri-prod.js`.
@@ -33,14 +42,11 @@ Marca cada casilla antes de hacer deploy. Los bloqueantes son bloqueantes.
 la clave (se quedó grabada al autorizar un comando). Ya está en `.gitignore` —
 comprueba que sigue estándolo.
 
-Esa clave **se salta el RLS por completo**: quien la tenga lee, modifica y borra
-toda la base de datos, incluidos los datos de tus clientes. Hoy el repo no tiene
-remoto configurado, así que no ha salido de tu ordenador. En cuanto lo subas a
-GitHub —**aunque sea privado**— está expuesta.
-
-Rotarla no basta si luego subes el historial tal cual: los commits antiguos la
-conservan (comprobado el 21/09: sigue apareciendo en un commit viejo). Antes de
-añadir un remoto, reescribe el historial o empieza uno nuevo.
+Esa clave **se saltaba el RLS por completo**: quien la tuviera leía, modificaba y
+borraba toda la base de datos. Por eso se ha rotado. Mientras no se verifique la
+revocación, trata la antigua como activa. Y el historial se limpia igualmente:
+los commits antiguos conservan el valor (el 26/09 seguía en 5 commits, que ya
+están en el remoto).
 
 ### 2. Endpoints de administración abiertos — RESUELTO el 19/09/2026
 
@@ -51,13 +57,21 @@ añadir un remoto, reescribe el historial o empieza uno nuevo.
 alta a Mauri, ver `docs/SETUP_TRAINER.md`). Si algún día hace falta en
 producción, exigir una cabecera con un secreto de entorno, no quitar el 404.
 
-### 3. El panel de admin no tiene autenticación
+### 3. El panel de admin no tenía autenticación — IMPLEMENTADA el 27/09/2026 (falta activarla)
 
-- [ ] Implementar el login de verdad, o no desplegar `/admin`
-
-`app/admin/login/page.tsx` tiene literalmente `// TODO: Implement admin
-authentication`, hace `console.log` de la contraseña y **muestra en pantalla unas
-credenciales de demo**. No autentica nada.
+- [x] Autenticación y autorización en el servidor para todo lo administrativo:
+      `/admin`, `/admin/dashboard` y `POST /api/admin/setup-mauri`
+      (`lib/auth/current-admin.ts`). La sesión es la de la app (Supabase
+      Auth, `getUser()`), el login de `/admin` es el mismo acceso por enlace
+      mágico o Google, y el permiso es una fila en la tabla `admins`
+      (migración 020). Jugador o entrenador sin esa fila: las páginas dan 404
+      y la API 403; sin sesión, la página lleva al login y la API da 401.
+      Falla cerrado si la tabla no existe. Sin credenciales de demo.
+      Pruebas: `scripts/verify-admin-access.mjs`.
+- [ ] Aplicar `migrations/020_admins.sql` y dar de alta a los administradores
+      (SQL en su cabecera). Hasta entonces nadie entra en `/admin`.
+- [ ] Añadir `<origen>/admin/auth/callback` a Supabase → Authentication →
+      URL Configuration → Redirect URLs (local y producción).
 
 ### 4. Revisar las políticas RLS de `reservations` — ESCRITURA CERRADA el 25/09/2026
 

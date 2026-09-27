@@ -5,10 +5,12 @@ Léete esto antes de tocar código. Son las cosas que ya han roto algo una vez.
 ## ⛔ Si el tema es publicar, desplegar o subir a producción
 
 **Para y lee `docs/ANTES_DE_PUBLICAR.md` primero.** Bloqueantes de seguridad sin
-resolver: la key vieja de Supabase sigue en el historial de git sin rotar (los
-3 scripts que la llevaban en claro se borraron el 21/09, pero un commit
-antiguo la conserva — no reescribir el historial ni añadir un remoto sin
-rotarla antes), y el login de admin sigue siendo un `TODO`.
+resolver: la key vieja de Supabase se rotó el 27/09, pero falta verificar que
+la antigua está revocada y limpiar el historial de git, que la conserva en
+commits antiguos que ya están en el remoto `origin`. El acceso a `/admin` y
+`/api/admin` ya exige sesión y permiso de administrador en el servidor
+(`lib/auth/current-admin.ts`), pero falta aplicar la migración 020 y dar de
+alta a los administradores.
 
 Si el usuario pide desplegar, subir a Vercel, publicar la web o conectar un
 dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
@@ -121,6 +123,17 @@ Detalle del flujo completo: `docs/BOOKING_FLOW.md`.
   nombre/teléfono/WhatsApp del perfil y el email de Auth **desde la sesión** e
   ignora los `client_*` y cualquier `player_id` del body. Sin sesión, invitado
   (player_id NULL). Detalle: `docs/PLAYER_ACCOUNTS.md`.
+
+## Administración (`/admin`, `/api/admin`)
+
+- El permiso de administrador es una fila en `public.admins` (migración 020,
+  **sin aplicar todavía**; se concede a mano en el SQL Editor, ver su
+  cabecera). Ser entrenador o jugador no lo da.
+- Cada página de `/admin` llama a `await requireAdminPage('<ruta>')` (sin
+  sesión → login de `/admin`; sin permiso → 404) y cada ruta de `/api/admin`
+  a `requireAdmin()` (401/403) **antes** de tocar la base:
+  `lib/auth/current-admin.ts`. Un layout no basta en Next 16.
+  `scripts/verify-admin-access.mjs` falla si una página o ruta nueva no lo hace.
 
 ## Programa (`/programa`) — PROTOTIPO con datos de ejemplo
 

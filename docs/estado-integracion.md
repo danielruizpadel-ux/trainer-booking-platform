@@ -352,8 +352,8 @@ Límites:
 
 Límites:
 
-- Hay que aplicar 011 → 019 en orden antes de desplegar este código (la 019
-  con su procedimiento: decisiones de la 018 hechas y escritores detenidos).
+- Hay que aplicar 011 → 020 en orden antes de desplegar este código (ver
+  «Orden de aplicación en Supabase» más abajo).
 - La 015 se para si la base real ya tiene reservas vivas fuera de su
   ventana; habrá que resolverlas a mano antes (no se toca ningún dato).
 - `FOR SHARE` en cada reserva viva que se crea o mueve: una reserva espera
@@ -411,6 +411,66 @@ reservas de paquete. `package_credit_integrity_check` queda sin filas que
 bloqueen. En la app, el 23514 de la 015 dentro de `schedule_package_session`
 y `propose_reschedule` se traduce a 409 (`isSlotConflictError`), junto a los
 409 propios de pagos (crédito ocupado, revivir, cuarentena).
+
+## Orden de aplicación en Supabase (corrección del 27/09/2026)
+
+**Estricto por número, sin saltos: la 018 nunca antes de 011–017.** En la
+revisión previa al despliegue se propuso aplicar la 018 antes de la ventana y
+después 011 → 017 → 019: eso dejaba la 018 por delante de sus requisitos y
+fuera del orden probado (todas las pruebas aplican las migraciones por
+número), y contradice el procedimiento de la 019 («017 y 018 aplicadas»). Lo
+correcto es:
+
+1. **Fase previa (con la app en marcha, opcional):** 011 → 012 → 013 → 014 →
+   015 → 016 → 017 → 018, en ese orden. Ninguna exige detener escritores. Con
+   el código antiguo desplegado, algunos errores pasan a fallar cerrados: el
+   generador antiguo no podrá borrar ventanas con reservas (013) ni acortar
+   una ventana dejando fuera una reserva viva (015). Responden con error, no
+   pierden datos. Si eso no es aceptable, todo este paso va dentro de la
+   ventana (paso 3).
+2. **Decisiones sobre datos** (solo con la 018 ya aplicada):
+   `select problema, count(*) from public.package_credit_backfill_report group by 1;`
+   y resolver cada fila bloqueante en `package_credit_resolutions` (ver la
+   cabecera de la 018). Con la app en marcha pueden aparecer reservas nuevas
+   como `viva_sin_clasificar`.
+3. **Ventana de mantenimiento:** detener escritores → (si no se hizo el paso
+   1: 011 → 018 y el paso 2) → repasar el informe de la 018 y decidir lo
+   nuevo → **019** → `notify pgrst, 'reload schema';` → **020** (o antes: es
+   independiente) → desplegar el código → reabrir escritores.
+4. **Comprobar:** `select * from public.package_credit_integrity_check where bloquea;`
+   (vacío) y el informe de la 018 (solo `muerta_sin_clasificar`).
+5. **Administradores:** alta en `public.admins` (SQL en la cabecera de la 020)
+   y Redirect URL `<origen>/admin/auth/callback` en Supabase Auth.
+
+Las consultas previas de solo lectura para medir cada paso están en la
+revisión del 26/09 y en las cabeceras de 011, 015 y 018.
+
+## Administración (`/admin`, `/api/admin`) — 27/09/2026
+
+Bloqueante 3 de `docs/ANTES_DE_PUBLICAR.md`. Todo lo administrativo que existe:
+las páginas `/admin` (nueva, lleva al panel) y `/admin/dashboard`, y la ruta
+`POST /api/admin/setup-mauri`. El login de `/admin` era un formulario que no
+autenticaba y enseñaba credenciales de demo.
+
+- **Sesión:** la de toda la app (Supabase Auth; `getUser()` en el servidor).
+  `/admin/login` usa el mismo acceso por enlace mágico o Google, con su
+  propio callback (`/admin/auth/callback`, que solo vuelve a `/admin/*`) y
+  cierre de sesión. `proxy.ts` lleva a `/admin/login` a quien no tiene sesión.
+- **Permiso:** una fila en `public.admins` (migración 020), el mismo patrón
+  que `trainers.auth_user_id` y `players.auth_user_id`. Se concede a mano en
+  el SQL Editor; ninguna ruta escribe en esa tabla. RLS sin políticas y sin
+  GRANT para anon/authenticated.
+- **Servidor, fallando cerrado** (`lib/auth/current-admin.ts`): cada página
+  llama a `requireAdminPage()` (sin sesión → login; jugador o entrenador sin
+  permiso → 404) y cada ruta de `/api/admin` a `requireAdmin()` (401/403)
+  antes de tocar la base. Si la tabla no existe o falla la lectura, nadie es
+  administrador. `setup-mauri` sigue además cerrada en producción (404).
+- **Pruebas:** `scripts/verify-admin-access.mjs` (código real con dobles:
+  sin sesión, jugador, entrenador, admin y tabla sin crear; llamadas directas
+  a la API; páginas; callback y `next`; proxy; inventario que falla si una
+  página o ruta nueva no comprueba el permiso). La 020 se aplica en
+  `scripts/verify-integration-chain-db.sh` (cadena 001 → 020: RLS, anon y
+  authenticated sin acceso, service_role sí, SQL de alta idempotente).
 
 ## FUTURO (no implementado)
 
