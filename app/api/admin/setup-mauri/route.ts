@@ -25,6 +25,37 @@ export async function POST(request: Request) {
 
     console.log('🚀 Iniciando setup de Mauricio Martin...')
 
+    // 0. Antes de escribir NADA: ¿existe ya Mauri y cuántos huecos tiene?
+    //    Si cualquiera de las dos lecturas falla, se aborta sin escribir
+    //    (antes el error del recuento se ignoraba y se seguía escribiendo).
+    const { data: existingTrainer, error: lookupError } = await supabase
+      .from('trainers')
+      .select('id')
+      .eq('slug', 'mauri')
+      .maybeSingle()
+    if (lookupError) {
+      console.error('❌ No se pudo comprobar si el trainer ya existe:', { code: lookupError.code ?? null })
+      return NextResponse.json(
+        { error: 'No se pudo comprobar si el entrenador ya existe; no se ha escrito nada' },
+        { status: 500 }
+      )
+    }
+    let existingSlots = 0
+    if (existingTrainer) {
+      const { count, error: countError } = await supabase
+        .from('availability_slots')
+        .select('*', { count: 'exact', head: true })
+        .eq('trainer_id', existingTrainer.id)
+      if (countError) {
+        console.error('❌ No se pudieron contar los huecos existentes:', { code: countError.code ?? null })
+        return NextResponse.json(
+          { error: 'No se pudieron comprobar los huecos existentes; no se ha escrito nada' },
+          { status: 500 }
+        )
+      }
+      existingSlots = count ?? 0
+    }
+
     // 1. Insertar o actualizar trainer
     console.log('📝 Insertando trainer Mauricio Martin...')
 
@@ -66,13 +97,8 @@ export async function POST(request: Request) {
     const trainerId = trainer.id
     console.log(`✅ Trainer insertado (ID: ${trainerId})`)
 
-    // 2. Verificar si ya tiene slots
-    const { count: existingSlots, error: countError } = await supabase
-      .from('availability_slots')
-      .select('*', { count: 'exact', head: true })
-      .eq('trainer_id', trainerId)
-
-    if (existingSlots && existingSlots > 0) {
+    // 2. Si ya tenía huecos (recuento del paso 0), no se generan más.
+    if (existingSlots > 0) {
       console.log(`⚠️  Trainer ya tiene ${existingSlots} slots`)
       return NextResponse.json(
         {

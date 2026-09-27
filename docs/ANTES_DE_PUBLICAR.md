@@ -53,9 +53,11 @@ están en el remoto).
 - [x] `app/api/admin/setup-mauri/route.ts` devuelve 404 si `NODE_ENV === 'production'`
 - [x] `app/api/dev/seed/route.ts` borrado
 
-`setup-mauri` sigue sin auth en local a propósito (es la forma cómoda de dar de
-alta a Mauri, ver `docs/SETUP_TRAINER.md`). Si algún día hace falta en
-producción, exigir una cabecera con un secreto de entorno, no quitar el 404.
+Desde el 27/09/2026 `setup-mauri` exige además sesión de administrador
+también en local (`requireAdmin()`: sin sesión 401, jugador o entrenador sin
+permiso 403, sin escribir nada; ver el punto 3 y `docs/SETUP_TRAINER.md`).
+En producción sigue devolviendo 404: si algún día hace falta allí, no quitar
+el 404 sin revisarlo; el permiso de administrador ya está en la ruta.
 
 ### 3. El panel de admin no tenía autenticación — IMPLEMENTADA el 27/09/2026 (falta activarla)
 

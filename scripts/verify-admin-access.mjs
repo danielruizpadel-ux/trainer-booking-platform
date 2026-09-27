@@ -34,8 +34,9 @@ const USERS = {
 }
 const ADMIN_IDS = new Set([USERS.admin.id])
 
-const state = { user: null, adminsError: null, writes: [] }
-const as = (who, adminsError = null) => Object.assign(state, { user: USERS[who], adminsError, writes: [] })
+const state = { user: null, adminsError: null, writes: [], lookupError: null, countError: null, slotCount: 0 }
+const as = (who, adminsError = null) =>
+  Object.assign(state, { user: USERS[who], adminsError, writes: [], lookupError: null, countError: null, slotCount: 0 })
 
 // Sesión: createSessionClient().auth.getUser()
 mock('lib/supabase/server.ts', {
@@ -64,7 +65,16 @@ function fakeBuilder(table) {
               return resolve({ data: ADMIN_IDS.has(id) ? { auth_user_id: id } : null, error: null })
             }
             const write = ops.find((o) => ['insert', 'upsert', 'update', 'delete'].includes(o.op))
-            if (write) state.writes.push({ table, op: write.op })
+            if (write) {
+              state.writes.push({ table, op: write.op })
+              return resolve({ data: { id: 'row-1' }, error: null, count: 0 })
+            }
+            // Lecturas de setup-mauri: el entrenador por slug y el recuento de huecos.
+            if (table === 'trainers' && state.lookupError) return resolve({ data: null, error: state.lookupError })
+            if (table === 'availability_slots') {
+              if (state.countError) return resolve({ data: null, error: state.countError, count: null })
+              return resolve({ data: null, error: null, count: state.slotCount })
+            }
             return resolve({ data: { id: 'row-1' }, error: null, count: 0 })
           }
         }
@@ -132,6 +142,31 @@ test('POST /api/admin/setup-mauri directo: 401/403 sin escribir nada; el admin s
   assert.notEqual(res.status, 401)
   assert.notEqual(res.status, 403)
   assert.ok(state.writes.some((w) => w.table === 'trainers'), 'el admin llega a escribir')
+})
+
+test('POST /api/admin/setup-mauri (admin): si falla el recuento de huecos o la búsqueda del entrenador, 500 SIN ninguna escritura', async () => {
+  const { POST } = load('app/api/admin/setup-mauri/route.ts')
+  const call = () => POST(new Request('http://localhost/api/admin/setup-mauri', { method: 'POST' }))
+  for (const [field, message] of [
+    ['countError', /No se pudieron comprobar los huecos existentes; no se ha escrito nada/],
+    ['lookupError', /No se pudo comprobar si el entrenador ya existe; no se ha escrito nada/],
+  ]) {
+    as('admin')
+    state[field] = { code: '57014', message: 'canceling statement due to statement timeout' }
+    const res = await call()
+    // Primero las escrituras: si el fallo reaparece, la prueba dice qué se escribió.
+    assert.deepEqual(state.writes, [], `${field}: ninguna escritura (ni el entrenador ni los huecos)`)
+    assert.equal(res.status, 500, field)
+    const body = await res.json()
+    assert.match(body.error, message, field)
+    assert.equal(JSON.stringify(body).includes('statement timeout'), false, `${field}: sin detalles de la base`)
+  }
+  // Con huecos ya existentes no se insertan más (solo se actualiza el entrenador).
+  as('admin')
+  state.slotCount = 5
+  const res = await call()
+  assert.equal(res.status, 200)
+  assert.deepEqual(state.writes.map((w) => w.table), ['trainers'])
 })
 
 test('POST /api/admin/setup-mauri en producción: 404 para todos, también el admin, sin escribir', async () => {
