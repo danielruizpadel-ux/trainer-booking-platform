@@ -56,11 +56,11 @@ for f in migrations/0*.sql; do
   out=$(run < "$f") || { bad "A1 $f no se aplica: $out"; exit 1; }
   applied+=("$(basename "$f" .sql | cut -c1-3)")
 done
-check "A1 cadena completa desde vacío, en orden" "001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019" "${applied[*]}"
-for f in migrations/01[1-9]_*.sql; do
+check "A1 cadena completa desde vacío, en orden (001 → 020)" "001 002 003 004 005 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020" "${applied[*]}"
+for f in migrations/01[1-9]_*.sql migrations/020_*.sql; do
   out=$(run < "$f") || bad "A2 $f no se puede reaplicar: $out"
 done
-pass "A2 011 → 019 se pueden reaplicar"
+pass "A2 011 → 020 se pueden reaplicar"
 check "A3 triggers BEFORE de reservations (orden de disparo)" \
   "reservations_inherit_package_credit,reservations_legacy_quarantine,reservations_package_no_revive,reservations_set_session_date,reservations_within_window,update_reservations_updated_at" \
   "$(q "select string_agg(tgname, ',' order by tgname) from pg_trigger where tgrelid = 'reservations'::regclass and not tgisinternal and (tgtype & 2) = 2")"
@@ -167,5 +167,20 @@ check "I2 ninguna reserva viva fuera de su ventana" "0" \
   "$(q "select count(*) from reservations r join availability_slots s on s.id = r.availability_slot_id where coalesce(r.status,'') not in ('cancelled','canceled','needs_reschedule') and (r.start_time < s.start_time or r.end_time > s.end_time)")"
 check "I3 cada crédito agendado apunta a exactamente una reserva viva suya" "0" \
   "$(q "select count(*) from package_sessions ps where ps.status = 'scheduled' and (select count(*) from reservations r where r.package_session_id = ps.id and coalesce(r.status,'') not in ('cancelled','canceled','needs_reschedule')) <> 1")"
+
+# ─── Z. Migración 020 (administradores) ──────────────────────────────────────
+AU=33333333-3333-4333-8333-333333333333
+q "insert into auth.users (id, email) values ('$AU', 'admin@example.com')" >/dev/null
+q "insert into admins (auth_user_id, granted_by, note) select id, 'Dani', 'prueba' from auth.users where lower(email) = lower('ADMIN@example.com') on conflict (auth_user_id) do nothing" >/dev/null
+check "Z1 el SQL de activación de la cabecera concede el permiso (y es idempotente)" "1" \
+  "$(q "insert into admins (auth_user_id, granted_by) select id, 'Dani' from auth.users where email = 'admin@example.com' on conflict (auth_user_id) do nothing; select count(*) from admins")"
+check "Z2 RLS activo en admins" "t" "$(q "select relrowsecurity from pg_class where oid = 'public.admins'::regclass")"
+checkre "Z3 anon no puede leer admins" "permission denied for table admins" "$(q "set role anon; select * from admins")"
+checkre "Z3 authenticated no puede leer admins" "permission denied for table admins" "$(q "set role authenticated; select * from admins")"
+checkre "Z3 authenticated no puede darse permiso" "permission denied for table admins" "$(q "set role authenticated; insert into admins (auth_user_id, granted_by) values ('$AU', 'yo')")"
+check "Z4 service_role sí la lee (la app)" "1" "$(q "set role service_role; select count(*) from admins")"
+checkre "Z5 granted_by no puede ir vacío" "admins_granted_by_not_blank" "$(q "insert into admins (auth_user_id, granted_by) values (gen_random_uuid(), ' ')")"
+q "delete from auth.users where id = '$AU'" >/dev/null
+check "Z6 borrar el usuario de Auth retira el permiso (on delete cascade)" "0" "$(q "select count(*) from admins")"
 
 exit $fail

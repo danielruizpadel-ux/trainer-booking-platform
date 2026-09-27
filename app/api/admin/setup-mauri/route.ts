@@ -6,14 +6,19 @@
  */
 
 import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { requireAdmin } from '@/lib/auth/current-admin'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
-  // Escribe en `trainers` y `availability_slots` sin ninguna autenticación.
-  // Solo tiene sentido en local: en producción no existe.
+  // Escribe en `trainers` y `availability_slots`. Solo tiene sentido en local:
+  // en producción no existe. Y aun en local, solo un administrador (tabla
+  // `admins`, migración 020): sin sesión 401, jugador o entrenador sin
+  // permiso 403. Falla cerrado antes de tocar nada.
   if (process.env.NODE_ENV === 'production') {
     return new Response(null, { status: 404 })
   }
+  const admin = await requireAdmin()
+  if (admin instanceof Response) return admin
 
   try {
     const supabase = getSupabaseServerClient()

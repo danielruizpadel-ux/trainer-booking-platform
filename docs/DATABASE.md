@@ -290,6 +290,15 @@ reserva viva nunca queda fuera del rango de su ventana. Error 23514 con
 `window_plan_stale` un plan calculado con otra revisión; la versión de dos
 argumentos de la 014 se elimina.
 
+## Migración 020 — administradores (pendiente de aplicar)
+
+`public.admins`: `auth_user_id` uuid PK (FK `auth.users(id)` ON DELETE
+CASCADE), `granted_by` text NOT NULL (no vacío), `note` text, `granted_at`
+timestamptz. Una fila = permiso de administrador para `/admin` y `/api/admin`
+(lo lee `lib/auth/current-admin.ts` con la service role). RLS activo sin
+políticas y sin GRANT para anon/authenticated. Se concede y retira a mano en
+el SQL Editor (ver la cabecera de la migración); ninguna ruta escribe aquí.
+
 ## `email_logs` y `whatsapp_logs`
 
 | `email_logs` | `whatsapp_logs` |

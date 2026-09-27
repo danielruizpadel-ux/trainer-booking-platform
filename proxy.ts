@@ -4,7 +4,10 @@ import { loggedInEntryRedirect } from '@/lib/players/entry'
 import { isProgramDemoEnabled } from '@/lib/programs/demo'
 
 /**
- * Protege /dashboard/** (entrenadores) y /cuenta/** (jugadores).
+ * Protege /dashboard/** (entrenadores), /cuenta/** (jugadores) y /admin/**
+ * (administración: aquí solo la sesión; el permiso lo comprueba cada página
+ * con requireAdminPage(), lib/auth/current-admin.ts). /api/admin/** no pasa
+ * por aquí: cada ruta llama a requireAdmin() y responde 401/403 en JSON.
  *
  * - Refresca la sesión de Supabase en cada petición (las cookies de sesión
  *   caducan y solo aquí se pueden reescribir antes de que se rendericen las páginas).
@@ -37,6 +40,9 @@ interface ProtectedArea {
 
 const AREAS: ProtectedArea[] = [
   { root: '/dashboard', login: '/dashboard/login', publicPaths: ['/dashboard/login', '/dashboard/auth'] },
+  // /admin: aquí solo "hay sesión"; el permiso (tabla `admins`) lo comprueba
+  // cada página con requireAdminPage() y cada ruta /api/admin con requireAdmin().
+  { root: '/admin', login: '/admin/login', publicPaths: ['/admin/login', '/admin/auth'] },
   {
     root: '/cuenta',
     login: '/cuenta/entrar',
@@ -110,5 +116,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/cuenta/:path*', '/programa/:path*'],
+  matcher: ['/dashboard/:path*', '/cuenta/:path*', '/programa/:path*', '/admin/:path*'],
 }
