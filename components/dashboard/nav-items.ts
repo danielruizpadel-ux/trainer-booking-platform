@@ -2,6 +2,7 @@
 export const DASHBOARD_NAV = [
   { href: '/dashboard', label: 'Resumen', icon: 'home' },
   { href: '/dashboard/reservas', label: 'Reservas', icon: 'calendar' },
+  { href: '/dashboard/clientes', label: 'Clientes', icon: 'users' },
   { href: '/dashboard/disponibilidad', label: 'Disponibilidad', icon: 'clock' },
   { href: '/dashboard/perfil', label: 'Perfil', icon: 'user' },
 ] as const

@@ -35,6 +35,13 @@ export function NavIcon({ name, size = 18 }: NavIconProps) {
           <path d="M16 2v4M8 2v4M3 10h18" />
         </>
       )}
+      {name === 'users' && (
+        <>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+        </>
+      )}
       {name === 'clock' && (
         <>
           <circle cx="12" cy="12" r="9" />
