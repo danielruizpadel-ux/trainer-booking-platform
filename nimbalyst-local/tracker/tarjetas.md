@@ -20,6 +20,7 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   - Quitar el selector «Fácil / Calendario»: una sola vista semanal de fechas y horas, con semanas anterior/siguiente.
   - Al pulsar el rango de fechas o un icono de calendario, abrir un minicalendario para elegir cualquier día; cerrar el minicalendario y volver a la misma vista semanal con ese día activo y sus horas visibles.
   - Último ajuste visual de Dani (captura 22:54): el minicalendario emergente debe quedar centrado horizontalmente respecto al botón del rango de fechas e icono de arriba; ahora aparece desplazado hacia la derecha. Mantenerlo dentro del viewport en móvil.
+  - Mejora aceptada por Dani: resaltar en el minicalendario los días que realmente tienen horas disponibles para la duración seleccionada; actualizar al cambiar duración. Distinguir periodo sin datos cargados de día sin huecos y no inventar disponibilidad. Poner nombre accesible claro al botón/icono que lo abre («Elegir fecha»).
   - Mantener selección de varias clases, resumen y reglas existentes de disponibilidad/precio; comprobar teclado, móvil y navegación entre semanas.
   - Evidencia: `docs/evidencias/mauri-reserva-facil/` en la rama del prototipo, con capturas antes/después de escritorio y móvil y resultado del recorrido.
   - Ejecutor: Claude en Nimbalyst; revisión independiente: Codex después de que Dani valide la pantalla.
