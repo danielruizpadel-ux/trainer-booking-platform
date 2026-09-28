@@ -114,6 +114,10 @@ Pruebas y captura de evidencia:
 PR/commit de integración:
 ```
 
+### Tarea candidata: encontrar hora sin bajar por un mes vacío
+
+**Observación de Dani, 28/09/2026:** en `localhost:3001/mauri`, al bajar del hero o pulsar «Reservar sesión», el selector abre el mes completo. La captura de escritorio muestra que el día actual (28 de septiembre) queda en la última fila tras muchas fechas pasadas deshabilitadas; el panel «Tu reserva» permanece vacío mientras se busca una fecha. Se ha inspeccionado código de `PremiumHero`, `BookingFlow`, `BookingStep1_SelectSessions`, `MonthView` y `WeekView` en `develop`: el hero usa `min-h-dvh`, el CTA lleva a `#booking-section` y la vista inicial es `month`. **Propuesta para probar, no decisión final:** abrir en «Semana» centrada en la semana actual, aterrizar el CTA de reserva donde se ve el selector, mantener «Mes» y «Día» disponibles y conservar el resumen de selección. No alterar disponibilidad, precios ni confirmación. Criterios visuales: tras pulsar reservar, fecha y opción de elegir hora visibles sin recorrer filas de días pasados; semana siguiente evidente; prueba de escritorio y móvil; comparación antes/después con capturas versionadas sin información privada. Esta tarea se hará aislada desde `develop` con revisión en pantalla antes de integrar. La insignia «1 Issue» del entorno local aparece en la captura y requiere diagnóstico separado; no atribuirla al cambio de diseño.
+
 ## 6. Programa visual y protocolo de desarrollo
 
 **Propósito:** Dani controla prioridades, reglas de negocio y diseño sin tener que leer Git. Los agentes ejecutan tareas delimitadas y dejan una prueba visible. El tablero vive en archivos del proyecto y se respalda en GitHub. Nimbalyst es el candidato a interfaz visual; la prueba inicial debe demostrar que tareas, imágenes y decisiones se conservan al abrir el proyecto en otra copia. Emdash puede seguir disponible hasta decidir el cambio.
