@@ -2,7 +2,7 @@
 
 Updated: 28/09/2026. Detailed scope, evidence limits, task template and merge rules: [Plan maestro](docs/PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md). Technical history: [estado de integración](docs/estado-integracion.md). Publication controls: [ANTES_DE_PUBLICAR](docs/ANTES_DE_PUBLICAR.md).
 
-**Working baseline:** `emdash/integracion-programa` at `7e6357e` when this was written. `main` at `4845640`, 47 commits behind. Recheck both before any branch or merge. These are repository observations, not proof of the state of local worktrees or Supabase today.
+**Working baseline:** `develop`, created from `emdash/integracion-programa` at `7e6357e` on 28/09/2026. `main` was at `4845640`, 47 commits behind. PRs #1 and #2 target `develop`; [draft PR #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) connects it to `main` without merging. Recheck refs before any new branch or merge. These are repository observations, not proof of the state of local worktrees or Supabase today.
 
 ## Now
 
