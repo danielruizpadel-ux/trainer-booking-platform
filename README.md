@@ -1,10 +1,12 @@
 # Trainer Booking Platform
 
+**Empieza aquí para entender ramas, decisiones, tareas y protocolo:** [Centro de control del proyecto](docs/CONTROL_DEL_PROYECTO.md).
+
 > ## ⛔ ¿Vas a publicarlo?
 > **Lee [`docs/ANTES_DE_PUBLICAR.md`](docs/ANTES_DE_PUBLICAR.md) antes de hacer deploy.**
-> Tal cual está, publicarlo expone la base de datos entera: hay una clave de
-> servicio escrita en claro en `scripts/` y versionada en git, y endpoints de
-> administración sin ninguna autenticación.
+> Sigue pendiente rotar una antigua clave de servicio expuesta en el historial
+> de Git y verificar los bloqueantes vigentes de seguridad y despliegue.
+> No publiques antes de completar la lista.
 
 Plataforma de reservas para entrenadores: landing por entrenador + calendario de
 reserva con descuento por volumen. En producción hoy: `/mauri`
