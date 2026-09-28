@@ -1,5 +1,7 @@
 # Trainer Booking Platform
 
+**Empieza aquí para entender ramas, decisiones, tareas y protocolo:** [Centro de control del proyecto](docs/CONTROL_DEL_PROYECTO.md).
+
 > ## ⛔ ¿Vas a publicarlo?
 > **Lee [`docs/ANTES_DE_PUBLICAR.md`](docs/ANTES_DE_PUBLICAR.md) antes de hacer deploy.**
 > Tal cual está, publicarlo expone la base de datos entera: hay una clave de
