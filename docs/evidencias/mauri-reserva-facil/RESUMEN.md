@@ -197,3 +197,9 @@ Se conservan la vista semanal, el resumen y las clases seleccionadas al navegar
 
 Las secciones v1 y v2 anteriores son el historial de decisiones y pruebas;
 **la versión aprobada es v3**, con vista semanal única y minicalendario centrado.
+
+## Corrección tras revisión de Codex (2026-09-29)
+
+- En el PR #5 se detectó que las flechas cambiaban la semana visible pero dejaban `selectedDay` en la semana anterior; el título, las horas y el minicalendario podían quedar desalineados.
+- Commit `f9b5865`: las flechas eligen el primer día con huecos conocido de la semana destino o, si no hay ninguno conocido, hoy (cuando está en esa semana) o su lunes. No cambia `selectedSessions`.
+- **Verificación hecha:** revisión del diff y confirmación de que el PR sigue abierto hacia `develop` con el commit nuevo. **Pendiente:** prueba visual en el navegador del Mac, en ambas direcciones, semana sin huecos y minicalendario tras usar flechas. No se ejecutó `npm run type-check` de nuevo desde esta revisión remota. Sin reservas reales, merge ni deploy.
