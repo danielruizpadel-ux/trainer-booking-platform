@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import AvailabilityCalendar from '@/components/trainer/calendar/AvailabilityCalendar'
+import EasyWeekSelector from './EasyWeekSelector'
 import BookingSummaryCard from './BookingSummaryCard'
 import { DurationPicker } from '@/components/dashboard/reservations/DurationPicker'
 import { quoteBooking, type SessionPriceRow } from '@/lib/reservations/pricing'
@@ -12,17 +12,11 @@ interface Session {
   time: string
 }
 
-type ViewType = 'month' | 'week' | 'day'
-
 interface BookingStep1Props {
   trainerId: string
   onConfirm: (sessions: Session[]) => void
   selectedSessions: Session[]
   onSessionChange: (sessions: Session[]) => void
-  currentView: ViewType
-  currentDate: Date
-  onViewChange: (view: ViewType) => void
-  onDateChange: (date: Date) => void
   /** Duración elegida (60/90) y las que ofrece el entrenador */
   duration: number
   classDurations: number[]
@@ -36,10 +30,6 @@ export default function BookingStep1_SelectSessions({
   onConfirm,
   selectedSessions,
   onSessionChange,
-  currentView,
-  currentDate,
-  onViewChange,
-  onDateChange,
   duration,
   classDurations,
   onDurationChange,
@@ -60,7 +50,9 @@ export default function BookingStep1_SelectSessions({
   return (
     <section className="py-10 sm:py-14 px-4 sm:px-6 lg:px-8 bg-gray-50/50">
       <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
+        {/* id="reserva": destino del CTA del hero, para aterrizar en el selector
+            (duración + semana + primeras horas), no en el aire de arriba. */}
+        <header id="reserva" className="mb-8 scroll-mt-4">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
             Selecciona tus clases
           </h2>
@@ -77,13 +69,9 @@ export default function BookingStep1_SelectSessions({
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
-          {/* Calendario (incluye su propia navbar, única) */}
-          <AvailabilityCalendar
+          {/* Vista única de reserva: semana compacta + horas debajo. */}
+          <EasyWeekSelector
             trainerId={trainerId}
-            currentView={currentView}
-            currentDate={currentDate}
-            onViewChange={onViewChange}
-            onDateChange={onDateChange}
             selectedSessions={selectedSessions}
             onSessionChange={onSessionChange}
             durationMinutes={duration}

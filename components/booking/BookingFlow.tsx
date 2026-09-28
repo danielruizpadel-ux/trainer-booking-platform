@@ -9,8 +9,6 @@ import type { BookingDraft } from '@/lib/booking/draft'
 import { overlapsSelection } from '@/lib/availability/windows'
 import { UNCONFIRMED_BOOKING_MESSAGE, attemptKeyFor, readCheckoutOutcome, type AttemptKey } from '@/lib/reservations/idempotency-client'
 
-type ViewType = 'month' | 'week' | 'day'
-
 interface Session {
   date: string
   time: string
@@ -61,8 +59,6 @@ export default function BookingFlow({
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
   const [duration, setDuration] = useState<number>(classDurations[0] ?? 60)
   const [playerCount, setPlayerCount] = useState(1)
-  const [currentView, setCurrentView] = useState<ViewType>('month')
-  const [currentDate, setCurrentDate] = useState(new Date())
   const [prices, setPrices] = useState<SessionPriceRow[] | null>(null)
   const [pricesError, setPricesError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -211,10 +207,6 @@ export default function BookingFlow({
           selectedSessions={selectedSessions}
           onSessionChange={setSelectedSessions}
           onConfirm={handleConfirmSessions}
-          currentView={currentView}
-          currentDate={currentDate}
-          onViewChange={setCurrentView}
-          onDateChange={setCurrentDate}
         />
       )}
 
