@@ -43,13 +43,19 @@ The agent should:
 
 ## Git Rules
 
-- `main` is the shared integration branch.
+- `main` is the accepted branch. As of 28/09/2026 it is 47 commits behind `emdash/integracion-programa`. Until an explicit integration review, use the latter as the declared working base for new feature branches; always record its current SHA. Do not silently start from `main` or merge integration into it.
 - Do not rewrite Git history unless explicitly authorized.
 - Do not force-push.
 - Do not commit secrets.
 - Do not commit `.env.local`.
 - Keep commits understandable.
 - Check `git diff` before committing.
+
+## Task and asset continuity
+
+Read [the master product and delivery plan](docs/PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md) for the current two-track roadmap, task template, worktree inventory, image asset checks and merge order. Before opening a new worktree, inspect existing local trees and remote backup branches. A chat, a local-only file and an ignored orchestrator run are not a project handoff. Commit and push authorized work to its task branch and create a reviewable PR against the declared base; record the outcome in the relevant repository document.
+
+Orchestrator V1 requires both Claude and Codex. When either is unavailable, bounded work may continue through the declared task branch and independent review process; do not label it an orchestrated run.
 
 ## Multi-Agent Coordination
 
