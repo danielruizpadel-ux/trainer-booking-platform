@@ -204,6 +204,16 @@ export default function EasyWeekSelector({
     setWeekStart(getMonday(parseDateStr(date)))
   }
 
+  const goToWeek = (offset: number) => {
+    const start = addDays(weekStart, offset * 7)
+    const days = weekDates(start).map(toDateStr)
+    const firstAvailable = days.find((day) => freeByDate[day] > 0)
+    const today = toDateStr(new Date())
+    const firstDay = days.includes(today) ? today : days[0]
+    setSelectedDay(firstAvailable ?? firstDay)
+    setWeekStart(start)
+  }
+
   const weekDays = weekDates(weekStart)
   const today = new Date()
   const daySlots = selectedDay
@@ -234,7 +244,7 @@ export default function EasyWeekSelector({
       {/* Cabecera de la semana */}
       <div className="flex items-center justify-between gap-2 pb-4 mb-4 border-b border-gray-100">
         <button
-          onClick={() => setWeekStart(addDays(weekStart, -7))}
+          onClick={() => goToWeek(-1)}
           disabled={!prevWeekAllowed}
           className={arrowBtn}
           aria-label="Semana anterior"
@@ -281,7 +291,7 @@ export default function EasyWeekSelector({
           </div>
         </div>
         <button
-          onClick={() => setWeekStart(addDays(weekStart, 7))}
+          onClick={() => goToWeek(1)}
           className={arrowBtn}
           aria-label="Semana siguiente"
         >
