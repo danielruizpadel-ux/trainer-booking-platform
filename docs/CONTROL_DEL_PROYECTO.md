@@ -40,6 +40,12 @@ Para una tarea que modifica pantallas, crear `docs/evidencias/<id-de-tarjeta>/` 
 
 Antes de confirmar imágenes, ocultar datos reales de clientes, claves, correos privados o pantallas de administración sensibles. Comprobar que los archivos elegidos se incluyen en el diff y en GitHub tras subir la rama. Una imagen enviada por chat o visible en Nimbalyst no se comparte automáticamente entre copias. Si no hay captura útil, describir la prueba en el resumen en vez de fabricar una.
 
+## Prueba visual del tablero en Nimbalyst (29/09/2026)
+
+Dani confirmó en una copia limpia de `develop` que la tarjeta de Mauri se recupera desde GitHub, se ve al seleccionar el filtro «All» y que, tras ponerla al inicio de `nimbalyst-local/tracker/tarjetas.md`, se muestra la vista previa de la captura. El detalle de la tarjeta muestra la ruta del Markdown: para consultar imágenes, enlaces y decisiones hay que **abrir ese archivo** en el editor. El cambio de estado de la tarjeta también quedó escrito en Markdown en la prueba anterior; cada copia local debe actualizar su rama para recibirlo.
+
+**Regla práctica:** una tarjeta visual empieza con resultado, enlace antes/después y una vista previa relativa a un archivo versionado en `docs/evidencias/`. Abrir el archivo desde la tarjeta; en el tablero seleccionar «All» para incluir tareas hechas. Confirmar que la captura existe en la misma rama que el Markdown, y comprobar la vista tras abrir la copia del proyecto. Sigue pendiente probar una decisión nueva escrita en la tarjeta y recuperada en otra copia.
+
 ## Rutina sin perder conocimiento entre carpetas
 
 1. **Al abrir:** comprobar rama y SHA, cambios locales sin guardar y últimos PR. Mostrar a Dani «integrado / para revisar / por decidir / siguiente».

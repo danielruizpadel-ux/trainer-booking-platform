@@ -12,5 +12,6 @@ Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada ca
 - Proceso · H0 — Probar protocolo de trabajo #tarjeta[id:tar_01M3KB7Y8AYB5X5TPVS7V9G73E status:idea priority:medium created:2026-09-28 tags:proceso,h0 linea:proceso hito:h0]
   Resultado: tareas, decisiones y evidencias recuperables desde GitHub.
   - Comprobado: el tablero y las tarjetas aparecen en una copia limpia de `develop`. Las tareas hechas se ven con el filtro «All»; los enlaces se abren desde el editor de este archivo.
-  - Por comprobar: que la imagen se vea dentro de Nimbalyst y que los cambios de tarjeta sigan sincronizados entre copias.
+  - Confirmado por Dani el 29/09: al abrir este archivo actualizado en Nimbalyst, la captura de Mauri aparece al principio y se ve la vista previa.
+  - Pendiente: escribir una decisión nueva en la tarjeta y comprobar que aparece tras actualizar otra copia.
   - [Plan del proyecto](../../docs/PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md) · [Protocolo de trabajo](../../AI_WORKFLOW.md).
