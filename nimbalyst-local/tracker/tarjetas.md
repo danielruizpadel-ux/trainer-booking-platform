@@ -12,7 +12,7 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   - Comprobar en GitHub y en otra copia que la tarjeta, la imagen y el cambio se conservan.
   - Cierre: adoptar Nimbalyst o seguir con Emdash, sin borrar ningún entorno durante la transición.
 
-- Mauri · H2 — Encontrar y reservar una hora fácilmente #tarjeta[id:tar_01M3M4U1R1UXMAURI2026BOOK status:en-desarrollo priority:high created:2026-09-28 tags:mauri,h2,ux linea:mauri hito:h2]
+- Mauri · H2 — Encontrar y reservar una hora fácilmente #tarjeta[id:tar_01M3M7C2XFWRBJDKTNF0QW03CR status:en-desarrollo priority:high created:2026-09-28 tags:mauri,h2,ux linea:mauri hito:h2]
   Resultado: después de pulsar «Reservar sesión», se ven una semana compacta y las horas del día sin recorrer el mes ni abrir un modal.
   - Problema observado por Dani en `localhost:3001/mauri`: el mes completo coloca las fechas útiles casi al final. Referencia visual aportada: semana, horas del día y salto al siguiente día disponible.
   - Base declarada: `develop` (confirmar SHA y nombre de la rama/worktree aislado con el agente ejecutor).
