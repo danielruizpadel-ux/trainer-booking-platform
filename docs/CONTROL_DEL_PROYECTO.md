@@ -51,6 +51,10 @@ Antes de confirmar imágenes, ocultar datos reales de clientes, claves, correos 
 
 **Regla de reciprocidad:** cambios compartidos de protocolo viajan `main → develop`; trabajo de producto validado viaja `develop → main`. Ambos movimientos son PR o merges revisados; no hay sincronización mágica por abrir una carpeta. Las copias locales se actualizan después. Mientras un PR está abierto, enlazarlo como «propuesto» y no describir su contenido como integrado.
 
+## Límite observado del commit en Nimbalyst
+
+En la prueba de la reserva de Mauri, el chat de Nimbalyst estaba abierto en el clon `test/nimbalyst-estado-compartido`, mientras el código se editó en el worktree aislado `/Users/dani/worktrees/mauri-reserva-facil`. La vista de cambios mostró archivos del segundo, pero el botón de commit actuaba solo sobre la carpeta abierta y pidió cambiar de proyecto. **Regla operativa:** el agente confirma ruta, rama, base, diff y archivos sin seguimiento del worktree dueño; usa Git desde esa ruta concreta para añadir solo los archivos de la tarea, confirmar y subir su rama, o abre ese worktree en Nimbalyst si Dani prefiere la interfaz. No hacer commit del proyecto que está abierto solo porque sea el que muestra el chat. Tras subir, comprobar archivos y commit del PR en GitHub y enlazarlo desde la tarjeta. Esta limitación queda pendiente de reevaluar antes de adoptar Nimbalyst como interfaz única.
+
 ## Estado de implantación
 
 - `develop` ya existe, sin despliegue ni cambios en `main` por crearlo.
