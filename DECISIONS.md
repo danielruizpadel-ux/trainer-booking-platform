@@ -46,3 +46,30 @@ The repository and documented decisions remain authoritative.
 Prefer small, understandable changes over large rewrites.
 
 Every meaningful change should be reviewable through Git.
+
+## Decision 008 — Calendar-first UI language and visual reference
+**Status:** Active
+
+The booking calendar is the visual reference for the public web, the player
+account and the trainer dashboard. New calendar, availability and booking UI
+should reuse its interaction patterns and visual language instead of creating a
+parallel calendar style.
+
+The public web and dashboard UI use English. Existing Spanish documentation and
+internal notes may remain Spanish unless a product decision changes that scope.
+
+## Decision 009 — Player Development Plan is a fixed pack
+**Status:** Active, future scope
+
+Player Development Plan is a fixed pack of 10 sessions, not a recurring
+subscription. Session 1 is the assessment; the remaining 9 sessions are the
+completion plan. The agreed reference prices are RM300 for the assessment,
+RM2,700 for the remaining 9 sessions, RM3,000 total, and RM375 for a premium
+single session. The completion offer is available for 24 hours after the
+assessment; the remaining-plan saving is RM675 versus nine premium sessions.
+The total-plan reference saving versus ten premium single sessions is RM750.
+
+The plan may be shared between the assigned trainers (currently represented by
+Dani and Denzel in the prototype). These are product rules only: no billing,
+recurring subscription, credit consumption or production data model is being
+implemented in the current booking work.
