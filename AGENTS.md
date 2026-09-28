@@ -12,7 +12,7 @@ Lee `CLAUDE.md` antes de modificar código y consulta `docs/PLAN_MAESTRO_PRODUCT
 ## Una tarea de principio a fin
 
 - Mantén una tarjeta Markdown versionada si se usa Nimbalyst; guarda junto a ella el tipo de tracker en `.nimbalyst/trackers/`. Una tarjeta solo local no está respaldada en GitHub.
-- Una tarea de código comienza desde la base declarada en el plan (actualmente `emdash/integracion-programa`, sujeto a verificar SHA). Usa rama o worktree aislado y no toques trabajo no integrado de otros.
+- Una tarea de código comienza desde la base declarada en el plan (actualmente `develop`, sujeto a verificar SHA). Usa rama o worktree aislado y no toques trabajo no integrado de otros.
 - Claude puede analizar e implementar; Codex puede revisar independientemente cuando esté disponible. Si Claude alcanza su límite, Codex puede implementar una tarea acotada y registrar que la revisión independiente sigue pendiente. No simules una revisión cruzada.
 - Antes de cerrar, revisa diff, comprueba los casos relevantes, captura el resultado visible y enlaza commit/PR. Si hay imágenes de producto, verifica que están versionadas. No marques Hecha hasta integrar en la base declarada y comprobarla allí.
 - Un commit, backup o PR no es despliegue. Para publicar, aplica la checklist de `docs/ANTES_DE_PUBLICAR.md` y verifica el entorno real. No subas `.env.local` ni secretos.
