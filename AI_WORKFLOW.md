@@ -1,5 +1,7 @@
 # AI WORKFLOW
 
+Start with [the central project control map](docs/CONTROL_DEL_PROYECTO.md); it explains how shared protocol changes move from `main` to `develop` and reviewed product changes move back.
+
 ## Purpose
 
 This repository is designed to be worked on by multiple AI agents.
@@ -43,13 +45,19 @@ The agent should:
 
 ## Git Rules
 
-- `main` is the shared integration branch.
+- `main` is the accepted branch. `develop` is the declared working base for new feature branches; it was created from `emdash/integracion-programa` at `7e6357e` on 28/09/2026. Always record the current base SHA. PRs #1 and #2 target `develop`; draft PR #3 connects `develop` to `main` for later review. Do not silently start new work from `main` or merge into it.
 - Do not rewrite Git history unless explicitly authorized.
 - Do not force-push.
 - Do not commit secrets.
 - Do not commit `.env.local`.
 - Keep commits understandable.
 - Check `git diff` before committing.
+
+## Task and asset continuity
+
+Read [the master product and delivery plan](docs/PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md) for the current two-track roadmap, task template, worktree inventory, image asset checks and merge order. Before opening a new worktree, inspect existing local trees and remote backup branches. A chat, a local-only file and an ignored orchestrator run are not a project handoff. Commit and push authorized work to its task branch and create a reviewable PR against the declared base; record the outcome in the relevant repository document.
+
+Orchestrator V1 requires both Claude and Codex. When either is unavailable, bounded work may continue through the declared task branch and independent review process; do not label it an orchestrated run.
 
 ## Multi-Agent Coordination
 
