@@ -45,7 +45,7 @@ The agent should:
 
 ## Git Rules
 
-- `main` is the accepted branch. `develop` is the declared working base for new feature branches; it was created from `emdash/integracion-programa` at `7e6357e` on 28/09/2026. Always record the current base SHA. Draft PR #4 proposes this shared protocol for `main`. It is also staged separately on `develop` so the board and product work share a base while publication automation for `main` is checked. Draft PR #3 connects reviewed work from `develop` back to `main`. Do not silently start new work from `main` or merge into it.
+- `main` is the accepted branch. `develop` is the declared working base for new feature branches; it was created from `emdash/integracion-programa` at `7e6357e` on 28/09/2026. Always record the current base SHA. PR #4 integrated the shared protocol into `main`, and PR #6 brought the same board and protocol to `develop`. The reviewed link between these branches preserves the product work on `develop`. Draft PR #3 proposes product changes for `main` separately. Do not silently start new work from `main` or merge into it.
 - Do not rewrite Git history unless explicitly authorized.
 - Do not force-push.
 - Do not commit secrets.
