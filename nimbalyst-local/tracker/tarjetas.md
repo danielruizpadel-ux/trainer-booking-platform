@@ -16,7 +16,10 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   Resultado: después de pulsar «Reservar sesión», se ven una semana compacta y las horas del día sin recorrer el mes ni abrir un modal.
   - Problema observado por Dani en `localhost:3001/mauri`: el mes completo coloca las fechas útiles casi al final. Referencia visual aportada: semana, horas del día y salto al siguiente día disponible.
   - Base declarada: `develop` (confirmar SHA y nombre de la rama/worktree aislado con el agente ejecutor).
-  - Mantener Mes y Día, selección de varias clases, resumen y reglas existentes de disponibilidad/precio.
+  - Corrección visual de Dani tras el primer prototipo: al pulsar «Reservar sesión», el bloque de fechas y horas debe quedar a la vista sin desplazar demasiado el calendario; mantener accesible la elección de duración.
+  - Quitar el selector «Fácil / Calendario»: una sola vista semanal de fechas y horas, con semanas anterior/siguiente.
+  - Al pulsar el rango de fechas o un icono de calendario, abrir un minicalendario para elegir cualquier día; cerrar el minicalendario y volver a la misma vista semanal con ese día activo y sus horas visibles.
+  - Mantener selección de varias clases, resumen y reglas existentes de disponibilidad/precio; comprobar teclado, móvil y navegación entre semanas.
   - Evidencia: `docs/evidencias/mauri-reserva-facil/` en la rama del prototipo, con capturas antes/después de escritorio y móvil y resultado del recorrido.
   - Ejecutor: Claude en Nimbalyst; revisión independiente: Codex después de que Dani valide la pantalla.
   - Estado actual: prototipo local en curso; sin commit, PR ni integración confirmados.
