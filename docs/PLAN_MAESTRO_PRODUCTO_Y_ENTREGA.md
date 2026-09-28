@@ -3,6 +3,35 @@
 **Fecha:** 28/09/2026 · **Estado:** plan de trabajo, pendiente de validación de decisiones abiertas.  
 **Rama de referencia:** `emdash/integracion-programa` (`7e6357e` al redactar). `main` está en `4845640`, 47 commits detrás. Comprobar de nuevo las referencias antes de implementar.
 
+## Tu mapa del proyecto
+
+**Objetivo inmediato:** que Mauri pueda usar la aplicación para cobrar y gestionar clases privadas sin perder reservas, dinero ni información de clientes. Después la adaptamos para la academia y para ofrecerla a otros entrenadores.
+
+```mermaid
+flowchart TD
+  A["Ahora: ordenar lo que existe"] --> B["Mauri: clase suelta y cobro"]
+  B --> C["Mauri: paquetes de 5 y 10"]
+  C --> D["Academia: varios entrenadores"]
+  D --> E["Producto para otros entrenadores"]
+```
+
+| ¿Dónde estamos? | En palabras sencillas |
+| --- | --- |
+| **Ya existe** | Una base de reservas, cuentas, precios y panel. Hay trabajo avanzado en una rama de integración, aún sin reunir en `main`. |
+| **Ahora toca** | Poner a salvo y ordenar ramas, fotos y tareas; comprobar qué funciona; decidir las reglas de cobro y cancelación. |
+| **Luego construimos** | Primero el uso real de Mauri; después sus paquetes, la operación de academia y finalmente el producto comercial. |
+| **Todavía no está listo** | Abrirlo a clientes reales o dar por hecho que los pagos online y el programa de 10 sesiones funcionan. |
+
+### Cómo trabajaremos contigo
+
+1. **Tú decides cómo debe funcionar el negocio.** Te enseñaré una opción concreta con un ejemplo de cliente; podrás responder en lenguaje normal.
+2. **Yo traduzco esa decisión en una tarea pequeña.** Cada tarea tendrá una frase de objetivo, una captura o pantalla si hace falta, y un resultado visible. El detalle técnico queda para el desarrollador.
+3. **Se construye y se enseña antes de continuar.** La tarea se revisa y se incorpora a la versión de trabajo; el siguiente paso empieza desde esa versión. Te diré claramente: *hecho*, *en revisión* o *pendiente*.
+
+**Lo único que necesito decidir contigo primero:** ¿el primer uso real será solo Mauri, o necesitas que desde el primer día dos entrenadores de la academia trabajen con los mismos clientes? Si no lo tienes claro, empezamos por Mauri y diseñamos las cuentas para añadir el segundo entrenador después.
+
+> A partir de aquí está el detalle de negocio y desarrollo para quien ejecute las tareas. Puedes usar solo el mapa anterior para seguir el progreso.
+
 ## 1. Norte de producto
 
 Una sola plataforma de reservas con un núcleo compartido: identidad del jugador, entrenador responsable, oferta y precios, disponibilidad, solicitud y confirmación, paquetes/créditos, cancelación, cobros y comunicaciones. Dos usos sobre ese núcleo:
