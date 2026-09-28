@@ -1,7 +1,7 @@
 # Plan maestro: reservas para entrenadores y academia
 
 **Fecha:** 28/09/2026 · **Estado:** plan de trabajo, pendiente de validación de decisiones abiertas.  
-**Rama general de desarrollo:** `develop`, creada desde `emdash/integracion-programa` en `7e6357e` el 28/09/2026. `main` estaba en `4845640`, 47 commits detrás. El borrador original de este plan fue PR #1; el centro de control se prepara como un PR solo de documentación hacia `main`, y el PR #2 del tablero se propone hacia `develop`; el [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) muestra la conexión `develop → main` sin incorporarla. Verificar SHA vigentes antes de implementar.
+**Rama general de desarrollo:** `develop`, creada desde `emdash/integracion-programa` en `7e6357e` el 28/09/2026. `main` estaba en `4845640`, 47 commits detrás. Los PR #1 (plan inicial) y #2 (piloto del tablero) quedan como antecedentes. El [PR borrador #4](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/4) reúne el protocolo y tablero como propuesta común hacia `main`; el [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) muestra la conexión `develop → main` sin incorporarla. Verificar SHA vigentes antes de implementar.
 
 ## Tu mapa del proyecto
 
