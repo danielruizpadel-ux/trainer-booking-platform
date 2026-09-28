@@ -24,4 +24,4 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   - Mantener selección de varias clases, resumen y reglas existentes de disponibilidad/precio; comprobar teclado, móvil y navegación entre semanas.
   - Evidencia: `docs/evidencias/mauri-reserva-facil/` en la rama del prototipo, con capturas antes/después de escritorio y móvil y resultado del recorrido.
   - Ejecutor: Claude en Nimbalyst; revisión independiente: Codex después de que Dani valide la pantalla.
-  - Estado actual: prototipo local en curso; sin commit, PR ni integración confirmados.
+  - Validación visual de Dani, 29/09/2026 00:12 MYT: «ya funciona perfecto» tras centrar el minicalendario y destacar días con disponibilidad. Pendiente verificar diff, pruebas, capturas versionadas, revisión independiente y PR a `develop`; sin integración confirmada.
