@@ -1,70 +1,31 @@
 # ROADMAP
 
-This roadmap is intentionally lightweight.
+For the shared branch and workspace map, start at [CONTROL_DEL_PROYECTO](docs/CONTROL_DEL_PROYECTO.md).
 
-Existing documentation and the actual codebase remain the source of truth for detailed implementation status.
+Updated: 28/09/2026. Detailed scope, evidence limits, task template and merge rules: [Plan maestro](docs/PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md). Technical history: [estado de desarrollo](docs/estado-desarrollo.md) on `main`; `docs/estado-integracion.md` is currently present on `develop` only. Publication controls: [ANTES_DE_PUBLICAR](docs/ANTES_DE_PUBLICAR.md).
 
-## NOW
+**Working baseline:** `develop`, created from `emdash/integracion-programa` at `7e6357e` on 28/09/2026. `main` was at `4845640`, 47 commits behind. [draft PR #4](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/4) proposes the common documentation and board for `main`; [draft PR #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) connects reviewed development to `main` without merging. PR #5 was merged into `develop` on 29/09/2026 (merge `6d179340`) after visual validation of the new Mauri booking selector. Recheck refs before any new branch or merge. These are repository observations, not proof of the state of local worktrees or Supabase today.
 
-### Shared AI project brain
-- Establish shared project context.
-- Establish durable decision tracking.
-- Establish a shared AI workflow.
-- Establish a clear roadmap.
-- Keep GitHub as the source of truth.
+## Now
 
-### Codebase understanding
-- Maintain the existing architecture.
-- Avoid unnecessary rewrites.
-- Resolve known issues before production deployment.
-- Keep security constraints visible.
+1. Inventory local worktrees, untracked assets, remote backup branches and migration state. Preserve work before cleanup.
+2. Settle the open product decisions in the master plan; define the trainer / academy ownership and permission boundary.
+3. Review `backup/clientes-wip` and integrate a minimal Clients view safely into the current working baseline.
+4. Specify and then implement the Mauri pilot: account-required private lessons, confirmation after court check, cash ledger, configurable cancellation rule and discreet debt notice.
 
-### Player accounts
-- Phase A1 (24/09/2026, branch `emdash/player-login-yhk1z`): global player
-  account at `/cuenta` — login, onboarding, profile editing, player↔trainer
-  relationship (migration 009). Code done; migration not applied and not
-  verified end-to-end yet. See `docs/PLAYER_ACCOUNTS.md`.
-- Phase A2 (25/09/2026, same branch): English checkout (players 1–4,
-  booking as / guest details, message to coach), editable per-trainer pricing
-  (`trainer_session_prices`), `player_id` / `client_message` /
-  `player_count` / `whatsapp_opt_in` on reservations, direct writes to
-  `reservations` closed (migration 010, applied). Pending Dani's manual
-  browser test and Codex review.
-- Next: My Bookings, secure guest → account linking (per-reservation token),
-  rate limiting on POST /api/reservations before production.
+## Next
 
-### Product
-- Continue developing the trainer booking platform.
-- Improve the trainer booking experience.
-- Improve trainer dashboard functionality.
-- Continue packages/calendar development where already planned.
+5. Player purchase and self-booking of 5/10-session packages, partial scheduling, credit accounting, expiry and corrections.
+6. Real notifications, English copy, mobile QA, current pricing and no dead UI actions.
+7. Define multi-trainer academy operation from actual cases and integrate only the needed role and shared client rules.
+8. Review integration into `main` and publication checklist; test the deployed pilot with Mauri.
 
-## NEXT
+## Later
 
-Items already indicated by the project's existing documentation should be evaluated and converted into concrete tasks.
+- Trainer onboarding and commercial SaaS model, after the Mauri pilot demonstrates reliable operations.
+- Online payments with configurable methods and settlement destination. The academy expects one Malaysian receiving account; trainer-specific recipients require separate provider/legal design.
+- The Player Development Plan and `/programa` remain separate from the Mauri package launch.
 
-Priority should be determined from:
-1. Existing project state.
-2. User/business requirements.
-3. Production readiness.
-4. Security.
-5. Reliability.
-6. UX improvements.
+## Completion rule
 
-Do not invent major product priorities without confirming them.
-
-## LATER
-
-Potential future work should be documented here only when it becomes a real project decision.
-
-Ideas are not commitments.
-
-## RULE
-
-When work is completed:
-- update the relevant documentation if necessary
-- update this roadmap
-- commit the change
-- push to GitHub when appropriate
-
-Never mark work as complete based only on an AI agent's assumption.
+Each task records its base SHA, owner, scope, dependencies, tests and integration PR. A feature is complete only after review and merge into its declared base; a branch, a worktree or an AI conversation alone is not completion. Update this roadmap as decisions or dependencies change.
