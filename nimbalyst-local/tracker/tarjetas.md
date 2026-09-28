@@ -12,7 +12,7 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   - Comprobar en GitHub y en otra copia que la tarjeta, la imagen y el cambio se conservan.
   - Cierre: adoptar Nimbalyst o seguir con Emdash, sin borrar ningún entorno durante la transición.
 
-- Mauri · H2 — Encontrar y reservar una hora fácilmente #tarjeta[id:tar_01M3M7C2XFWRBJDKTNF0QW03CR status:en-desarrollo priority:high created:2026-09-28 tags:mauri,h2,ux linea:mauri hito:h2]
+- Mauri · H2 — Encontrar y reservar una hora fácilmente #tarjeta[id:tar_01M3M7C2XFWRBJDKTNF0QW03CR status:para-revisar priority:high created:2026-09-28 tags:mauri,h2,ux linea:mauri hito:h2]
   Resultado: después de pulsar «Reservar sesión», se ven una semana compacta y las horas del día sin recorrer el mes ni abrir un modal.
   - Problema observado por Dani en `localhost:3001/mauri`: el mes completo coloca las fechas útiles casi al final. Referencia visual aportada: semana, horas del día y salto al siguiente día disponible.
   - Base declarada: `develop` (confirmar SHA y nombre de la rama/worktree aislado con el agente ejecutor).
@@ -24,4 +24,4 @@ Estados: idea → por-decidir → lista → en-desarrollo → para-revisar → h
   - Mantener selección de varias clases, resumen y reglas existentes de disponibilidad/precio; comprobar teclado, móvil y navegación entre semanas.
   - Evidencia: `docs/evidencias/mauri-reserva-facil/` en la rama del prototipo, con capturas antes/después de escritorio y móvil y resultado del recorrido.
   - Ejecutor: Claude en Nimbalyst; revisión independiente: Codex después de que Dani valide la pantalla.
-  - Validación visual de Dani, 29/09/2026 00:12 MYT: «ya funciona perfecto» tras centrar el minicalendario y destacar días con disponibilidad. Pendiente verificar diff, pruebas, capturas versionadas, revisión independiente y PR a `develop`; sin integración confirmada.
+  - Validación visual de Dani, 29/09/2026 00:12 MYT: «ya funciona perfecto» tras centrar el minicalendario y destacar días con disponibilidad. PR #5 abierto hacia `develop` desde `proto/mauri-reserva-facil` (`771f882`), con 4 archivos de código, resumen y 14 capturas versionadas. Codex revisó el diff el 29/09: al usar flechas semanales `weekStart` cambia y `selectedDay` puede quedar en otra semana, mostrando horas del día anterior bajo la cabecera nueva. Corrección solicitada en un comentario del PR; pendiente verificar navegación y volver a revisar. `type-check` reportado con 11 errores preexistentes ajenos. Sin integración, reserva real ni despliegue.
