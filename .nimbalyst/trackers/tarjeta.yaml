@@ -1,0 +1,123 @@
+type: tarjeta
+displayName: Tarjeta
+displayNamePlural: Tarjetas
+icon: view_kanban
+color: '#0891b2'
+modes:
+  inline: true
+  fullDocument: false
+idPrefix: tar
+idFormat: ulid
+sharing: personal
+fields:
+  - name: title
+    type: string
+    required: true
+    displayInline: true
+  - name: status
+    type: select
+    required: false
+    default: idea
+    displayInline: true
+    options:
+      - value: idea
+        label: Idea
+        icon: lightbulb
+        color: '#ca8a04'
+        category: backlog
+      - value: por-decidir
+        label: Por decidir
+        icon: help
+        color: '#8b5cf6'
+        category: backlog
+      - value: lista
+        label: Lista
+        icon: check_circle
+        color: '#22c55e'
+        category: unstarted
+      - value: en-desarrollo
+        label: En desarrollo
+        icon: construction
+        color: '#f59e0b'
+        category: started
+      - value: para-revisar
+        label: Para revisar
+        icon: rate_review
+        color: '#3b82f6'
+        category: started
+      - value: hecha
+        label: Hecha
+        icon: task_alt
+        color: '#10b981'
+        category: done
+  - name: linea
+    type: select
+    required: false
+    displayInline: true
+    options:
+      - value: mauri
+        label: Mauri
+      - value: academia
+        label: Academia
+      - value: entrenadores
+        label: Entrenadores
+      - value: proceso
+        label: Proceso de trabajo
+  - name: hito
+    type: select
+    required: false
+    displayInline: true
+    options:
+      - value: h0
+        label: 0. Inventario y base fiable
+      - value: h1
+        label: 1. Diseño de contratos
+      - value: h2
+        label: 2. Piloto reserva suelta
+      - value: h3
+        label: 3. Packs 5/10
+      - value: h4
+        label: 4. Comunicación y acabado
+      - value: h5
+        label: 5. Academia operativa
+      - value: h6
+        label: 6. SaaS entrenadores
+  - name: resultado
+    type: string
+    required: false
+    displayInline: true
+  - name: priority
+    type: select
+    required: false
+    default: medium
+    displayInline: true
+    options:
+      - value: low
+        label: Baja
+      - value: medium
+        label: Media
+      - value: high
+        label: Alta
+      - value: critical
+        label: Crítica
+  - name: owner
+    type: user
+    required: false
+    displayInline: true
+  - name: description
+    type: text
+    required: false
+    displayInline: true
+  - name: tags
+    type: array
+    required: false
+    displayInline: false
+    itemType: string
+inlineTemplate: '{icon} {title} {status} {linea}'
+roles:
+  title: title
+  workflowStatus: status
+  priority: priority
+  assignee: owner
+  tags: tags
+draftByDefault: false
