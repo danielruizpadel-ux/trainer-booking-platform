@@ -27,7 +27,10 @@ export default function PremiumHero({
   imageUrl,
 }: PremiumHeroProps) {
   const handleBookClick = () => {
-    document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth' })
+    // Aterriza en el selector (duración + semana + primeras horas), no en el
+    // aire de arriba de la sección. `#reserva` lleva su propio scroll-margin.
+    const target = document.getElementById('reserva') ?? document.getElementById('booking-section')
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const handleProgramsClick = () => {
