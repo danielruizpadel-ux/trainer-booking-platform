@@ -28,7 +28,7 @@ flowchart TD
 2. **Yo traduzco esa decisión en una tarea pequeña.** Cada tarea tendrá una frase de objetivo, una captura o pantalla si hace falta, y un resultado visible. El detalle técnico queda para el desarrollador.
 3. **Se construye y se enseña antes de continuar.** La tarea se revisa y se incorpora a la versión de trabajo; el siguiente paso empieza desde esa versión. Te diré claramente: *hecho*, *en revisión* o *pendiente*.
 
-**Lo único que necesito decidir contigo primero:** ¿el primer uso real será solo Mauri, o necesitas que desde el primer día dos entrenadores de la academia trabajen con los mismos clientes? Si no lo tienes claro, empezamos por Mauri y diseñamos las cuentas para añadir el segundo entrenador después.
+**Primera hipótesis de piloto:** empezar por Mauri y conservar la posibilidad de añadir un segundo entrenador después. Si Dani necesita dos entrenadores desde el primer día, adelantar el diseño de permisos y titularidad de clientes antes de implementar.
 
 > A partir de aquí está el detalle de negocio y desarrollo para quien ejecute las tareas. Puedes usar solo el mapa anterior para seguir el progreso.
 
@@ -120,9 +120,26 @@ PR/commit de integración:
 
 ### Una sola vista de control
 
-Mantener un tablero con cinco estados: **Idea → Por decidir → Lista → En desarrollo → Para revisar → Hecha**. Tres líneas de producto: **Mauri**, **Academia**, **Entrenadores**. Cada tarjeta muestra un título en lenguaje normal, el resultado visible, prioridad, responsable, estado y enlace a las capturas y al cambio integrado. Limitar el trabajo simultáneo: una tarea que afecte reservas o base de datos cada vez; tareas visuales independientes solo si no comparten archivos.
+Mantener un tablero con seis estados: **Idea → Por decidir → Lista → En desarrollo → Para revisar → Hecha**. Tres líneas de producto: **Mauri**, **Academia**, **Entrenadores**. Cada tarjeta muestra un título en lenguaje normal, el resultado visible, prioridad, responsable, estado y enlace a las capturas y al cambio integrado. Limitar el trabajo simultáneo: una tarea que afecte reservas o base de datos cada vez; tareas visuales independientes solo si no comparten archivos.
 
 Guardar tarjetas importantes como Markdown versionado en el repositorio. Confirmar en la prueba de Nimbalyst si el tipo elegido es un archivo rastreado por Git: sus elementos nativos de base local no quedan respaldados solo por verse en el tablero. Las imágenes insertadas en documentos deben estar versionadas junto al documento o enlazadas a un lugar estable, con revisión de privacidad.
+
+### Aprendizajes de la prueba de Nimbalyst (28/09/2026)
+
+- Dani abrió el worktree existente `integracion-programa` (`emdash/integracion-programa`) y el agente pudo leer este PR y los documentos locales. No se ha probado aún la sincronización del tablero entre copias.
+- Se creó el tipo de tarjeta y los seis estados anteriores; su configuración quedó sin seguimiento en `.nimbalyst/trackers/tarjeta.yaml`. La tarjeta de ensayo «Probar protocolo de trabajo» quedó en la base local de Nimbalyst, estado Idea: **verla en el tablero no equivale a respaldarla en GitHub**.
+- Siguiente ensayo: crear una tarjeta Markdown dentro del repositorio, usando el tipo y estados del YAML, sin llamar simultáneamente a `tracker_create` para evitar duplicados. Verificar que aparece en el tablero, que `git status --short` enseña el Markdown y el YAML y que ambos se abren desde otra copia tras un respaldo en una rama. Conservar la tarjeta local inicial hasta comprobar el resultado.
+- El trabajo local de `emdash-ui-improvement-3uwvl` se respaldó en `backup/ui-improvement-local-2026-09-28` (commit `a29e53e`, 24 archivos). Respaldada **no** significa integrada en el producto. Los ocho commits de `main` local adelantados respecto a `origin/main` ya aparecen en la historia de la rama remota de integración; todavía no están en `origin/main`. No borrar las copias de trabajo por esta observación.
+
+### Investigar una función propia o de la competencia
+
+1. **Plantear la pregunta:** qué problema real del jugador, entrenador o administrador resolvería y qué decisión queremos tomar. Abrir tarjeta Idea con hipótesis y resultado esperado; distinguir necesidades expresadas por Mauri de suposiciones nuestras.
+2. **Mirar el producto actual:** reproducir el recorrido relevante en nuestra web y leer código, reglas, pantallas y datos del repositorio. Guardar una captura o flujo breve con fecha y versión; anotar lo que realmente funciona frente a lo que solo aparece en un prototipo.
+3. **Examinar competidores concretos:** probar el recorrido público o la demo accesible, capturar enlaces, fecha, país y plan/precio si afecta a la decisión. Comparar el mismo caso de uso (por ejemplo, reservar, cancelar o comprar un paquete), desde móvil y con roles distintos si es posible. Marcar explícitamente lo no comprobado o lo que requiere cuenta/pago. No copiar textos, diseños ni datos personales.
+4. **Sintetizar en una sola ficha:** tabla corta «nuestro producto / alternativa A / alternativa B», con pasos, fricción, ventaja, evidencia y grado de certeza. Recomendar **adoptar, adaptar, posponer o descartar**, explicar coste y dependencia, y estimar impacto en cobro, permisos, agenda y soporte.
+5. **Decisión de Dani:** mostrar dos o tres opciones con ejemplo de un cliente real; registrar elección, motivo y fecha en `DECISIONS.md` si cambia la dirección del producto. Convertir la elección en una tarjeta Lista con criterio de aceptación visible. Si la investigación no cambia ninguna decisión, archivarla y seguir.
+
+**Ficha de investigación mínima:** pregunta, usuario, situación actual, URLs/capturas y fecha, comparación del mismo flujo, observaciones/no verificado, propuesta, decisión, enlace a tarea. Revisar precios, productos y normativas vigentes en sus fuentes antes de actuar: pueden cambiar.
 
 ### Una función, siete pasos
 
@@ -148,6 +165,16 @@ Guardar tarjetas importantes como Markdown versionado en el repositorio. Confirm
 
 Estos textos son tipos de encargo; la tarjeta añade su contexto específico. Si solo hay un agente disponible, hacer revisión separada después de la implementación y registrar que no fue independiente. El orquestador V1 es opcional y sus requisitos no bloquean este protocolo.
 
+### Cómo modificar una función ya hecha
+
+1. Abrir la tarjeta original y reproducir el comportamiento actual; registrar qué falla o qué cambia en el negocio. Si hay usuarios reales, comprobar si existen datos o contratos afectados.
+2. Describir el nuevo comportamiento con un ejemplo «antes → después», incluidos permisos, cobros, reservas y mensajes. Dani valida pantallas y reglas que afectan al cliente.
+3. Comprobar qué otras tareas dependen de esa función. Elegir una rama nueva desde la base vigente; no editar directamente una rama antigua de respaldo.
+4. Implementar el cambio pequeño, mantener compatibilidad o planear migración de datos cuando proceda; probar el recorrido anterior y el nuevo. Mostrar demo en móvil cuando afecte a la interfaz.
+5. Revisión del diff y de casos de error, integración, actualización de decisión y tarjeta; registrar dónde se puede probar y cómo volver atrás si el cambio causase problemas.
+
+**Cadencia de control:** al empezar cada sesión, mostrar a Dani en una vista «qué está integrado, qué está en revisión, qué necesita decisión y qué sigue». Al cerrar una tarea, anotar evidencia, commit/PR, riesgos y próximo paso; después de uso real, registrar comentarios de Mauri o clientes como nuevas tarjetas, no como modificaciones silenciosas. No abrir más tareas por costumbre: priorizar por valor y bloqueo.
+
 ### Reglas para cambios de opinión, ramas y fotos
 
 - **Cambiar el plan:** mover o editar la tarjeta antes de tocar código. Si ya está en desarrollo, registrar qué parte se descarta y si se termina o se cancela; el agente no decide una nueva oferta comercial por su cuenta.
@@ -159,7 +186,7 @@ Estos textos son tipos de encargo; la tarjeta añade su contexto específico. Si
 ### Prueba de adopción de Nimbalyst
 
 1. Abrir el worktree de integración existente sin mover ni limpiar ramas.
-2. Crear una tarjeta de prueba sobre un cambio textual inocuo, adjuntar una imagen de referencia no sensible y un flujo pequeño de reserva.
+2. Convertir la tarjeta de prueba local a Markdown versionado sin duplicarla en el tablero; confirmar el YAML del tipo y el archivo de tarjeta. Después probar un cambio textual inocuo, adjuntar una imagen de referencia no sensible y un flujo pequeño de reserva.
 3. Ejecutar una tarea en worktree separado, revisar el diff y registrar una decisión o corrección de Dani.
 4. Comprobar en GitHub que tarjeta/documento, imagen y cambios están en una rama revisable; comprobar en otra copia que se abren. Si no se conservan, corregir el modo de almacenamiento antes de migrar el tablero real.
 5. Cerrar el ensayo con un resultado claro: adoptar Nimbalyst o continuar con Emdash, sin borrar el otro entorno durante la transición.
