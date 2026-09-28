@@ -134,6 +134,31 @@ Guardar tarjetas importantes como Markdown versionado en el repositorio. Confirm
 - Respaldo en GitHub verificado: [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2), abierto hacia `emdash/integracion-programa` desde `docs/piloto-nimbalyst` (`4ba0671`). Contiene exactamente `.nimbalyst/trackers/tarjeta.yaml` y `nimbalyst-local/tracker/tarjetas.md` (ID `tar_01M3KB7Y8AYB5X5TPVS7V9G73E`, título `Proceso · H0 — Probar protocolo de trabajo`). El archivo YAML fija seis estados; el Markdown incluye resultado y pasos de la prueba. **Verificado:** GitHub almacena ambos archivos. **Verificado en clon independiente** (`/Users/dani/nimbalyst-prueba/trainer-booking-platform`, captura 14:50): Nimbalyst reconoce el tipo Tarjetas y muestra una sola tarjeta INP.2, `Proceso · H0 — Probar protocolo de trabajo`, estado Idea. INP.1 no reaparece. La captura siguiente sí muestra kanban con una sola tarjeta INP.2 en Idea; como está seleccionado `All` y el tablero se desplaza horizontalmente, se ven columnas genéricas `In Progress` e `In Review`, y **todavía no se ha confirmado visualmente que los seis estados propios aparezcan al filtrar por Tarjetas**. Al seleccionar Tarjetas en el clon, la vista de lista muestra además las etiquetas `proceso` y `h0`: sí son visibles tras la indexación, corrigiendo la primera observación de que estaban vacías. Una captura posterior es de tabla, así que no verifica las seis columnas específicas. Imágenes, decisiones y recorrido de una tarea real siguen pendientes. El enlace dentro de `tarjetas.md` al plan maestro requiere que también se integre el PR #1. El worktree abierto en Nimbalyst cambió a `docs/piloto-nimbalyst`; para nuevas tareas de producto hay que partir de la base `emdash/integracion-programa`, no de esta rama de ensayo.
 - El trabajo local de `emdash-ui-improvement-3uwvl` se respaldó en `backup/ui-improvement-local-2026-09-28` (commit `a29e53e`, 24 archivos). Respaldada **no** significa integrada en el producto. Los ocho commits de `main` local adelantados respecto a `origin/main` ya aparecen en la historia de la rama remota de integración; todavía no están en `origin/main`. No borrar las copias de trabajo por esta observación.
 
+### Primer ensayo funcional: reserva suelta de Mauri (lectura de código, 28/09)
+
+**Pregunta:** ¿qué ocurre desde que un jugador elige hora hasta que Mauri consigue pista, y qué falta para que sea el piloto de cobro en efectivo? **Alcance de evidencia:** lectura de la rama `emdash/integracion-programa` en GitHub; no se ejecutó el navegador ni se creó una reserva de prueba.
+
+```mermaid
+flowchart TD
+  A["Jugador elige hora y duración"] --> B["Checkout: cuenta o invitado"]
+  B --> C["Servidor valida precio y hueco"]
+  C --> D["Solicitud pendiente de confirmar"]
+  D --> E{"Mauri consigue pista"}
+  E -->|Sí| F["Clase confirmada"]
+  E -->|No| G["Reprogramar; hueco liberado"]
+```
+
+| Observación comprobada en el código | Qué significa para Dani |
+| --- | --- |
+| `components/mauri/BookingSection.tsx` consulta `/api/player/me`, pero permite continuar como anónimo; `BookingCheckout.tsx` contiene formulario de invitado. | La regla **cuenta obligatoria** ya acordada para el piloto todavía no se cumple en esta rama. Hay que concretar la excepción ante caída del login y actualizar interfaz **y** API en una tarea. |
+| `app/api/reservations/route.ts` calcula el precio en servidor, busca ventanas libres y usa `create_booking_request` con clave de idempotencia; si otra petición gana la franja devuelve 409. | La solicitud se registra como pendiente; no promete pista antes de que Mauri confirme. Conservar estas protecciones al modificar el checkout. |
+| `app/api/dashboard/reservations/[id]/route.ts` restringe decisiones al entrenador dueño; `lib/reservations/confirmation.ts` confirma o pasa a `needs_reschedule` y libera la franja cuando no hay pista. La notificación al cliente invoca un stub. | Enseñar dos caminos de Mauri y revisar el texto que ve el jugador. No decir que se envía un email real por el mero hecho de cambiar de estado. |
+| La documentación `docs/BOOKING_FLOW.md` describe el POST anterior con inserción directa y actualización de `current_bookings`; el código actual usa RPC. | Corregir ese documento dueño después de contrastar el recorrido en un entorno de prueba. |
+
+**Siguiente tarjeta recomendada, en Por decidir:** «Mauri · H1 — Cuenta obligatoria y cancelación de clase suelta». Resultado visible: jugador inicia sesión y solicita una hora; Mauri confirma la pista o propone reprogramar; ambos ven un estado comprensible. Separar la implementación del cobro y de la cancelación en tareas pequeñas después de cerrar las reglas. Casos de aceptación: visitante sin sesión; sesión caducada; perfil incompleto; fallo de autenticación; dos jugadores intentando la misma hora; Mauri sin pista. Una sesión caducada no debe hacerse pasar por reserva confirmada.
+
+**Decisión de negocio que falta antes de cobrar penalización:** si se cancela con menos de 24 horas o el jugador no aparece, cuánto se debe cargar en RM. Ejemplo para discutir: clase confirmada de RM300 cancelada 4 horas antes. Mostrar a Dani opciones concretas (importe completo, porcentaje o importe fijo), qué ve el jugador y cómo queda el cargo pendiente; registrar la elección antes de modificar base de datos o UI. La inspección anterior no verificó todavía un registro de cobros en efectivo ni su efecto en saldo: abrir una tarjeta de análisis específica, sin inferir que ya existe.
+
 ### Investigar una función propia o de la competencia
 
 1. **Plantear la pregunta:** qué problema real del jugador, entrenador o administrador resolvería y qué decisión queremos tomar. Abrir tarjeta Idea con hipótesis y resultado esperado; distinguir necesidades expresadas por Mauri de suposiciones nuestras.
