@@ -48,6 +48,6 @@ Evitar documentos paralelos para la misma regla. Una tarjeta apunta a su documen
 ## Estado de implantación
 
 - `develop` ya existe, sin despliegue ni cambios en `main` por crearlo.
-- [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2) propone el tablero a `develop`; un clon nuevo de esa rama mostró INP.2 y sus etiquetas, pero el comportamiento de todas las columnas y los assets aún necesita prueba.
+- Este PR de documentación reúne el tablero Markdown y su configuración con el protocolo para que ambos se acepten juntos en `main`. El [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2) fue la prueba aislada: un clon nuevo mostró INP.2 y sus etiquetas; todas las columnas y los assets aún necesitan prueba.
 - [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) conecta `develop` con `main`; no implica aceptación ni publicación.
 - Este centro de control es una **propuesta de documentación** hasta integrarlo en `main` y traerlo a `develop`. El plan maestro distingue lo observado, las propuestas y lo pendiente de Dani.
