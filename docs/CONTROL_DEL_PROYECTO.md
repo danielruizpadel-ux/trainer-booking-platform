@@ -34,6 +34,12 @@ flowchart TD
 
 Evitar documentos paralelos para la misma regla. Una tarjeta apunta a su documento dueño, decisión, rama, PR, prueba y captura; el documento dueño explica la regla duradera. El tablero **muestra** el trabajo, pero GitHub guarda los Markdown y assets versionados.
 
+## Evidencia visual de cada cambio
+
+Para una tarea que modifica pantallas, crear `docs/evidencias/<id-de-tarjeta>/` en la **misma rama de la tarea**. Guardar allí `antes.png` y `despues.png` si aportan valor y un `resumen.md` corto con: objetivo, ruta de la pantalla, qué decidió Dani, commit/PR, comprobación en escritorio y móvil, y pendientes. Enlazar esa carpeta desde la tarjeta Nimbalyst y el PR. Si se itera, añadir una captura nueva con nombre descriptivo y actualizar el resumen; la decisión duradera también se registra en `DECISIONS.md` o el documento dueño. Las imágenes que usa la web van en `public/` junto al código que las referencia; las capturas de evidencia quedan en `docs/evidencias/` y no se publican en la interfaz.
+
+Antes de confirmar imágenes, ocultar datos reales de clientes, claves, correos privados o pantallas de administración sensibles. Comprobar que los archivos elegidos se incluyen en el diff y en GitHub tras subir la rama. Una imagen enviada por chat o visible en Nimbalyst no se comparte automáticamente entre copias. Si no hay captura útil, describir la prueba en el resumen en vez de fabricar una.
+
 ## Rutina sin perder conocimiento entre carpetas
 
 1. **Al abrir:** comprobar rama y SHA, cambios locales sin guardar y últimos PR. Mostrar a Dani «integrado / para revisar / por decidir / siguiente».
