@@ -27,7 +27,7 @@ flowchart TD
 | --- | --- |
 | Saber qué hacer y dónde estamos | `ROADMAP.md` y el [plan maestro](PLAN_MAESTRO_PRODUCTO_Y_ENTREGA.md) |
 | Recordar por qué decidimos una regla | `DECISIONS.md`; una decisión, fecha, ejemplo y efecto |
-| Ver lo que está realmente integrado | `docs/estado-integracion.md` y PR/commits de la rama consultada |
+| Ver lo que está realmente integrado | `docs/estado-desarrollo.md` en `main`; `docs/estado-integracion.md` existe en `develop`. Confirmar siempre el PR y los commits de la rama consultada. |
 | Ver pendientes en Nimbalyst | `nimbalyst-local/tracker/tarjetas.md` + `.nimbalyst/trackers/tarjeta.yaml` cuando ambos hayan sido incorporados a la rama |
 | Saber cómo trabajar con agentes | `AGENTS.md`, `AI_WORKFLOW.md`, `.claude/commands/nueva-tarea.md` y `cerrar-tarea.md` |
 | Cambiar reservas, datos o despliegue | `docs/BOOKING_FLOW.md`, `docs/DATABASE.md`, `docs/ANTES_DE_PUBLICAR.md` y código actual |
@@ -63,5 +63,6 @@ La revisión del PR #5 detectó un caso que no mostraban las capturas iniciales:
 
 - `develop` ya existe, sin despliegue ni cambios en `main` por crearlo.
 - Este PR de documentación reúne el tablero Markdown y su configuración con el protocolo para que ambos se acepten juntos en `main`. El [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2) fue la prueba aislada: un clon nuevo mostró INP.2 y sus etiquetas; todas las columnas y los assets aún necesitan prueba.
+- [PR #5](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/5) incorporó la reserva fácil de Mauri a `develop` (merge `6d179340`, 29/09). Se probó la navegación semanal en el Mac; la reserva real sigue sin probarse.
 - [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) conecta `develop` con `main`; no implica aceptación ni publicación.
-- Este centro de control es una **propuesta de documentación** hasta integrarlo en `main` y traerlo a `develop`. El plan maestro distingue lo observado, las propuestas y lo pendiente de Dani.
+- Este centro de control es una **propuesta de documentación** hasta integrarlo en la rama compartida. Comprobar primero si un merge a `main` activa despliegue externo; la ausencia de workflows en GitHub no demuestra que no lo haga. El plan maestro distingue lo observado, las propuestas y lo pendiente de Dani.
