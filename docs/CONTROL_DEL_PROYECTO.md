@@ -2,6 +2,34 @@
 
 Este es el **punto de entrada para Dani y los agentes**, cualquiera que sea la carpeta del proyecto que esté abierta. Fecha de creación: 28/09/2026. Las referencias a ramas, PR y versiones cambian: comprobarlas al comenzar cada sesión.
 
+## Cómo vamos a trabajar (guía para Dani)
+
+| Paso | Lo que ves tú | Lo que queda guardado |
+| --- | --- | --- |
+| **1. Investigar** | Pantalla actual, dos referencias útiles y el problema concreto. | Enlace, fecha, captura y qué se observó o no se pudo comprobar. |
+| **2. Decidir** | Una propuesta visual y un ejemplo real; eliges o corriges. | Una tarjeta con resultado esperado y, si es una regla duradera, `DECISIONS.md`. |
+| **3. Construir** | La tarea pasa a «En desarrollo». | Rama propia desde `develop`, código y capturas de cada iteración. |
+| **4. Enseñar y revisar** | Pruebas el cambio en escritorio y móvil; dices qué ajustar. | Antes/después, casos de error, pruebas, revisión independiente y PR. |
+| **5. Integrar** | La tarjeta pasa a «Hecha» cuando la versión común funciona. | PR incorporado a `develop`, documento dueño y enlaces desde la tarjeta. |
+| **6. Publicar** | Se decide por separado cuándo usarlo con clientes. | Checklist de seguridad y despliegue; «Hecha» no significa publicada. |
+
+**Tú controlas las decisiones y el resultado visible.** Puedes cambiar de idea en cualquier paso: el agente actualiza la misma tarjeta, captura la nueva versión y anota por qué cambió. No se crean tareas duplicadas por cada iteración.
+
+### Investigar una funcionalidad propia o de la competencia
+
+La pregunta de investigación debe ser concreta (por ejemplo: «¿cuántos pasos hay desde elegir hora hasta recibir confirmación?»). Primero se recorre **nuestra web** y se registra la versión/ramal, escritorio y móvil, qué ocurrió realmente y dónde hay fricción. Después se revisan hasta dos referencias comparables: URL, fecha, pasos observados y captura o enlace. Se distinguen hechos, inferencias y aspectos inaccesibles (login, pago, disponibilidad). Si hay afirmaciones sobre precios, condiciones o funciones actuales, verificar la fuente actual antes de decidir. Nunca copiar una pantalla ni prometer funciones solo por una imagen.
+
+El resultado cabe en una tarjeta: **problema → evidencia → propuesta de recorrido → decisión de Dani → prueba visible**. Para dinero, cancelaciones, permisos o datos de clientes, mostrar un ejemplo real y esperar la decisión antes de programar esas reglas. Si la investigación no requiere código, no crear una rama de producto solo para simular actividad.
+
+### Responsables y prueba de cierre
+
+- **Dani:** prioridad, reglas del negocio, elección de diseño y aceptación viendo la pantalla.
+- **Agente implementador:** comprueba carpeta/rama/cambios locales; trabaja aislado desde la base vigente; mantiene tarjeta, código, pruebas y capturas juntos.
+- **Agente revisor:** revisa el diff y los recorridos que cambian estado. Claude implementa y Codex revisa cuando ambos están disponibles; si Claude no está disponible, Codex puede implementar y se registra expresamente si falta revisión independiente. La herramienta no cuenta como revisor por sí sola.
+- **Antes de marcar «Hecha»:** criterios acordados visibles, PR incorporado a `develop`, recorrido probado allí, evidencias accesibles desde otra copia y ningún pendiente bloqueante oculto. Para cambios de producto, `main` y la web publicada siguen siendo pasos separados.
+
+La tarjeta Markdown y las capturas versionadas son la memoria compartida; Nimbalyst es la vista visual. Una copia abierta en el Mac **solo recibe cambios al actualizar su rama**. El detalle de Nimbalyst puede mostrar la ruta del archivo: ábrelo para ver las imágenes y enlaces; selecciona «All» para incluir las tareas hechas.
+
 ## El mapa en una pantalla
 
 | Lugar | Qué contiene | Cuándo se actualiza |
@@ -44,7 +72,7 @@ Antes de confirmar imágenes, ocultar datos reales de clientes, claves, correos 
 
 Dani confirmó en una copia limpia de `develop` que la tarjeta de Mauri se recupera desde GitHub, se ve al seleccionar el filtro «All» y que, tras ponerla al inicio de `nimbalyst-local/tracker/tarjetas.md`, se muestra la vista previa de la captura. El detalle de la tarjeta muestra la ruta del Markdown: para consultar imágenes, enlaces y decisiones hay que **abrir ese archivo** en el editor. El cambio de estado de la tarjeta también quedó escrito en Markdown en la prueba anterior; cada copia local debe actualizar su rama para recibirlo.
 
-**Regla práctica:** una tarjeta visual empieza con resultado, enlace antes/después y una vista previa relativa a un archivo versionado en `docs/evidencias/`. Abrir el archivo desde la tarjeta; en el tablero seleccionar «All» para incluir tareas hechas. Confirmar que la captura existe en la misma rama que el Markdown, y comprobar la vista tras abrir la copia del proyecto. Sigue pendiente probar una decisión nueva escrita en la tarjeta y recuperada en otra copia.
+**Regla práctica:** una tarjeta visual empieza con resultado, enlace antes/después y una vista previa relativa a un archivo versionado en `docs/evidencias/`. Abrir el archivo desde la tarjeta; en el tablero seleccionar «All» para incluir tareas hechas. Confirmar que la captura existe en la misma rama que el Markdown, y comprobar la vista tras abrir la copia del proyecto. El 29/09 Dani actualizó una copia limpia de `develop` por fast forward hasta `f031b25` y confirmó que la nota «Confirmado por Dani el 29/09» apareció en la misma tarjeta. Así quedó comprobado que una nota nueva versionada llega a otra copia tras actualizarla. No se ha probado edición simultánea de dos copias ni sincronización automática.
 
 ## Rutina sin perder conocimiento entre carpetas
 
