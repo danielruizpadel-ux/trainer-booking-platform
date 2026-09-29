@@ -17,4 +17,4 @@ Las coordenadas son desde arriba de la página y corresponden a la carga observa
 
 **Login pendiente:** en navegador se eligió 09:00, el enlace de cuenta existente llevó a `/cuenta/entrar?trainer=mauri` sin `draft`; al volver a `/mauri`, el resumen estaba vacío. Por eso no se añade login nuevo a la cabecera en este PR. La entrada del checkout guarda un borrador por separado; falta diseñar y probar la conservación desde cabecera, con revisión independiente antes de integrar.
 
-**Estado:** PR visual propuesto hacia `develop`, sin merge, despliegue ni reserva real. Revisión independiente pendiente.
+**Estado:** [PR #35](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/35) abierto hacia `develop`, sin merge, despliegue ni reserva real. Revisión independiente pendiente.

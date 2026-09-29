@@ -6,7 +6,7 @@ Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada ca
   Resultado propuesto: hero más corto en grafito/marfil, agenda más arriba y contenido de ejemplo retirado en `/mauri`; pendiente de revisión, sin integrar ni publicar.
   **Comparación:** [Antes escritorio](../../docs/evidencias/mauri-editorial/before-desktop.png) → [Después escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png) · [Antes móvil](../../docs/evidencias/mauri-editorial/before-mobile.png) → [Después móvil](../../docs/evidencias/mauri-editorial/after-mobile.png).
   ![Mauri Editorial en escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png)
-  - [Issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31) · [Evidencia, pruebas y pendiente de login](../../docs/evidencias/mauri-editorial/RESUMEN.md) · [Decisión duradera](../../DECISIONS.md).
+  - [Issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31) · [PR #35 abierto hacia develop](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/35) · [Evidencia, pruebas y pendiente de login](../../docs/evidencias/mauri-editorial/RESUMEN.md) · [Decisión duradera](../../DECISIONS.md).
   - Base: `origin/develop` `7899eb96c05b4f6842b2a27b15bdf29ea04d43f6`. Rama aislada: `feature/mauri-editorial-pr1-20260929`. Implementador: Codex; revisión independiente pendiente.
   - Alcance: interfaz de landing. API, autenticación, reglas de reserva, SQL y despliegue sin cambios. El login nuevo de cabecera queda fuera porque pierde la hora al navegar.
 
