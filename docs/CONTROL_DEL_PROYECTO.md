@@ -30,6 +30,18 @@ El resultado cabe en una tarjeta: **problema → evidencia → propuesta de reco
 
 La tarjeta Markdown y las capturas versionadas son la memoria compartida; Nimbalyst es la vista visual. Una copia abierta en el Mac **solo recibe cambios al actualizar su rama**. El detalle de Nimbalyst puede mostrar la ruta del archivo: ábrelo para ver las imágenes y enlaces; selecciona «All» para incluir las tareas hechas.
 
+## Coordinación sencilla en Nimbalyst
+
+**Tres piezas:** el tablero muestra qué hay que hacer; una sesión llamada **Centro del proyecto** ayuda a Dani a priorizar y entender el estado; cada tarea tiene su sesión de trabajo en una rama propia. El Centro usa el [guion compartido](CENTRO_DE_COORDINACION.md) y se puede continuar con Claude o Codex. La tarjeta, el PR y el documento dueño conservan la información entre chats y copias.
+
+| Dani ve | El equipo registra |
+| --- | --- |
+| Una tarjeta por objetivo, con estado y captura | Alcance, decisión, responsable, rama/PR, prueba y próximo paso en esa tarjeta |
+| Cuatro líneas de estado en el Centro | Integrado / Para revisar / Necesita decisión / Siguiente |
+| Una propuesta o una pantalla para elegir | Pase breve al implementador o al revisor, enlazado desde la misma tarjeta |
+
+**Relevo:** Claude y Codex se pasan una ficha breve con ID de tarjeta, base, objetivo, decisión, evidencias y acción siguiente. Nimbalyst permite crear sesiones desde tarjetas, pero el envío automático entre sesiones queda por probar. Hasta entonces el Centro entrega el prompt listo para pegar y comprueba la respuesta en el PR/tarjeta. Si un agente agota créditos, el otro continúa las tareas acotadas y registra el trabajo real; en cambios sensibles queda pendiente una revisión independiente antes de integrarlos. El orquestador V1 actual exige ambos agentes y Bothread, así que no es el motor de esta rutina.
+
 ## Un proyecto, dos puertas de seguridad
 
 La web, su API y Supabase son **un mismo producto** aunque se trabajen en carpetas y ramas distintas. No prometemos que nunca se rompa: en cada entrega demostramos qué se ha comprobado y qué riesgo queda.
