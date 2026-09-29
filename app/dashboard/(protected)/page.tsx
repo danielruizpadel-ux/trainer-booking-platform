@@ -28,7 +28,7 @@ export default async function DashboardHomePage() {
       {/* Sin cabecera ni saludo: el calendario es lo primero que se ve. */}
       <section aria-label="Calendario">
         <h1 className="sr-only">Resumen</h1>
-        <HomeCalendarSection reservations={reservations} />
+        <HomeCalendarSection reservations={reservations} durations={trainer.class_durations} />
       </section>
 
       <section aria-labelledby="stats-title" className="mt-10">

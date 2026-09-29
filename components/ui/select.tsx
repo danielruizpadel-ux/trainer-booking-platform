@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { field } from './styles';
 
 export interface SelectProps
   extends React.SelectHTMLAttributes<HTMLSelectElement> {}
@@ -9,10 +10,7 @@ export interface SelectProps
 const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, ...props }, ref) => (
     <select
-      className={cn(
-        'flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer',
-        className
-      )}
+      className={cn(field.input, 'appearance-none cursor-pointer pr-10', className)}
       ref={ref}
       {...props}
     />

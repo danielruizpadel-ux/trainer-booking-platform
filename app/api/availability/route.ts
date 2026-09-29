@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { bookableSlotsFor, loadOpenWindows } from '@/lib/availability/booking'
 import { getTrainerDurations } from '@/lib/availability/trainer-durations'
 import { isClassDuration } from '@/lib/availability/durations'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * GET /api/availability?trainer_id=<uuid|slug>&date=YYYY-MM-DD | start_date&end_date [&duration=60|90]
@@ -57,7 +58,9 @@ export async function GET(request: NextRequest) {
     }
 
     const windows = await loadOpenWindows(supabase, trainerId!, date ?? startDate!, date ?? endDate!)
-    const slots = bookableSlotsFor(windows, duration, offered)
+    const slots = bookableSlotsFor(windows, duration, offered).filter(
+      (slot) => !isPastMalaysiaSession(slot.session_date, slot.start_time)
+    )
 
     return NextResponse.json({ success: true, data: slots, durations: offered, duration })
   } catch (error) {

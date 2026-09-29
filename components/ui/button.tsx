@@ -1,38 +1,35 @@
 import React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { button } from './styles';
 
-const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-  {
-    variants: {
-      variant: {
-        default:
-          'bg-cyan-600 text-white hover:bg-cyan-600/90',
-        destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        outline:
-          'border border-input bg-white hover:bg-accent hover:text-cyan-700-foreground',
-        secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost:
-          'hover:bg-accent hover:text-cyan-700-foreground',
-        link:
-          'text-primary underline-offset-4 hover:underline',
-      },
-      size: {
-        default: 'h-10 px-4 py-2',
-        sm: 'h-9 rounded-md px-3',
-        lg: 'h-11 rounded-md px-8',
-        icon: 'h-10 w-10',
-      },
+/**
+ * Botón con las clases del sistema (components/ui/styles.ts). Mantiene la API
+ * de variantes de antes (default/outline/secondary/ghost/destructive/link)
+ * para no tocar a quien lo usa; `size` solo ajusta alto y relleno.
+ */
+const buttonVariants = cva('', {
+  variants: {
+    variant: {
+      default: button.primary,
+      destructive: button.danger,
+      outline: button.secondary,
+      secondary: button.secondary,
+      ghost: button.ghost,
+      link: button.link,
     },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
+    size: {
+      default: '',
+      sm: 'h-10 px-4 text-sm',
+      lg: 'h-12 px-7',
+      icon: 'h-10 w-10 px-0',
     },
-  }
-);
+  },
+  defaultVariants: {
+    variant: 'default',
+    size: 'default',
+  },
+});
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
@@ -41,7 +38,7 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, ...props }, ref) => (
     <button
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size }), className)}
       ref={ref}
       {...props}
     />

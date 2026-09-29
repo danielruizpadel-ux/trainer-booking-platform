@@ -5,10 +5,12 @@ Léete esto antes de tocar código. Son las cosas que ya han roto algo una vez.
 ## ⛔ Si el tema es publicar, desplegar o subir a producción
 
 **Para y lee `docs/ANTES_DE_PUBLICAR.md` primero.** Bloqueantes de seguridad sin
-resolver: la key vieja de Supabase sigue en el historial de git sin rotar (los
-3 scripts que la llevaban en claro se borraron el 21/09, pero un commit
-antiguo la conserva — no reescribir el historial ni añadir un remoto sin
-rotarla antes), y el login de admin sigue siendo un `TODO`.
+resolver: la key vieja de Supabase se rotó el 27/09, pero falta verificar que
+la antigua está revocada y limpiar el historial de git, que la conserva en
+commits antiguos que ya están en el remoto `origin`. El acceso a `/admin` y
+`/api/admin` ya exige sesión y permiso de administrador en el servidor
+(`lib/auth/current-admin.ts`), pero falta aplicar la migración 020 y dar de
+alta a los administradores.
 
 Si el usuario pide desplegar, subir a Vercel, publicar la web o conectar un
 dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
@@ -65,8 +67,28 @@ dominio, lo primero es enseñarle esa checklist, no hacer el deploy.
 - Estados de reserva y ventana: `lib/reservations/status.ts` y
   `migrations/003_reservation_confirmation_flow.sql`. La decisión del entrenador
   (confirmar / sin pista) vive solo en `lib/reservations/confirmation.ts`.
-- El precio lo calcula el servidor (`lib/reservations/pricing.ts`); nunca
-  aceptar un total del navegador.
+- El precio lo calcula el servidor; nunca aceptar un total del navegador.
+  Precio base = `trainer_session_prices` (entrenador × duración × nº de
+  jugadores, migración 010, editable en Perfil → Public pricing), leído con
+  `lib/reservations/trainer-prices.ts`; el cálculo puro (descuento 5+/10+,
+  redondeo) está en `lib/reservations/pricing.ts`. Sin precio configurado se
+  falla con un error claro: **nunca** volver a un RM300 fijo en código.
+  Manual y paquetes usan el precio de 1 jugador.
+- `reservations.notes` son las **notas internas** del entrenador. El mensaje
+  del cliente va en `client_message` (≤ 500, texto plano, nunca en logs ni
+  como HTML) y la preferencia de WhatsApp en `whatsapp_opt_in`
+  (`lib/reservations/whatsapp.ts`: columna primero; el "WhatsApp: si/no" de
+  `notes` solo en reservas anteriores a la 010). No volver a escribir flags en `notes`.
+- `getSupabaseServerClient()` falla cerrado sin `SUPABASE_SERVICE_ROLE_KEY`.
+  Desde la 010, anon/authenticated no pueden escribir `reservations` ni
+  `trainer_session_prices`: toda escritura va por el servidor.
+- `POST /api/reservations` (migración 021): exige `Idempotency-Key` y crea
+  las reservas **solo** con la rpc `create_booking_request` (clave + filas +
+  respuesta en una transacción); nunca `from('reservations').insert` en esa
+  ruta. La clave se busca antes de revalidar; el límite
+  (`lib/reservations/rate-limit.ts`) va en Postgres, nunca en memoria ni con
+  `X-Forwarded-For`. Tras mandar la escritura, un fallo sin evidencia de
+  rechazo es `outcome_unknown` (no decir "no se creó").
 - Tocar ventanas desde el dashboard solo con `lib/reservations/slots.ts`
   (`loadOwnedOpenWindow` comprueba dueño + abierta + que el rango cabe sin
   solapar; `refreshWindowStatus` recalcula contador y `full`). El estado
@@ -92,6 +114,50 @@ Detalle del flujo completo: `docs/BOOKING_FLOW.md`.
 - Shell: `components/dashboard/DashboardShell` (cabecera + nav). Las secciones
   se declaran solo en `components/dashboard/nav-items.ts`. Cada página pone
   `PageHeader` + sus tarjetas; el layout ya pone el marco.
+
+## Cuenta de jugador (`/cuenta`) — Fase A1
+
+- Detalle y pendientes: `docs/PLAYER_ACCOUNTS.md`. Tablas `players` y
+  `player_trainers` (migración 009, **sin aplicar todavía**).
+- El jugador **sale de la sesión**, nunca del cliente: `getPlayerSession()` /
+  `requirePlayer()` en `lib/auth/current-player.ts`. Una ruta de
+  `/api/player` que lea un `player_id` del body o de la query es un bug de
+  seguridad. Mismo criterio que `requireTrainer()`.
+- Una sola sesión de Supabase por navegador: la misma cuenta puede ser
+  entrenador y jugador; salir de una sale de las dos.
+- Checkout A2 (inglés, `components/booking/checkout/`): con sesión y perfil
+  completo, `POST /api/reservations` con `as_player: true` toma player_id,
+  nombre/teléfono/WhatsApp del perfil y el email de Auth **desde la sesión** e
+  ignora los `client_*` y cualquier `player_id` del body. Sin sesión, invitado
+  (player_id NULL). Detalle: `docs/PLAYER_ACCOUNTS.md`.
+
+## Administración (`/admin`, `/api/admin`)
+
+- El permiso de administrador es una fila en `public.admins` (migración 020,
+  **sin aplicar todavía**; se concede a mano en el SQL Editor, ver su
+  cabecera). Ser entrenador o jugador no lo da.
+- Cada página de `/admin` llama a `await requireAdminPage('<ruta>')` (sin
+  sesión → login de `/admin`; sin permiso → 404) y cada ruta de `/api/admin`
+  a `requireAdmin()` (401/403) **antes** de tocar la base:
+  `lib/auth/current-admin.ts`. Un layout no basta en Next 16.
+  `scripts/verify-admin-access.mjs` falla si una página o ruta nueva no lo hace.
+
+## Programa (`/programa`) — PROTOTIPO con datos de ejemplo
+
+- Player Development Plan: 5 pantallas con jugador, entrenadores, notas y
+  huecos **inventados** (`lib/programs/sample-data.ts`). Nada cobra, reserva,
+  consume créditos ni guarda progreso. Las reglas del programa (precios, 10
+  sesiones, 24 h) están en `lib/programs/catalog.ts`.
+- **Solo existe con `PROGRAMA_DEMO=1`** (`PROGRAMA_DEMO=1 npm run dev`). Sin
+  esa variable, `/programa/**` da 404 en todas partes, también en un deploy.
+  Doble barrera: `proxy.ts` y `requireProgramDemo()` al principio de cada
+  página (`lib/programs/require-demo.ts`). Una página nueva de `/programa`
+  tiene que llamarlo también: un layout no basta en Next 16.
+- Notas internas de los entrenadores (`PlanSession.note`) solo en la vista de
+  entrenador. El jugador ve `progressSummary`, nunca las notas.
+- La vista de entrenador usa `?como=` para simular quién mira. En la versión
+  real va en `/dashboard` con `requireTrainer()`, y "Mi programa" en `/cuenta`
+  con `requirePlayer()`: nunca un id de jugador o entrenador desde la URL.
 
 ## Diseño
 
@@ -128,3 +194,13 @@ grep -rnP '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]' components/mauri app/mauri   
 Node 20 (`.nvmrc`). `npm run dev` levanta en el puerto **3001**.
 Variables en `.env.local`: `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

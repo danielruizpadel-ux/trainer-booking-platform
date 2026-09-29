@@ -8,11 +8,16 @@ interface LoginFormProps {
   initialError: string | null
   /** Ruta interna a la que volver tras entrar */
   next: string | null
+  /**
+   * Callback de Supabase Auth. Por defecto el del dashboard; la cuenta de
+   * jugador usa /cuenta/auth/callback (puede llevar su propia query, p. ej. ?trainer=).
+   */
+  callbackPath?: string
 }
 
 type Status = 'idle' | 'sending' | 'sent' | 'redirecting'
 
-export function LoginForm({ initialError, next }: LoginFormProps) {
+export function LoginForm({ initialError, next, callbackPath = '/dashboard/auth/callback' }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(initialError)
@@ -20,7 +25,7 @@ export function LoginForm({ initialError, next }: LoginFormProps) {
   const busy = status === 'sending' || status === 'redirecting'
 
   function callbackUrl() {
-    const url = new URL('/dashboard/auth/callback', window.location.origin)
+    const url = new URL(callbackPath, window.location.origin)
     if (next) url.searchParams.set('next', next)
     return url.toString()
   }

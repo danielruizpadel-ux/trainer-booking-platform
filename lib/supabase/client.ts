@@ -16,17 +16,23 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * Server-side Supabase client initialization
- * For use in API routes and server components with admin key
+ * Cliente de servidor con la service role key, para route handlers y Server
+ * Components. Es la ÚNICA vía de escritura de la app: desde la migración 010,
+ * anon y authenticated no tienen permisos de escritura en `reservations` ni
+ * en `trainer_session_prices`.
+ *
+ * Falla cerrado: sin SUPABASE_SERVICE_ROLE_KEY lanza un error explícito. Antes
+ * caía en silencio al cliente anon, que con RLS lee cero filas y ya no puede
+ * escribir: el fallo parecía "no hay huecos" o "no se pudo reservar".
+ * Esta clave nunca va al navegador (sin prefijo NEXT_PUBLIC_).
  */
 export function getSupabaseServerClient() {
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseServiceRoleKey) {
-    console.warn(
-      'SUPABASE_SERVICE_ROLE_KEY not set. Using anonymous client instead.'
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY no está configurada: el servidor no puede leer ni escribir datos. Revisa .env.local / las variables del despliegue.'
     );
-    return supabaseClient;
   }
 
   return createClient(supabaseUrl, supabaseServiceRoleKey, {

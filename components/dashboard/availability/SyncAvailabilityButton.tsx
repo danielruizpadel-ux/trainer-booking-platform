@@ -1,48 +1,34 @@
 'use client'
 
 import { useState } from 'react'
-
-interface SyncResult {
-  created: number
-  removed: number
-  legacyRemoved: number
-  closed: number
-  reopened: number
-}
+import { callApi } from './api'
+import { describeSync, type SyncReport } from './sync-report'
 
 /**
  * Botón de mantenimiento (21/09/2026, a petición de Daniel): sincroniza a
  * mano los huecos reales con la plantilla y limpia huecos manuales que ya no
  * tienen sentido (más viejos que el rediseño de horario semanal, sin
- * reserva viva). No hace falta para el uso normal — cada cambio de horario
- * ya regenera solo — pero sirve para corregir un desajuste puntual sin
- * tener que tocar la base de datos a mano.
+ * reserva). No hace falta para el uso normal — cada cambio de horario ya
+ * regenera solo — pero sirve para corregir un desajuste puntual.
+ *
+ * 26/09/2026 (revisión de Codex): antes lanzaba las dos cosas a la vez y un
+ * fallo de una dejaba dudas sobre la otra. Ahora van en serie: primero la
+ * sincronización (atómica, 014); la limpieza solo si la sincronización se
+ * confirmó. Cada una se informa por separado (sync-report.ts), sin afirmar
+ * lo que no se sabe si se pierde una respuesta.
  */
 export function SyncAvailabilityButton() {
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<SyncResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [report, setReport] = useState<SyncReport | null>(null)
 
   const run = async () => {
     setBusy(true)
-    setError(null)
-    setResult(null)
+    setReport(null)
     try {
-      const [genRes, purgeRes] = await Promise.all([
-        fetch('/api/dashboard/availability/generate', { method: 'POST' }).then((r) => r.json()),
-        fetch('/api/dashboard/availability/purge-legacy', { method: 'POST' }).then((r) => r.json()),
-      ])
-      if (!genRes.success) throw new Error(genRes.error || 'No se pudo regenerar')
-      if (!purgeRes.success) throw new Error(purgeRes.error || 'No se pudo limpiar')
-      setResult({
-        created: genRes.summary?.created ?? 0,
-        removed: genRes.summary?.removed ?? 0,
-        legacyRemoved: purgeRes.removed ?? 0,
-        closed: genRes.summary?.closed ?? 0,
-        reopened: genRes.summary?.reopened ?? 0,
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al sincronizar')
+      const sync = await callApi('/api/dashboard/availability/generate', { method: 'POST' }, 'No se ha sincronizado.')
+      const purge =
+        sync.kind === 'ok' ? await callApi('/api/dashboard/availability/purge-legacy', { method: 'POST' }, 'No se pudo limpiar') : null
+      setReport(describeSync(sync, purge))
     } finally {
       setBusy(false)
     }
@@ -58,14 +44,19 @@ export function SyncAvailabilityButton() {
       >
         {busy ? 'Sincronizando…' : 'Sincronizar huecos'}
       </button>
-      {result && !error && (
-        <p className="text-xs text-gray-500">
-          {result.created} creados, {result.removed + result.legacyRemoved} eliminados
-          {result.closed > 0 ? `, ${result.closed} cerrados por reserva` : ''}
-          {result.reopened > 0 ? `, ${result.reopened} reabiertos` : ''}.
-        </p>
+      {report && (
+        <div className="flex max-w-sm flex-col items-end gap-1 text-right text-xs">
+          {[report.sync, report.purge].map((line, i) => (
+            <p
+              key={i}
+              role={line.tone === 'error' ? 'alert' : 'status'}
+              className={line.tone === 'ok' ? 'text-gray-500' : line.tone === 'warning' ? 'text-amber-700' : 'text-red-600'}
+            >
+              {line.text}
+            </p>
+          ))}
+        </div>
       )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   )
 }

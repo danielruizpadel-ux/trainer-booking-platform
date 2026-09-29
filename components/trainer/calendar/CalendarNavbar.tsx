@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import MiniCalendarOverlay from './MiniCalendarOverlay'
 import { getMonday } from '@/lib/dateUtils'
 
@@ -28,6 +28,7 @@ export default function CalendarNavbar({
   availableDates,
 }: CalendarNavbarProps) {
   const [showMiniCalendar, setShowMiniCalendar] = useState(false)
+  const miniTriggerRef = useRef<HTMLButtonElement>(null)
 
   const shift = (direction: -1 | 1) => {
     const d = new Date(currentDate)
@@ -61,7 +62,8 @@ export default function CalendarNavbar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-gray-100">
       {/* Izquierda: navegación de periodo */}
-      <div className="flex items-center gap-1">
+      {/* flex-wrap: a 320 px "septiembre de 2026" + flechas + Hoy no caben en una línea. */}
+      <div className="flex flex-wrap items-center gap-1 min-w-0">
         <button onClick={() => shift(-1)} className={arrowBtn} aria-label="Periodo anterior">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -70,7 +72,11 @@ export default function CalendarNavbar({
 
         <div className="relative">
           <button
+            ref={miniTriggerRef}
+            type="button"
             onClick={() => setShowMiniCalendar((v) => !v)}
+            aria-haspopup="dialog"
+            aria-expanded={showMiniCalendar}
             className="px-2 py-1.5 rounded-lg text-base font-semibold text-gray-900 capitalize hover:bg-gray-100 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             title="Ir a una fecha"
           >
@@ -79,9 +85,11 @@ export default function CalendarNavbar({
           <MiniCalendarOverlay
             isOpen={showMiniCalendar}
             onClose={() => setShowMiniCalendar(false)}
+            triggerRef={miniTriggerRef}
             currentDate={currentDate}
             onDateSelect={(d) => {
               onDateChange(d)
+              onViewChange('day')
               setShowMiniCalendar(false)
             }}
             availableDates={availableDates}

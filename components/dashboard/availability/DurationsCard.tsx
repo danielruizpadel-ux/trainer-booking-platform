@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { CLASS_DURATIONS, durationLabel } from '@/lib/availability/durations'
-import { calculateBookingPrice, formatRM } from '@/lib/reservations/pricing'
+import Link from 'next/link'
 
 /**
  * Qué duraciones de clase ofrece el entrenador (1 h, 1 h 30 min o ambas).
@@ -58,14 +58,16 @@ export function DurationsCard() {
         <div>
           <h2 className="text-base font-semibold text-gray-900">Duración de las clases</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Lo que tus clientes pueden elegir al reservar. La clase de 1 h 30 cuesta el precio de 1 h × 1,5; los
-            descuentos por volumen se aplican igual.
+            Lo que tus clientes pueden elegir al reservar. Los precios de cada duración se configuran en{' '}
+            <Link href="/dashboard/perfil" className="font-medium text-blue-600 hover:text-blue-700">
+              Perfil
+            </Link>
+            .
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {CLASS_DURATIONS.map((d) => {
             const on = durations?.includes(d) ?? false
-            const price = calculateBookingPrice(1, d).pricePerSession
             return (
               <label
                 key={d}
@@ -80,10 +82,7 @@ export function DurationsCard() {
                   onChange={() => toggle(d)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span>
-                  <span className="block text-sm font-semibold text-gray-900">{durationLabel(d)}</span>
-                  <span className="block text-xs text-gray-500 tabular-nums">{formatRM(price)} por clase</span>
-                </span>
+                <span className="block text-sm font-semibold text-gray-900">{durationLabel(d)}</span>
               </label>
             )
           })}

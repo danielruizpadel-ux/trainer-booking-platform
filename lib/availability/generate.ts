@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseDateStr, toDateStr } from '@/lib/dateUtils'
 import { isSlotOpen, reservationHoldsSlot } from './slot-status'
+import { isConfirmedRejection, type RejectionEvidence } from '@/lib/supabase/error-codes'
 
 /**
  * Generador: a partir de la plantilla semanal + excepciones (migración 005),
@@ -34,6 +35,22 @@ import { isSlotOpen, reservationHoldsSlot } from './slot-status'
  * recalcula si queda `available` o `full`. Un hueco que quedó `blocked` y ya
  * no tiene ninguna reserva viva (se canceló) se trata como libre de verdad:
  * se borra si el patrón no lo quiere, igual que cualquier otro.
+ *
+ * 26/09/2026 (FK con ON DELETE CASCADE en la base real): borrar una
+ * ventana borraba sus reservas, también las CANCELADAS (historial) y una
+ * reserva que entrase entre la lectura y el borrado. Ahora el generador
+ * solo pide borrar ventanas SIN NINGUNA fila en reservations. Una ventana
+ * que el patrón ya no quiere y solo tiene reservas no vivas se CIERRA
+ * (`blocked`) en vez de borrarse ("retirada"); si el patrón la vuelve a
+ * querer, se reabre y se reutiliza como una libre.
+ *
+ * 26/09/2026 (sincronización parcial, revisión de Codex): el plan (qué
+ * insertar, borrar, acortar/alargar, cerrar y reabrir) se aplica con
+ * apply_window_plan (migrations/014) en UNA transacción que bloquea las
+ * ventanas y revalida: una ventana a borrar que ya tiene reservas se cierra
+ * (`keptReferenced`); un acortamiento que dejaría fuera una reserva viva
+ * cierra la ventana. Si algo falla, no cambia nada y se lanza
+ * WindowSyncError: las rutas lo devuelven como `sync_failed`.
  *
  * 21/09/2026 (prompt 20, fix de regenerar): `rangeKey` solo mira
  * start_time + class_type, no end_time. Si dos filas `generated_by_pattern`
@@ -88,6 +105,8 @@ export interface GenerateSummary {
   keptOccupied: number
   closed: number
   reopened: number
+  /** Ventanas que se iban a borrar pero la base no dejó (tienen reservas) */
+  keptReferenced: number
 }
 
 function rangeKey(startTime: string, classType: string): string {
@@ -97,6 +116,17 @@ function rangeKey(startTime: string, classType: string): string {
 export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerId: string, weeksAhead = 8): Promise<GenerateSummary> {
   const today = toDateStr(new Date())
   const endDate = toDateStr(addDays(parseDateStr(today), weeksAhead * 7))
+
+  // Revisión del horario ANTES de leerlo (migrations/016): el plan se aplica
+  // solo si nadie lo ha cambiado desde aquí. Si cambia entre esta lectura y
+  // la del horario, el plan se rechaza (y syncWindows lo recalcula).
+  const { data: trainerRow, error: revisionError } = await supabase
+    .from('trainers')
+    .select('availability_revision')
+    .eq('id', trainerId)
+    .maybeSingle()
+  if (revisionError || !trainerRow) throw new WindowSyncError(revisionError ?? { code: 'P0002', message: 'trainer_not_found' })
+  const revision = Number((trainerRow as { availability_revision: number | string }).availability_revision)
 
   const [{ data: weeklyData, error: weeklyError }, { data: overrideData, error: overrideError }, { data: slotData, error: slotError }] =
     await Promise.all([
@@ -225,9 +255,23 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
       // reservado). Decide si hay que CERRAR (con reserva) o se puede
       // borrar sin más (sin reserva) cuando el patrón ya no lo quiere.
       const hasLiveReservation = (s: ExistingSlotRow) => Boolean((s.reservations ?? []).find((r) => reservationHoldsSlot(r.status)))
+      // Cualquier fila en reservations, viva o no: una ventana así NUNCA se
+      // borra (con CASCADE se llevaría el historial; con RESTRICT, 013, la
+      // base lo rechaza).
+      const hasAnyReservation = (s: ExistingSlotRow) => (s.reservations ?? []).length > 0
+      // Retirada: cerrada por el generador sin reserva viva, pero con
+      // historial. Cuenta como libre (se puede reabrir y reutilizar).
+      const isRetired = (s: ExistingSlotRow) => s.status === 'blocked' && !hasLiveReservation(s) && hasAnyReservation(s)
+      // Quitar una ventana que sobra: borrar si no tiene ninguna reserva; si
+      // tiene historial, cerrarla.
+      const retire = (s: ExistingSlotRow) => {
+        if (!hasAnyReservation(s)) toDelete.push(s.id)
+        else if (s.status !== 'blocked') toClose.push(s.id)
+      }
 
-      const occupied = pattern.filter(occupiedOf)
-      const free = pattern.filter((s) => !occupiedOf(s))
+      const occupied = pattern.filter((s) => occupiedOf(s) && !isRetired(s))
+      // Las no retiradas primero: son las preferidas para conservar/actualizar.
+      const free = pattern.filter((s) => !occupiedOf(s) || isRetired(s)).sort((a, b) => Number(isRetired(a)) - Number(isRetired(b)))
 
       if (occupied.length > 0) {
         keptOccupied += occupied.length
@@ -236,17 +280,16 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
 
       if (!wanted) {
         // Nada del patrón quiere esta clave hoy: toda fila libre sobra.
-        for (const s of free) toDelete.push(s.id)
+        for (const s of free) retire(s)
         // Las "ocupadas": si de verdad tienen una reserva viva, se cierran
         // (status 'blocked') para dejar de ofrecer el resto del hueco, sin
-        // tocar la reserva. Si solo estaban cerradas por un `blocked`
-        // anterior y ya no tienen ninguna reserva viva, no hay nada que
-        // conservar: se borran igual que cualquier hueco libre.
+        // tocar la reserva. Si solo estaban cerradas por otro motivo y no
+        // tienen ninguna reserva viva, sobran como una libre.
         for (const s of occupied) {
           if (hasLiveReservation(s)) {
             if (s.status !== 'blocked') toClose.push(s.id)
           } else {
-            toDelete.push(s.id)
+            retire(s)
           }
         }
         continue
@@ -267,7 +310,8 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
       if (exactExists) {
         existingKeysSeen.add(key)
         for (const s of free) {
-          if (s.end_time !== wanted.end_time) toDelete.push(s.id)
+          if (s.end_time !== wanted.end_time) retire(s)
+          else if (isRetired(s)) toReopen.push(s.id)
         }
         continue
       }
@@ -278,8 +322,9 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
       if (representative) {
         existingKeysSeen.add(key)
         toUpdateEndTime.push({ id: representative.id, end_time: wanted.end_time })
+        if (isRetired(representative)) toReopen.push(representative.id)
         for (const s of free) {
-          if (s.id !== representative.id) toDelete.push(s.id)
+          if (s.id !== representative.id) retire(s)
         }
       }
       // Si no hay ninguna libre (solo ocupadas o ninguna), se deja que el
@@ -307,52 +352,84 @@ export async function generateSlotsForTrainer(supabase: SupabaseClient, trainerI
     cursor = addDays(cursor, 1)
   }
 
-  if (toInsert.length > 0) {
-    const { error } = await supabase.from('availability_slots').insert(
-      toInsert.map((slot) => ({
-        ...slot,
-        status: 'available',
-        current_bookings: 0,
-        max_capacity: 1,
-        generated_by_pattern: true,
-        created_at: new Date().toISOString(),
-      }))
-    )
-    if (error) throw new Error(`INSERT failed (${toInsert.length} rows): ${error.message}. sample=${JSON.stringify(toInsert.slice(0,3))}`)
+  // Todo el plan en UNA transacción (migrations/014, apply_window_plan): o se
+  // aplica entero o no cambia nada. Antes eran cinco escrituras sueltas y un
+  // fallo a mitad dejaba publicadas horas que el entrenador había quitado.
+  let result: { data: unknown; error: { code?: string; message?: string } | null }
+  try {
+    result = await supabase.rpc(WINDOW_PLAN_FUNCTION, {
+      p_trainer_id: trainerId,
+      p_plan: { insert: toInsert, delete: toDelete, update_end: toUpdateEndTime, close: toClose, reopen: toReopen },
+      p_revision: revision,
+    })
+  } catch (thrown) {
+    // La llamada salió y no hay respuesta: la transacción pudo confirmarse.
+    throw new WindowSyncError({ message: thrown instanceof Error ? thrown.message : String(thrown) }, { afterSend: true })
   }
+  const { data, error } = result
+  if (error) throw new WindowSyncError(error, { afterSend: true })
+  const applied = (data ?? {}) as Partial<Record<'created' | 'removed' | 'kept' | 'closed' | 'shrink_blocked' | 'reopened', number>>
 
-  if (toDelete.length > 0) {
-    const { error } = await supabase.from('availability_slots').delete().in('id', toDelete)
-    if (error) throw new Error(`DELETE failed (${toDelete.length} rows): ${error.message}`)
+  return {
+    created: applied.created ?? 0,
+    removed: applied.removed ?? 0,
+    keptOccupied,
+    closed: (applied.closed ?? 0) + (applied.shrink_blocked ?? 0),
+    reopened: applied.reopened ?? 0,
+    keptReferenced: applied.kept ?? 0,
   }
+}
 
-  for (const update of toUpdateEndTime) {
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ end_time: update.end_time, updated_at: new Date().toISOString() })
-      .eq('id', update.id)
-    if (error) throw new Error(`UPDATE failed id=${update.id} end_time=${update.end_time}: ${error.message}`)
+export const WINDOW_PLAN_FUNCTION = 'apply_window_plan'
+
+/**
+ * Rechazos de apply_window_plan con evidencia fiable (su propio
+ * identificador + código): la transacción se deshizo. Ver
+ * lib/supabase/error-codes.ts.
+ */
+export const WINDOW_PLAN_REJECTIONS: RejectionEvidence[] = [
+  { code: 'P0001', marker: 'window_plan_stale' },
+  { code: '42501', marker: 'window_plan_foreign_row' },
+  { code: '22023', marker: 'window_plan_invalid' },
+  // La función (o su firma con revisión, 016) no existe: nada se ejecutó.
+  { code: 'PGRST202', marker: 'apply_window_plan' },
+  { code: '42883', marker: 'apply_window_plan' },
+]
+
+/**
+ * La sincronización no se ha aplicado (nada ha cambiado en las ventanas).
+ * `missingMigration`: la 014 no está en la base (o PostgREST no ha recargado
+ * el esquema). No hay camino alternativo no atómico.
+ */
+export class WindowSyncError extends Error {
+  readonly code: string | null
+  readonly missingMigration: boolean
+  /** El plan se calculó con un horario que ya cambió (016): no se aplicó nada; se puede recalcular. */
+  readonly stale: boolean
+  /**
+   * Resultado no confirmado: el error llegó DESPUÉS de mandar el plan y no
+   * es uno de los rechazos con evidencia fiable (WINDOW_PLAN_REJECTIONS).
+   * Un código con formato válido no basta: puede venir de un proxy.
+   */
+  readonly outcomeUnknown: boolean
+  constructor(error: { code?: string; message?: string }, options: { afterSend?: boolean } = {}) {
+    // PGRST202 / 42883: falta la función (014/016) o su firma nueva (016);
+    // 42703: falta trainers.availability_revision (016).
+    const afterSend = Boolean(options.afterSend)
+    const text = `${error.message ?? ''}`
+    // Antes de mandar el plan, 42703 = falta trainers.availability_revision
+    // (016). Después, solo "no existe apply_window_plan" (014/016).
+    const missingMigration =
+      (!afterSend && error.code === '42703') ||
+      ((error.code === 'PGRST202' || error.code === '42883') && text.includes('apply_window_plan'))
+    const stale = isConfirmedRejection(error, [{ code: 'P0001', marker: 'window_plan_stale' }])
+    super(missingMigration ? 'Faltan las migraciones 014/016 (apply_window_plan)' : `apply_window_plan falló (${error.code ?? 'sin código'}): ${error.message ?? ''}`)
+    this.name = 'WindowSyncError'
+    this.code = error.code ?? null
+    this.missingMigration = missingMigration
+    this.stale = stale
+    this.outcomeUnknown = afterSend && !isConfirmedRejection(error, WINDOW_PLAN_REJECTIONS)
   }
-
-  if (toClose.length > 0) {
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ status: 'blocked', updated_at: new Date().toISOString() })
-      .in('id', toClose)
-    if (error) throw new Error(`UPDATE (blocked) failed (${toClose.length} rows): ${error.message}`)
-  }
-
-  if (toReopen.length > 0) {
-    // 'available' de partida; refreshAllWindows (llamado justo después en
-    // la ruta) recalcula si de verdad queda `available` o `full`.
-    const { error } = await supabase
-      .from('availability_slots')
-      .update({ status: 'available', updated_at: new Date().toISOString() })
-      .in('id', toReopen)
-    if (error) throw new Error(`UPDATE (reopen) failed (${toReopen.length} rows): ${error.message}`)
-  }
-
-  return { created: toInsert.length, removed: toDelete.length, keptOccupied, closed: toClose.length, reopened: toReopen.length }
 }
 
 function addDays(date: Date, days: number): Date {

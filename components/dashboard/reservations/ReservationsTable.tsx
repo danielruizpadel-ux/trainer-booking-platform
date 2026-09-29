@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { TrainerReservation } from '@/lib/reservations/queries'
 import {
-  formatDayShort,
   formatDuration,
   formatTime,
   normalizeForSearch,
@@ -12,7 +11,9 @@ import {
   type ReservationTab,
 } from '@/lib/reservations/format'
 import { StatusBadge } from './StatusBadge'
+import { formatDayShortEn } from '@/lib/booking/format-en'
 import { formatRM } from '@/lib/reservations/pricing'
+import { playersLabel } from './ReservationClientInfo'
 import { ReservationRowActions } from './ReservationRowActions'
 import { ReservationMobileCard } from './ReservationMobileCard'
 
@@ -25,15 +26,15 @@ interface ReservationsTableProps {
 }
 
 const TABS: Array<{ id: ReservationTab; label: string }> = [
-  { id: 'pending', label: 'Pendientes' },
-  { id: 'confirmed', label: 'Confirmadas' },
-  { id: 'cancelled', label: 'Canceladas' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'confirmed', label: 'Confirmed' },
+  { id: 'cancelled', label: 'Cancelled' },
 ]
 
 const EMPTY_TEXT: Record<ReservationTab, string> = {
-  pending: 'Nada pendiente. Todo lo que te han pedido está decidido.',
-  confirmed: 'Todavía no hay clases confirmadas.',
-  cancelled: 'No hay reservas canceladas ni pendientes de reprogramar.',
+  pending: 'Nothing pending. Every request has been answered.',
+  confirmed: 'No confirmed classes yet.',
+  cancelled: 'No cancelled bookings or bookings waiting for a new time.',
 }
 
 /**
@@ -86,7 +87,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
           {leading}
-          <div role="tablist" aria-label="Estado" className="flex gap-0 sm:gap-1 border-b border-gray-100 -mb-px overflow-x-auto">
+          <div role="tablist" aria-label="Status" className="flex gap-0 sm:gap-1 border-b border-gray-100 -mb-px overflow-x-auto">
           {TABS.map(({ id, label }) => {
             const active = tab === id
             return (
@@ -113,7 +114,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
         </div>
 
         <label className="relative block md:w-72">
-          <span className="sr-only">Buscar por nombre de cliente</span>
+          <span className="sr-only">Search by client name</span>
           <svg
             width="16"
             height="16"
@@ -133,7 +134,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar cliente…"
+            placeholder="Search client…"
             className="h-10 w-full rounded-xl bg-white pl-10 pr-4 text-sm text-gray-900 placeholder:text-gray-400 ring-1 ring-inset ring-gray-200 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-150"
           />
         </label>
@@ -146,19 +147,19 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
       ) : (
         <>
           {/* Tabla (lg+) */}
-          <div className="hidden lg:block bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
+          <div className="hidden xl:block bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50/50 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                    <Th>Cliente</Th>
-                    <Th>Contacto</Th>
-                    <Th>Fecha</Th>
-                    <Th>Hora</Th>
-                    <Th>Duración</Th>
-                    <Th className="text-right">Precio</Th>
-                    <Th>Estado</Th>
-                    <Th className="text-right">Acciones</Th>
+                    <Th>Client</Th>
+                    <Th>Contact</Th>
+                    <Th>Date</Th>
+                    <Th>Time</Th>
+                    <Th>Duration</Th>
+                    <Th className="text-right">Price</Th>
+                    <Th>Status</Th>
+                    <Th className="text-right">Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +171,20 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
                         highlightId === r.id ? 'bg-blue-50/70' : 'hover:bg-gray-50/50'
                       }`}
                     >
-                      <Td className="font-medium text-gray-900 whitespace-nowrap">{r.client_name}</Td>
+                      <Td>
+                        <p className="font-medium text-gray-900 whitespace-nowrap">{r.client_name}</p>
+                        <p className="mt-0.5 text-xs text-gray-500 whitespace-nowrap">
+                          {playersLabel(r.player_count)}
+                          {r.client_message && (
+                            <span title="The client left a message (open Edit)" className="ml-1.5 inline-flex items-center gap-1 text-blue-600">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                              </svg>
+                              Message
+                            </span>
+                          )}
+                        </p>
+                      </Td>
                       <Td>
                         <div className="flex flex-col gap-0.5 text-gray-600">
                           <a
@@ -188,7 +202,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
                         </div>
                       </Td>
                       <Td className="whitespace-nowrap text-gray-900">
-                        {r.slot ? formatDayShort(r.slot.session_date) : <span className="text-gray-400">—</span>}
+                        {r.slot ? formatDayShortEn(r.slot.session_date) : <span className="text-gray-400">—</span>}
                       </Td>
                       <Td className="whitespace-nowrap tabular-nums text-gray-900">
                         {reservationRangeOf(r) ? formatTime(reservationRangeOf(r)!.start_time) : '—'}
@@ -200,7 +214,7 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
                         {r.price !== null && r.price !== undefined ? formatRM(r.price) : <span className="text-gray-400 font-medium">—</span>}
                       </Td>
                       <Td>
-                        <StatusBadge status={r.status} />
+                        <StatusBadge status={r.status} locale="en" />
                       </Td>
                       <Td className="text-right">
                         <div className="flex justify-end">
@@ -214,8 +228,8 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
             </div>
           </div>
 
-          {/* Tarjetas (móvil y tablet) */}
-          <div className="lg:hidden flex flex-col gap-4">
+          {/* Tarjetas (móvil, tablet y portátil estrecho: la tabla de 8 columnas no cabe por debajo de xl) */}
+          <div className="xl:hidden flex flex-col gap-4">
             {rows.map((r) => (
               <ReservationMobileCard key={r.id} reservation={r} highlighted={highlightId === r.id} />
             ))}
@@ -227,9 +241,9 @@ export function ReservationsTable({ reservations, leading, focus = null }: Reser
 }
 
 function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <th scope="col" className={`px-4 py-3 font-semibold ${className}`}>{children}</th>
+  return <th scope="col" className={`px-3 py-3 font-semibold ${className}`}>{children}</th>
 }
 
 function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-4 ${className}`}>{children}</td>
+  return <td className={`px-3 py-4 ${className}`}>{children}</td>
 }

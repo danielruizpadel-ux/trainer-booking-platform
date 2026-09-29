@@ -58,6 +58,7 @@ export function AvailabilityView() {
         </p>
       )}
 
+      {/* Los precios viven en Perfil → Public pricing (qué vende); aquí, cuándo trabaja. */}
       <div className="mb-6">
         <DurationsCard />
       </div>

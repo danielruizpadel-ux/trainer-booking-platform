@@ -1,79 +1,37 @@
-'use client'
+import type { Metadata } from 'next'
+import { LoginForm } from '@/components/dashboard/LoginForm'
+import { safeAdminNext } from '@/lib/auth/admin-paths'
 
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+export const metadata: Metadata = {
+  title: 'Acceso de administración',
+  robots: { index: false, follow: false },
+}
 
-export default function AdminLogin() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+interface AdminLoginPageProps {
+  searchParams: Promise<{ error?: string; next?: string }>
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setIsLoading(true)
-
-    try {
-      // TODO: Implement admin authentication
-      console.log('Login attempt with:', { email, password })
-    } catch (err) {
-      setError('Authentication failed')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+/**
+ * Login de /admin: el mismo acceso de la app (enlace mágico o Google, con la
+ * sesión de Supabase Auth). Entrar NO da permiso: después cada página y cada
+ * ruta de /api/admin comprueba la tabla `admins` (lib/auth/current-admin.ts).
+ */
+export default async function AdminLoginPage({ searchParams }: AdminLoginPageProps) {
+  const { error, next } = await searchParams
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
+    <main className="min-h-screen bg-gray-50/50 flex items-center justify-center px-4 sm:px-6 py-16">
       <div className="w-full max-w-md">
-        <div className="rounded-lg border border-gray-200 bg-white p-8">
-          <h1 className="text-3xl font-bold text-center mb-8">Admin Login</h1>
+        <div className="mb-8 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Administración</p>
+          <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Entra en tu cuenta</h1>
+          <p className="mt-1.5 text-gray-500">Solo para cuentas con permiso de administrador.</p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
-              <Input
-                type="email"
-                placeholder="admin@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Password</label>
-              <Input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-                <p className="text-sm text-destructive">{error}</p>
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? 'Logging in...' : 'Login'}
-            </Button>
-          </form>
-
-          <p className="text-center text-sm text-gray-500 mt-6">
-            Demo credentials: admin@example.com / password
-          </p>
+        <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-6 sm:p-8">
+          <LoginForm initialError={error ?? null} next={safeAdminNext(next ?? null)} callbackPath="/admin/auth/callback" />
         </div>
       </div>
-    </div>
+    </main>
   )
 }

@@ -307,6 +307,9 @@ function toTrainerReservation(r: NonNullable<PackageSession['reservation']>): Tr
     duration_minutes: r.duration_minutes,
     proposal_token: null,
     rescheduled_from_id: null,
+    player_count: r.player_count ?? 1,
+    client_message: r.client_message ?? null,
+    whatsapp_opt_in: r.whatsapp_opt_in ?? null,
     slot: r.slot,
   }
 }

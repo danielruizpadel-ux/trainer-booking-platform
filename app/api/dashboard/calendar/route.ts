@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
  * Una ventana cerrada (full/blocked) no tiene tramos libres.
  */
 interface SlotRow extends WindowRow {
-  reservations: Array<{ id: string; client_name: string; status: string | null; start_time: string | null; end_time: string | null; duration_minutes: number | null }> | null
+  reservations: Array<{ id: string; client_name: string; status: string | null; start_time: string | null; end_time: string | null; duration_minutes: number | null; player_count: number | null }> | null
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseServerClient()
     const { data, error } = await supabase
       .from('availability_slots')
-      .select(WINDOW_SELECT.replace('reservations ( id, status, start_time, end_time )', 'reservations ( id, client_name, status, start_time, end_time, duration_minutes )'))
+      .select(WINDOW_SELECT.replace('reservations ( id, status, start_time, end_time )', 'reservations ( id, client_name, status, start_time, end_time, duration_minutes, player_count )'))
       .eq('trainer_id', trainer.id)
       .gte('session_date', start)
       .lte('session_date', end)
@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
           duration_minutes: r.duration_minutes ?? 60,
           client_name: r.client_name,
           status: r.status,
+          player_count: r.player_count ?? null,
           kind: isRescheduleProposed(r.status) ? 'proposed' : isAwaitingConfirmation(r.status) ? 'pending' : 'confirmed',
         })
       }

@@ -82,12 +82,108 @@ export async function loadWindow(supabase: SupabaseClient, windowId: string): Pr
  * hora real dos veces. Solo para comprobar solapamiento (fitsInWindow /
  * bookableStarts) — el conteo `current_bookings` de una fila sigue siendo
  * el suyo propio, ver refreshWindowStatus.
+ *
+ * Falla cerrado: null si la consulta falla. Antes devolvía [] y un error de
+ * red se leía como "día vacío", dejando reservar encima de otra.
  */
-async function loadTakenForDate(supabase: SupabaseClient, trainerId: string, date: string): Promise<Array<TimeRange & { id: string }>> {
+async function loadTakenForDate(supabase: SupabaseClient, trainerId: string, date: string): Promise<Array<TimeRange & { id: string }> | null> {
   const { data, error } = await supabase.from('availability_slots').select(WINDOW_SELECT).eq('trainer_id', trainerId).eq('session_date', date)
-  if (error || !data) return []
+  if (error || !data) return null
   const rows = data as unknown as Array<WindowRow & { reservations: WindowReservation[] | null }>
   return rows.flatMap((row) => toLoadedWindow(row).taken)
+}
+
+/**
+ * La restricción `reservations_no_overlap` (migrations/008) rechaza con 23P01
+ * una reserva viva que se solape con otra del mismo entrenador. Es la red de
+ * seguridad cuando dos peticiones pasan a la vez la comprobación de arriba.
+ */
+export const OVERLAP_MESSAGE = 'Esa franja se acaba de ocupar. Elige otra hora.'
+
+export const OVERLAP_CONSTRAINT = 'reservations_no_overlap'
+
+/**
+ * Solo el 23P01 de ESA restricción es "franja ocupada" (409). Otro 23P01
+ * (una exclusión que se añada en el futuro) o cualquier otro error sigue
+ * siendo un fallo de verdad (500) y se registra como tal.
+ */
+export function isOverlapError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23P01') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(OVERLAP_CONSTRAINT)
+}
+
+/**
+ * Migración 015: la base rechaza (23514) una reserva viva que quede fuera
+ * del horario vigente de su ventana (p. ej. porque la sincronización del
+ * horario la acortó entre la comprobación de la app y el insert).
+ */
+export const WINDOW_RANGE_CONSTRAINT = 'reservations_within_window'
+
+export function isWindowRangeError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(WINDOW_RANGE_CONSTRAINT)
+}
+
+/** "Esa franja ya no está disponible" (409): solape (008) o fuera de la ventana (015). */
+export function isSlotConflictError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  return isOverlapError(error) || isWindowRangeError(error)
+}
+
+/**
+ * Un crédito de paquete respalda como mucho una reserva viva (migración 019,
+ * índice único parcial). Su 23505 es "esa sesión de paquete ya tiene otra
+ * reserva activa" (409), no un fallo del servidor.
+ */
+export const CREDIT_TAKEN_MESSAGE = 'Esta sesión de paquete ya tiene otra reserva activa'
+
+export const CREDIT_CONSTRAINT = 'reservations_one_live_per_package_session'
+
+export function isCreditTakenError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23505') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(CREDIT_CONSTRAINT)
+}
+
+/**
+ * Una reserva de paquete cancelada o sin pista no se reactiva (migración 019,
+ * trigger reservations_package_no_revive): el crédito se vuelve a usar
+ * agendando desde el paquete. Lo lanza moveReservation al "revivirla".
+ */
+export const PACKAGE_REVIVE_MESSAGE =
+  'Esta reserva de paquete ya no ocupa su sesión. Agenda la sesión de nuevo desde el paquete.'
+
+export const PACKAGE_REVIVE_GUARD = 'reservations_package_no_revive'
+
+export function isPackageReviveError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(PACKAGE_REVIVE_GUARD)
+}
+
+/**
+ * Reserva anterior a la migración 019, muerta, que podría haber sido de un
+ * paquete y nadie ha clasificado todavía: está en cuarentena y no se
+ * reactiva (trigger reservations_legacy_quarantine) hasta clasificarla con
+ * classify_legacy_reservation desde el SQL Editor.
+ */
+export const LEGACY_UNCLASSIFIED_MESSAGE =
+  'Esta reserva es anterior al control de paquetes y falta comprobar si era de un paquete. Hasta entonces no se puede reactivar; crea una reserva nueva o pide que la clasifiquen.'
+
+export const LEGACY_UNCLASSIFIED_GUARD = 'reservations_legacy_unclassified'
+
+export function isLegacyUnclassifiedError(
+  error: { code?: string; message?: string; details?: string | null } | null | undefined
+): boolean {
+  if (error?.code !== '23514') return false
+  return `${error.message ?? ''} ${error.details ?? ''}`.includes(LEGACY_UNCLASSIFIED_GUARD)
 }
 
 export type WindowLookup =
@@ -127,6 +223,7 @@ export async function loadOwnedOpenWindow(
   if (!/^\d{2}:\d{2}$/.test(start)) return { ok: false, code: 'taken', message: 'Hora no válida' }
   const range: TimeRange = { start_time: start, end_time: fromMinutes(toMinutes(start) + durationMinutes) }
   const dateTaken = await loadTakenForDate(supabase, loaded.window.trainer_id, loaded.window.session_date)
+  if (!dateTaken) return { ok: false, code: 'db_error', message: 'No se pudo comprobar la disponibilidad' }
   const taken = dateTaken.filter((t) => t.id !== options.ignoreReservationId)
   if (!fitsInWindow(loaded.window, taken, range)) {
     return { ok: false, code: 'taken', message: 'Esa franja ya no está libre' }
@@ -154,6 +251,11 @@ export async function refreshWindowStatus(supabase: SupabaseClient, windowId: st
   // lo compara contra max_capacity, y contar ahí reservas de otras filas
   // cerraría de golpe ventanas que no tienen nada que ver.
   const dateTaken = await loadTakenForDate(supabase, window.trainer_id, window.session_date)
+  if (!dateTaken) {
+    // Sin saber qué hay ocupado no se reabre como `available`: se deja como está.
+    console.warn('No se pudo recalcular la ventana: fallo al leer las reservas del día')
+    return
+  }
   const hasRoom = bookableStarts(window, dateTaken, minDuration, gridStepFor(offered)).length > 0
 
   const { error } = await supabase

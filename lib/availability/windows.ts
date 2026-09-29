@@ -67,3 +67,46 @@ export function freeRanges(window: TimeRange, taken: TimeRange[]): TimeRange[] {
   if (cursor < end) result.push({ start_time: fromMinutes(cursor), end_time: fromMinutes(end) })
   return result
 }
+
+/**
+ * Solapamiento DENTRO de una misma selección (el carrito del checkout o el
+ * body de POST /api/reservations): dos sesiones del mismo día se solapan si
+ * sus rangos [inicio, inicio + duración) se cruzan. 12:00 y 12:30 de 60 min
+ * se solapan; 12:00 y 13:00 no (se tocan, no se pisan).
+ *
+ * Es la misma regla en el navegador (AvailabilityCalendar no deja elegir la
+ * hora) y en el servidor (la ruta rechaza la petición antes de mirar la
+ * disponibilidad). Las horas pueden venir como HH:MM o HH:MM:SS.
+ */
+export interface SelectedSession {
+  date: string
+  time: string
+}
+
+function sessionsOverlap(a: SelectedSession, b: SelectedSession, duration: number): boolean {
+  if (a.date !== b.date) return false
+  const aStart = toMinutes(a.time.slice(0, 5))
+  const bStart = toMinutes(b.time.slice(0, 5))
+  return aStart < bStart + duration && bStart < aStart + duration
+}
+
+/** ¿Pisa `candidate` alguna de las ya elegidas? (la propia hora, si ya está, no cuenta) */
+export function overlapsSelection(selected: SelectedSession[], candidate: SelectedSession, duration: number): boolean {
+  const time = candidate.time.slice(0, 5)
+  return selected.some(
+    (s) => !(s.date === candidate.date && s.time.slice(0, 5) === time) && sessionsOverlap(s, candidate, duration)
+  )
+}
+
+/** Primer par de sesiones que se solapan entre sí, o null. Incluye horas repetidas. */
+export function findSelectionOverlap(
+  sessions: SelectedSession[],
+  duration: number
+): [SelectedSession, SelectedSession] | null {
+  for (let i = 0; i < sessions.length; i++) {
+    for (let j = i + 1; j < sessions.length; j++) {
+      if (sessionsOverlap(sessions[i], sessions[j], duration)) return [sessions[i], sessions[j]]
+    }
+  }
+  return null
+}

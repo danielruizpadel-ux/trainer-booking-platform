@@ -102,7 +102,13 @@ export default function MonthView({
               {/* Indicador de disponibilidad / nº de sesiones elegidas */}
               {isSelected ? (
                 <span className="text-[10px] leading-none font-semibold">
-                  {count > 0 ? `${count}h` : '✓'}
+                  {count > 0 ? (
+                    `${count}h`
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
                 </span>
               ) : hasAvailability ? (
                 <span className="h-1 w-1 rounded-full bg-blue-500" />

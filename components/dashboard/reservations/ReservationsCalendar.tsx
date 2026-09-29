@@ -1,12 +1,24 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getMonday, parseDateStr, toDateStr } from '@/lib/dateUtils'
-import type { CalendarData, CalendarReservation, CalendarWindow, SlotPick } from '@/lib/reservations/calendar'
-import { bookableStarts, toMinutes, type TimeRange } from '@/lib/availability/windows'
+import type { CalendarData, CalendarReservation, CalendarWindow, RangeSelection, SlotPick } from '@/lib/reservations/calendar'
+import { fromMinutes, toMinutes, type TimeRange } from '@/lib/availability/windows'
+import { ONE_OFF_STEP, selectionFromPoints } from '@/lib/reservations/one-off-rules'
+import {
+  durationsFittingAt,
+  futureBookableStarts,
+  shortestDuration,
+  rangeState,
+  reservationKindLabel,
+  reservationSummary,
+  startAtMinute,
+  startsInRange,
+} from '@/lib/reservations/calendar-slots'
 import { durationLabel } from '@/lib/availability/durations'
 import { formatTime } from '@/lib/reservations/format'
-import { DurationPicker } from './DurationPicker'
+import MiniCalendarOverlay from '@/components/trainer/calendar/MiniCalendarOverlay'
 import { DaySlotPickerDialog } from './DaySlotPickerDialog'
 
 type Scale = 'week' | 'day'
@@ -16,6 +28,14 @@ interface ReservationsCalendarProps {
   mode: 'view' | 'select'
   /** view: clic en una reserva */
   onReservationClick?: (reservationId: string) => void
+  /**
+   * view: clic o toque en un hueco libre → franja con la hora bajo el puntero
+   * (solo inicios reservables: cabe la duración, no pisa reservas, no es
+   * pasado). Con teclado, Intro sobre el tramo abre la rejilla de horas.
+   * La franja lleva la duración más corta del entrenador; `fittingDurations`
+   * son las suyas que caben a esa hora (para elegir en "Nueva reserva").
+   */
+  onCreateAt?: (pick: SlotPick, fittingDurations: number[]) => void
   /** select: duración de la clase a colocar (60/90). Obligatoria en modo select. */
   duration?: number
   /** select: clic en una hora de inicio dentro de un tramo libre */
@@ -28,13 +48,36 @@ interface ReservationsCalendarProps {
   compact?: boolean
   /** Cambia cuando hay que recargar (p. ej. tras agendar) */
   refreshKey?: number
+  /**
+   * view: tramo elegido arrastrando con el ratón (fuera de las reservas) o,
+   * en táctil, con «Elegir tramo» y dos toques. Solo lo enseña; no guarda.
+   */
+  onSelectRange?: (selection: RangeSelection) => void
+  /** view: tramo elegido que sigue marcado (mientras su diálogo está abierto) */
+  selectedRange?: RangeSelection | null
 }
+
+interface Draft {
+  day: string
+  start: number
+  end: number
+}
+
+/** Píxeles de desplazamiento vertical antes de que un clic pase a ser arrastre. */
+const DRAG_THRESHOLD = 6
 
 const HOUR_PX = 48
 const MIN_HOUR = 8
 const MAX_HOUR = 21
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const EMPTY: CalendarData = { windows: [], reservations: [], durations: [60], step: 60 }
+
+interface OpenSummary {
+  reservation: CalendarReservation
+  anchor: HTMLElement
+  /** hover: ratón encima · focus: teclado · pin: toque en móvil (se queda hasta cerrar) */
+  via: 'hover' | 'focus' | 'pin'
+}
 
 interface OpenPicker {
   window: CalendarWindow
@@ -57,20 +100,33 @@ interface OpenPicker {
  *
  * En modo `select` la duración la controla el diálogo padre (prop
  * `duration`) y elegir una hora en el modal llama a `onSlotSelect`. En
- * modo `view` la duración la elige el propio entrenador con un
- * `DurationPicker` en la cabecera (si ofrece más de una), y el modal es
- * solo informativo: sirve para ver, filtrando por duración, qué horas
- * quedarían libres.
+ * modo `view` no hay selector de duración: lo reservable se calcula con la
+ * más corta que ofrece el entrenador (si no cabe ni esa, no se ofrece), y la
+ * duración se elige después en "Nueva reserva". Con `onCreateAt`
+ * (Resumen), un clic o toque en un tramo libre crea una clase a la hora bajo
+ * el puntero, y con teclado el modal de horas deja elegir; sin él, el modal
+ * es solo informativo.
+ *
+ * El texto del periodo abre un mini calendario (MiniCalendarOverlay, el del
+ * calendario de referencia): elegir un día lleva a su semana (o a ese día en
+ * la escala Día) y lo resalta en la cabecera, desplazándolo a la vista si la
+ * semana no cabe a lo ancho (móvil).
+ *
+ * Las reglas (qué inicios son reservables, qué hora corresponde a un clic, el
+ * resumen de una reserva) viven en lib/reservations/calendar-slots.ts.
  */
 export function ReservationsCalendar({
   mode,
   onReservationClick,
+  onCreateAt,
   duration = 60,
   onSlotSelect,
   selected = null,
   initialDate,
   compact = false,
   refreshKey = 0,
+  onSelectRange,
+  selectedRange = null,
 }: ReservationsCalendarProps) {
   const today = toDateStr(new Date())
   const [anchor, setAnchor] = useState<string>(initialDate ?? today)
@@ -79,14 +135,31 @@ export function ReservationsCalendar({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const cache = useRef(new Map<string, CalendarData>())
-  // Duración que el entrenador elige para FILTRAR su propio calendario en modo view.
-  const [viewDuration, setViewDuration] = useState<number>(60)
+  // Mini calendario del periodo y el día elegido en él (resaltado)
+  const [miniOpen, setMiniOpen] = useState(false)
+  const [picked, setPicked] = useState<string | null>(null)
+  const miniTriggerRef = useRef<HTMLButtonElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [openPicker, setOpenPicker] = useState<OpenPicker | null>(null)
+  const [summary, setSummary] = useState<OpenSummary | null>(null)
+  const hideTimer = useRef<number | undefined>(undefined)
+
+  const showSummary = useCallback((reservation: CalendarReservation, anchor: HTMLElement, via: OpenSummary['via']) => {
+    window.clearTimeout(hideTimer.current)
+    setSummary({ reservation, anchor, via })
+  }, [])
+  // Con un pequeño margen, para poder llevar el ratón hasta la tarjeta.
+  const hideSummary = useCallback((via: OpenSummary['via'], delay = 0) => {
+    window.clearTimeout(hideTimer.current)
+    const hide = () => setSummary((current) => (current && current.via === via ? null : current))
+    if (delay > 0) hideTimer.current = window.setTimeout(hide, delay)
+    else hide()
+  }, [])
 
   // En pantallas estrechas se arranca en Día; el usuario puede cambiarlo.
   useEffect(() => {
-    if (window.matchMedia('(max-width: 639px)').matches) setScale('day')
-  }, [])
+    if (compact || window.matchMedia('(max-width: 639px)').matches) setScale('day')
+  }, [compact])
 
   useEffect(() => {
     cache.current.clear()
@@ -104,6 +177,11 @@ export function ReservationsCalendar({
 
   const rangeStart = days[0]
   const rangeEnd = days[days.length - 1]
+
+  // Al cambiar de semana/día o recargar, el resumen abierto ya no apunta a nada.
+  useEffect(() => {
+    setSummary(null)
+  }, [rangeStart, rangeEnd, refreshKey])
 
   useEffect(() => {
     const key = `${rangeStart}_${rangeEnd}`
@@ -134,12 +212,17 @@ export function ReservationsCalendar({
     }
   }, [rangeStart, rangeEnd, refreshKey])
 
-  // Si la duración vista deja de estar entre las que ofrece el entrenador, usa la primera disponible.
+  // El día elegido en el mini calendario, a la vista: si la semana no cabe a
+  // lo ancho (columnas de 6.5rem en móvil), se centra su columna.
   useEffect(() => {
-    if (data.durations.length > 0 && !data.durations.includes(viewDuration)) {
-      setViewDuration(data.durations[0])
-    }
-  }, [data.durations, viewDuration])
+    const container = scrollRef.current
+    if (!picked || !container) return
+    const cell = container.querySelector<HTMLElement>(`[data-day="${picked}"]`)
+    if (!cell) return
+    const c = container.getBoundingClientRect()
+    const r = cell.getBoundingClientRect()
+    container.scrollLeft += r.left - c.left - (c.width - r.width) / 2
+  }, [picked, days])
 
   // Rejilla horaria: de 8 a 21 salvo que haya ventanas fuera.
   const [gridStart, gridEnd] = useMemo(() => {
@@ -155,6 +238,7 @@ export function ReservationsCalendar({
   const bodyHeight = hours.length * HOUR_PX
 
   function move(delta: number) {
+    setPicked(null)
     const d = parseDateStr(anchor)
     d.setDate(d.getDate() + delta * (scale === 'week' ? 7 : 1))
     setAnchor(toDateStr(d))
@@ -162,14 +246,122 @@ export function ReservationsCalendar({
 
   const windowsByDay = useMemo(() => groupBy(data.windows, (w) => w.session_date), [data.windows])
   const reservationsByDay = useMemo(() => groupBy(data.reservations, (r) => r.session_date), [data.reservations])
-  // En select la duración la manda el diálogo padre; en view la elige aquí el entrenador.
-  const effectiveDuration = mode === 'select' ? duration : viewDuration
+  // En select la duración la manda el diálogo padre; en view, la más corta
+  // del entrenador (lo que no admite ni esa no se presenta como reservable).
+  const effectiveDuration = mode === 'select' ? duration : shortestDuration(data.durations)
+  // En view, un hueco libre crea una clase si quien usa el calendario lo permite.
+  const canCreate = mode === 'view' && Boolean(onCreateAt)
+  const canSelectRange = mode === 'view' && Boolean(onSelectRange)
+  const label = rangeLabel(days, scale)
+
+  // ── Tramo arrastrado (ratón) o elegido con dos toques ──────────────────────
+  // Arrastre: solo con ratón y solo si el puntero se mueve DRAG_THRESHOLD px;
+  // un clic quieto sigue siendo el clic de siempre (crear en un tramo libre,
+  // abrir una reserva). Nunca empieza sobre una reserva. En táctil no se
+  // intercepta el gesto (el dedo sigue desplazando la rejilla): «Elegir
+  // tramo» pasa a un modo en el que el primer toque marca el inicio y el
+  // segundo el final. Todo se ajusta a celdas de 30 min.
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [tapMode, setTapMode] = useState(false)
+  const [tapStart, setTapStart] = useState<{ day: string; minute: number } | null>(null)
+  // Toque sobre una reserva en modo toques: se ignora y se avisa (ver onColumnClickCapture).
+  const [tapOnBooking, setTapOnBooking] = useState(false)
+  const suppressClick = useRef(false)
+  const endDrag = useRef<(() => void) | null>(null)
+  useEffect(() => () => endDrag.current?.(), [])
+  // Al cambiar de periodo, un toque de inicio pendiente ya no está a la vista.
+  useEffect(() => setTapStart(null), [rangeStart, rangeEnd])
+
+  const minuteAt = (clientY: number, column: HTMLElement) =>
+    gridStart * 60 + ((clientY - column.getBoundingClientRect().top) / HOUR_PX) * 60
+
+  function finishSelection(day: string, start: number, end: number) {
+    const taken = (reservationsByDay.get(day) ?? []).map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
+    onSelectRange?.({ session_date: day, start_time: fromMinutes(start), end_time: fromMinutes(end), taken })
+  }
+
+  function onColumnPointerDown(day: string, event: React.PointerEvent<HTMLDivElement>) {
+    suppressClick.current = false
+    if (!canSelectRange || tapMode || event.pointerType !== 'mouse' || event.button !== 0) return
+    if ((event.target as Element).closest('[data-reservation]')) return
+    const column = event.currentTarget
+    const origin = minuteAt(event.clientY, column)
+    const startY = event.clientY
+    let active = false
+    const selectionAt = (clientY: number) => selectionFromPoints(origin, minuteAt(clientY, column), gridStart * 60, gridEnd * 60)
+    const onMove = (e: PointerEvent) => {
+      if (!active && Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return
+      active = true
+      setDraft({ day, ...selectionAt(e.clientY) })
+    }
+    const onUp = (e: PointerEvent) => {
+      cleanup()
+      setDraft(null)
+      if (!active) return
+      // El clic que sigue a soltar no debe crear una clase ni abrir nada.
+      suppressClick.current = true
+      const sel = selectionAt(e.clientY)
+      finishSelection(day, sel.start, sel.end)
+    }
+    const onCancel = () => {
+      cleanup()
+      setDraft(null)
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      endDrag.current = null
+    }
+    endDrag.current?.()
+    endDrag.current = cleanup
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
+  function onColumnClickCapture(day: string, event: React.MouseEvent<HTMLDivElement>) {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    // El teclado (detail 0) va como siempre, también en modo toques.
+    if (!tapMode || event.detail === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    // Modo toques: tocar una reserva no hace nada (ni abre su resumen o su
+    // detalle, ni cuenta como inicio o fin); solo se avisa. Para abrirla, se
+    // sale del modo con «Cancelar tramo».
+    if ((event.target as Element).closest('[data-reservation]')) {
+      setTapOnBooking(true)
+      return
+    }
+    setTapOnBooking(false)
+    // Centro de la celda de 30 min tocada: así el tramo incluye esa celda en las dos direcciones.
+    const minute = Math.floor(minuteAt(event.clientY, event.currentTarget) / ONE_OFF_STEP) * ONE_OFF_STEP + ONE_OFF_STEP / 2
+    if (!tapStart || tapStart.day !== day) {
+      setTapStart({ day, minute })
+      return
+    }
+    const sel = selectionFromPoints(tapStart.minute, minute, gridStart * 60, gridEnd * 60)
+    setTapStart(null)
+    setTapMode(false)
+    finishSelection(day, sel.start, sel.end)
+  }
+
+  function createAt(w: CalendarWindow, start: string) {
+    const taken = (reservationsByDay.get(w.session_date) ?? []).map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
+    const fitting = durationsFittingAt(w, taken, data.durations, data.step, start)
+    onCreateAt?.(pickOf(w, start, effectiveDuration), fitting.length > 0 ? fitting : [effectiveDuration])
+  }
 
   return (
     <div className="flex flex-col gap-4">
       {/* Navegación */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 max-w-full items-center gap-2">
           <div className="inline-flex rounded-xl ring-1 ring-inset ring-gray-200 bg-white overflow-hidden">
             <NavButton label={scale === 'week' ? 'Semana anterior' : 'Día anterior'} onClick={() => move(-1)}>
               <path d="m15 18-6-6 6-6" />
@@ -180,20 +372,75 @@ export function ReservationsCalendar({
           </div>
           <button
             type="button"
-            onClick={() => setAnchor(today)}
+            onClick={() => {
+              setPicked(null)
+              setAnchor(today)
+            }}
             className="h-9 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
             Hoy
           </button>
-          <p className="text-sm font-semibold text-gray-900">{rangeLabel(days, scale)}</p>
+          {compact ? (
+            <p className="text-sm font-semibold text-gray-900">{label}</p>
+          ) : (
+            <div className="relative min-w-0 shrink">
+              <button
+                ref={miniTriggerRef}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={miniOpen}
+                aria-label={`${label}. Elegir fecha`}
+                onClick={() => setMiniOpen((open) => !open)}
+                className="min-h-9 max-w-full px-2 -mx-2 py-1 rounded-lg text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 inline-flex items-center gap-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                {/* En móvil (escala Día) la fecha larga pasa a dos líneas en vez de desbordar. */}
+                <span className="min-w-0">{label}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 text-gray-400 transition-transform ${miniOpen ? 'rotate-180' : ''}`}>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <MiniCalendarOverlay
+                isOpen={miniOpen}
+                onClose={() => setMiniOpen(false)}
+                triggerRef={miniTriggerRef}
+                currentDate={parseDateStr(picked ?? anchor)}
+                onDateSelect={(d) => {
+                  const day = toDateStr(d)
+                  setAnchor(day)
+                  setPicked(day)
+                }}
+              />
+            </div>
+          )}
+          {/* Para lectores de pantalla: el periodo que se ve tras navegar */}
+          <p className="sr-only" aria-live="polite">
+            {picked ? `${label}. Día elegido: ${dayLabelOf(picked)}` : label}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {mode === 'view' && data.durations.length > 1 && (
-            <DurationPicker durations={data.durations} value={viewDuration} onChange={setViewDuration} />
+          {canSelectRange && (
+            <button
+              type="button"
+              aria-pressed={tapMode}
+              onClick={() => {
+                setTapMode((on) => !on)
+                setTapStart(null)
+                setTapOnBooking(false)
+                // Un resumen fijado por toque no debe quedarse abierto (con su «Ver detalle») mientras se elige.
+                setSummary(null)
+              }}
+              className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                tapMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-500 ring-1 ring-inset ring-gray-200 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v4M12 17v4M5 10h14M5 14h14" />
+              </svg>
+              {tapMode ? 'Cancelar tramo' : 'Elegir tramo'}
+            </button>
           )}
-
-          <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
+          {!compact && <div role="group" aria-label="Escala" className="inline-flex rounded-xl bg-gray-100 p-1">
             {(['day', 'week'] as Scale[]).map((value) => (
               <button
                 key={value}
@@ -207,7 +454,7 @@ export function ReservationsCalendar({
                 {value === 'day' ? 'Día' : 'Semana'}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -217,12 +464,21 @@ export function ReservationsCalendar({
         </p>
       )}
 
+      {tapMode && (
+        <p aria-live="polite" className="-mt-1 text-sm text-blue-700">
+          {tapOnBooking && 'Eso es una reserva: no puede ser inicio ni fin del tramo. '}
+          {tapStart
+            ? `Inicio: ${fromMinutes(tapStart.minute - ONE_OFF_STEP / 2)}. Toca dónde termina (en el mismo día).`
+            : 'Toca en el calendario la hora de inicio del tramo.'}
+        </p>
+      )}
+
       {/* Rejilla */}
       <div
         className={`bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden ${loading ? 'opacity-60' : ''} transition-opacity`}
         aria-busy={loading}
       >
-        <div className={`${compact ? 'max-h-[26rem]' : 'max-h-[34rem]'} overflow-auto`}>
+        <div ref={scrollRef} className={`${compact ? 'max-h-[26rem]' : 'max-h-[34rem]'} overflow-auto`}>
           <div
             className="grid min-w-0"
             style={{ gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(${scale === 'week' ? '6.5rem' : '0'}, 1fr))` }}
@@ -231,9 +487,14 @@ export function ReservationsCalendar({
             <div className="sticky top-0 z-10 bg-white border-b border-gray-100" />
             {days.map((day, i) => {
               const isToday = day === today
+              const isPicked = day === picked
               const d = parseDateStr(day)
               return (
-                <div key={day} className="sticky top-0 z-10 bg-white border-b border-l border-gray-100 px-2 py-2 text-center">
+                <div
+                  key={day}
+                  data-day={day}
+                  className={`sticky top-0 z-10 border-b border-l border-gray-100 px-2 py-2 text-center ${isPicked ? 'bg-blue-50 ring-2 ring-inset ring-blue-500' : 'bg-white'}`}
+                >
                   <p className={`text-xs font-semibold uppercase tracking-wider ${isToday ? 'text-blue-600' : 'text-gray-400'}`}>
                     {scale === 'week' ? DAY_NAMES[i] : DAY_NAMES[(d.getDay() + 6) % 7]}
                   </p>
@@ -255,7 +516,9 @@ export function ReservationsCalendar({
             {days.map((day) => (
               <div
                 key={day}
-                className="relative border-l border-gray-100"
+                className={`relative border-l border-gray-100 ${canSelectRange ? 'select-none' : ''}`}
+                onPointerDown={canSelectRange ? (event) => onColumnPointerDown(day, event) : undefined}
+                onClickCapture={canSelectRange ? (event) => onColumnClickCapture(day, event) : undefined}
                 style={{
                   height: bodyHeight,
                   // "Sin abrir": fondo rayado; las líneas horizontales marcan las horas
@@ -277,41 +540,99 @@ export function ReservationsCalendar({
                     duration={effectiveDuration}
                     step={data.step}
                     selected={selected}
+                    canCreate={canCreate}
                     onOpenPicker={(range, starts) => setOpenPicker({ window: w, range, starts })}
+                    onCreateAt={(start) => createAt(w, start)}
                   />
                 ))}
                 {(reservationsByDay.get(day) ?? []).map((r) => (
-                  <ReservationBlock key={r.id} reservation={r} mode={mode} gridStart={gridStart} onReservationClick={onReservationClick} />
+                  <ReservationBlock
+                    key={r.id}
+                    reservation={r}
+                    mode={mode}
+                    wide={scale === 'day'}
+                    gridStart={gridStart}
+                    pinned={summary?.via === 'pin' && summary.reservation.id === r.id}
+                    onReservationClick={
+                      onReservationClick &&
+                      ((id) => {
+                        setSummary(null)
+                        onReservationClick(id)
+                      })
+                    }
+                    onShowSummary={showSummary}
+                    onHideSummary={hideSummary}
+                  />
                 ))}
+                {draft?.day === day && <SelectionBox start={draft.start} end={draft.end} gridStart={gridStart} />}
+                {!draft && selectedRange?.session_date === day && (
+                  <SelectionBox start={toMinutes(selectedRange.start_time)} end={toMinutes(selectedRange.end_time)} gridStart={gridStart} />
+                )}
+                {tapMode && tapStart?.day === day && (
+                  <SelectionBox start={tapStart.minute - ONE_OFF_STEP / 2} end={tapStart.minute + ONE_OFF_STEP / 2} gridStart={gridStart} label="Inicio" />
+                )}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <Legend mode={mode} />
+      <Legend mode={mode} canCreate={canCreate} />
+      {canSelectRange && (
+        <p className="-mt-2 text-xs text-gray-500">
+          Para un tramo fuera de tu horario, arrástralo con el ratón o usa «Elegir tramo». No se guarda nada hasta que lo confirmes.
+        </p>
+      )}
+
+      {summary && (
+        <ReservationSummaryCard
+          summary={summary}
+          onKeep={() => window.clearTimeout(hideTimer.current)}
+          onLeave={() => hideSummary('hover', 120)}
+          onClose={() => setSummary(null)}
+          onOpenDetail={
+            onReservationClick &&
+            (() => {
+              const id = summary.reservation.id
+              setSummary(null)
+              onReservationClick(id)
+            })
+          }
+        />
+      )}
 
       {openPicker && (
         <DaySlotPickerDialog
           dayLabel={dayLabelOf(openPicker.window.session_date)}
           rangeLabel={`${openPicker.range.start_time} – ${openPicker.range.end_time}`}
-          durationLabel={durationLabel(effectiveDuration)}
+          durationLabel={mode === 'view' && data.durations.length > 1 ? `${durationLabel(effectiveDuration)} o más` : durationLabel(effectiveDuration)}
           starts={openPicker.starts}
           selectedStart={mode === 'select' ? (selected?.start_time ?? null) : null}
-          interactive={mode === 'select'}
+          interactive={mode === 'select' || canCreate}
           onSelect={(s) => {
-            onSlotSelect?.({
-              window_id: openPicker.window.id,
-              session_date: openPicker.window.session_date,
-              start_time: s,
-              end_time: addMin(s, effectiveDuration),
-              duration_minutes: effectiveDuration,
-            })
             setOpenPicker(null)
+            if (mode === 'select') onSlotSelect?.(pickOf(openPicker.window, s, effectiveDuration))
+            else createAt(openPicker.window, s)
           }}
           onClose={() => setOpenPicker(null)}
         />
       )}
+    </div>
+  )
+}
+
+const CLOSED_BY_HAND = new Set(['blocked', 'cancelled', 'canceled'])
+
+/** Tramo que se está arrastrando o ya elegido (solo visual; no recibe el puntero). */
+function SelectionBox({ start, end, gridStart, label }: { start: number; end: number; gridStart: number; label?: string }) {
+  const range = { start_time: fromMinutes(start), end_time: fromMinutes(end) }
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-x-1 z-[2] rounded-lg border-2 border-blue-600 bg-blue-600/10 px-2 py-1 text-xs font-semibold leading-tight text-blue-800 tabular-nums"
+      style={{ top: topOf(range.start_time, gridStart) + 1, height: heightOf(range) }}
+    >
+      {label ? `${label} ${range.start_time}` : `${range.start_time} – ${range.end_time}`}
     </div>
   )
 }
@@ -326,7 +647,16 @@ function heightOf(range: TimeRange) {
   return Math.max(22, ((toMinutes(range.end_time) - toMinutes(range.start_time)) / 60) * HOUR_PX - 2)
 }
 
-/** Fondo de la ventana + un bloque clicable por cada tramo libre (abre DaySlotPickerDialog). */
+/**
+ * Fondo de la ventana + un bloque por cada tramo libre.
+ *
+ * Un tramo solo se presenta como reservable si le queda algún inicio para la
+ * duración activa (cabe, no pisa reservas, no ha pasado); si no, se pinta
+ * apagado como "No cabe" o "Pasado". Con `canCreate` (Resumen), un clic o
+ * toque crea en la hora bajo el puntero (con el ratón se ve antes una
+ * silueta de la clase); con teclado, Intro abre la rejilla de horas. Sin
+ * `canCreate`, el clic abre esa rejilla (modo select y view informativo).
+ */
 function WindowBlock({
   window: w,
   reservations,
@@ -335,7 +665,9 @@ function WindowBlock({
   duration,
   step,
   selected,
+  canCreate,
   onOpenPicker,
+  onCreateAt,
 }: {
   window: CalendarWindow
   reservations: CalendarReservation[]
@@ -344,42 +676,80 @@ function WindowBlock({
   duration: number
   step: 30 | 60
   selected: SlotPick | null
+  canCreate: boolean
   onOpenPicker: (range: TimeRange, starts: string[]) => void
+  onCreateAt: (start: string) => void
 }) {
+  // Inicio bajo el ratón (silueta de la clase que se crearía)
+  const [ghost, setGhost] = useState<string | null>(null)
   const taken: TimeRange[] = reservations.map((r) => ({ start_time: r.start_time, end_time: r.end_time }))
-  // Mismo cálculo que el widget público: rejilla desde el inicio de la ventana.
-  const starts = bookableStarts(w, taken, duration, step)
+  // Mismo cálculo que el widget público (rejilla desde el inicio de la ventana), sin horas pasadas.
+  const starts = futureBookableStarts(w, taken, duration, step)
 
   return (
     <>
-      {/* Fondo "abierto" de la ventana entera */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 bg-white/80"
-        style={{ top: topOf(w.start_time, gridStart), height: heightOf(w) + 2 }}
-      />
+      {/* Fondo "abierto" de la ventana entera. Una cerrada a mano (día apagado,
+          clase puntual) no es horario abierto: se queda el fondo de "sin abrir"
+          y solo se ven sus reservas. */}
+      {!CLOSED_BY_HAND.has((w.status ?? '').toLowerCase()) && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bg-white/80"
+          style={{ top: topOf(w.start_time, gridStart), height: heightOf(w) + 2 }}
+        />
+      )}
       {w.free.map((range) => {
-        // Cabe una clase de la duración activa (select: la del diálogo padre; view: la elegida arriba).
-        const long = toMinutes(range.end_time) - toMinutes(range.start_time) >= duration
         const style = { top: topOf(range.start_time, gridStart) + 1, height: heightOf(range) }
         const time = `${range.start_time} – ${range.end_time}`
-        if (!long) {
+        const rangeStarts = startsInRange(starts, range, duration)
+        const state = rangeState(w.session_date, range, rangeStarts, duration)
+        if (state !== 'bookable') {
+          const label = state === 'past' ? 'Pasado' : 'No cabe'
           return (
-            <div key={range.start_time} style={style} className={`${BLOCK_BASE} bg-gray-100 text-gray-400 border border-gray-200`} title={`${time}: no cabe una clase`}>
-              <span className="block font-semibold">No cabe</span>
+            <div
+              key={range.start_time}
+              style={style}
+              className={`${BLOCK_BASE} bg-gray-100 text-gray-400 border border-gray-200`}
+              title={`${time}: ${state === 'past' ? 'ya ha pasado' : `no cabe una clase de ${durationLabel(duration)}`}`}
+            >
+              <span className="block font-semibold">{label}</span>
             </div>
           )
         }
-        const rangeStarts = starts.filter((s) => toMinutes(s) >= toMinutes(range.start_time) && toMinutes(s) + duration <= toMinutes(range.end_time))
         const isChosenRange = mode === 'select' && selected?.window_id === w.id && rangeStarts.includes(selected.start_time)
+        const startUnder = (event: React.MouseEvent<HTMLElement>) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const minute = toMinutes(range.start_time) + ((event.clientY - rect.top) / HOUR_PX) * 60
+          return startAtMinute(rangeStarts, minute, duration, step)
+        }
         return (
           <button
             key={range.start_time}
             type="button"
             style={style}
-            onClick={() => onOpenPicker(range, rangeStarts)}
-            title={`${time}: toca para ver las horas`}
-            className={`${BLOCK_BASE} gap-0.5 cursor-pointer ${
+            onClick={(event) => {
+              // detail 0 = teclado (Intro/Espacio): no hay puntero, se elige en la rejilla.
+              if (!canCreate || event.detail === 0) {
+                onOpenPicker(range, rangeStarts)
+                return
+              }
+              const start = startUnder(event)
+              setGhost(null)
+              if (start) onCreateAt(start)
+            }}
+            onPointerMove={(event) => {
+              if (!canCreate || event.pointerType !== 'mouse') return
+              const start = startUnder(event)
+              if (start !== ghost) setGhost(start)
+            }}
+            onPointerLeave={() => setGhost(null)}
+            title={canCreate ? undefined : `${time}: toca para ver las horas`}
+            aria-label={
+              canCreate
+                ? `Libre ${time}. Crear una clase de ${durationLabel(duration)}: ${rangeStarts.length} ${rangeStarts.length === 1 ? 'hora posible' : 'horas posibles'}`
+                : undefined
+            }
+            className={`${BLOCK_BASE} gap-0.5 ${canCreate && ghost === null ? 'cursor-cell' : 'cursor-pointer'} ${
               isChosenRange
                 ? 'bg-blue-600 border border-blue-600'
                 : 'bg-blue-50/60 border border-dashed border-blue-300 hover:bg-blue-100/70 hover:border-blue-400'
@@ -389,55 +759,275 @@ function WindowBlock({
               {isChosenRange ? `Elegida: ${formatTime(selected!.start_time)}` : 'Libre'}
             </span>
             {style.height >= 34 && (
-              <span className={`block tabular-nums ${isChosenRange ? 'text-white/90' : 'text-blue-700/80'}`}>
+              <span className={`block w-full truncate tabular-nums ${isChosenRange ? 'text-white/90' : 'text-blue-700/80'}`}>
                 {isChosenRange ? time : `${time} · ${rangeStarts.length} ${rangeStarts.length === 1 ? 'hora' : 'horas'}`}
               </span>
             )}
           </button>
         )
       })}
+      {ghost && canCreate && w.free.some((range) => startsInRange(starts, range, duration).includes(ghost)) && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-1 z-[1] rounded-lg border-2 border-blue-600 bg-white px-2 py-1 text-xs leading-tight text-blue-700 flex flex-col items-start"
+          style={{ top: topOf(ghost, gridStart) + 1, height: heightOf({ start_time: ghost, end_time: addMin(ghost, duration) }) }}
+        >
+          <span className="flex items-center gap-1 font-semibold">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Nueva clase
+          </span>
+          <span className="tabular-nums">
+            {ghost} – {addMin(ghost, duration)}
+          </span>
+        </div>
+      )}
     </>
   )
 }
 
+const RESERVATION_TONE: Record<CalendarReservation['kind'], string> = {
+  pending: 'bg-amber-50 text-amber-900 border border-amber-300',
+  proposed: 'bg-amber-50 text-amber-900 border border-dashed border-amber-400',
+  confirmed: 'bg-blue-600 text-white border border-blue-600',
+}
+
+/** Icono de estado (el color del bloque ya lo dice; el icono lo hace legible sin color). */
+function StatusIcon({ kind }: { kind: CalendarReservation['kind'] }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      {kind === 'confirmed' ? (
+        <path d="M20 6 9 17l-5-5" />
+      ) : kind === 'pending' ? (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </>
+      ) : (
+        <path d="M4 9h13l-3-3M20 15H7l3 3" />
+      )}
+    </svg>
+  )
+}
+
+/**
+ * Bloque de una reserva: nombre arriba (lo primero que se busca), hora debajo
+ * y estado con icono. En Día (columna ancha) va todo en dos líneas; en Semana
+ * el estado baja a una tercera línea si el bloque es de 1 h 30.
+ *
+ * En modo view, el resumen (ReservationSummaryCard) aparece al pasar el ratón
+ * o al enfocar con teclado; en táctil, el primer toque lo fija y el segundo
+ * (o "Ver detalle") abre el detalle. Con ratón y teclado el clic/Intro abre
+ * el detalle directamente.
+ */
 function ReservationBlock({
   reservation: r,
   mode,
+  wide,
   gridStart,
+  pinned,
   onReservationClick,
+  onShowSummary,
+  onHideSummary,
 }: {
   reservation: CalendarReservation
   mode: 'view' | 'select'
+  wide: boolean
   gridStart: number
+  pinned: boolean
   onReservationClick?: (id: string) => void
+  onShowSummary: (r: CalendarReservation, anchor: HTMLElement, via: OpenSummary['via']) => void
+  onHideSummary: (via: OpenSummary['via'], delay?: number) => void
 }) {
+  const lastPointer = useRef<string | null>(null)
   const height = heightOf(r)
   const style = { top: topOf(r.start_time, gridStart) + 1, height }
-  const tone = {
-    pending: 'bg-amber-50 text-amber-800 border border-amber-300',
-    proposed: 'bg-amber-50 text-amber-800 border border-dashed border-amber-400',
-    confirmed: 'bg-blue-600 text-white border border-blue-600',
-  }[r.kind]
-  const label = r.kind === 'pending' ? 'Pendiente' : r.kind === 'proposed' ? 'Propuesta' : 'Confirmada'
+  const status = reservationKindLabel(r.kind)
+  const info = reservationSummary(r, dayLabelOf(r.session_date))
   const clickable = mode === 'view' && Boolean(onReservationClick)
-  const classes = `${tone} ${clickable ? 'hover:ring-2 hover:ring-blue-400/60 cursor-pointer active:scale-[0.98]' : mode === 'select' ? 'opacity-70' : ''}`
+  const classes = `${RESERVATION_TONE[r.kind]} ${
+    clickable ? `cursor-pointer active:scale-[0.98] hover:ring-2 hover:ring-blue-400/60 ${pinned ? 'ring-2 ring-blue-500' : ''}` : mode === 'select' ? 'opacity-70' : ''
+  }`
+  const range = `${formatTime(r.start_time)} – ${formatTime(r.end_time)}`
   const content = (
     <>
-      <span className="block tabular-nums opacity-80">
-        {formatTime(r.start_time)} – {formatTime(r.end_time)} · {durationLabel(r.duration_minutes)}
+      <span className="flex w-full min-w-0 items-center gap-1">
+        <StatusIcon kind={r.kind} />
+        <span className="truncate font-semibold">{r.client_name}</span>
       </span>
-      <span className="block font-semibold truncate w-full">{r.client_name}</span>
-      {height >= 60 && <span className="block opacity-80">{label}</span>}
+      <span className="block w-full truncate tabular-nums opacity-85">
+        {range}
+        {wide && ` · ${info.duration} · ${status}`}
+      </span>
+      {!wide && height >= 60 && <span className="block w-full truncate opacity-85">{status}</span>}
     </>
   )
-  return clickable ? (
-    <button type="button" style={style} className={`${BLOCK_BASE} ${classes}`} onClick={() => onReservationClick?.(r.id)} title={`${r.client_name} · ${label}. Ver detalle`}>
+
+  if (!clickable) {
+    return (
+      <div data-reservation style={style} className={`${BLOCK_BASE} ${classes}`} title={`${r.client_name} · ${range} · ${status}`}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      data-reservation
+      style={style}
+      className={`${BLOCK_BASE} ${classes}`}
+      aria-expanded={pinned || undefined}
+      onPointerDown={(event) => {
+        lastPointer.current = event.pointerType
+      }}
+      onPointerEnter={(event) => event.pointerType === 'mouse' && onShowSummary(r, event.currentTarget, 'hover')}
+      onPointerLeave={(event) => event.pointerType === 'mouse' && onHideSummary('hover', 120)}
+      onFocus={(event) => {
+        if (event.currentTarget.matches(':focus-visible')) onShowSummary(r, event.currentTarget, 'focus')
+      }}
+      onBlur={() => onHideSummary('focus')}
+      onClick={(event) => {
+        const touch = lastPointer.current === 'touch' || lastPointer.current === 'pen'
+        lastPointer.current = null
+        if (touch && !pinned) {
+          onShowSummary(r, event.currentTarget, 'pin')
+          return
+        }
+        onReservationClick?.(r.id)
+      }}
+    >
       {content}
+      {/* Para lectores de pantalla, el resumen entero siempre (la tarjeta es visual). */}
+      <span className="sr-only">
+        {`. ${info.when}. ${info.duration}. ${status}${info.players ? `. ${info.players}` : ''}. Ver detalle`}
+      </span>
     </button>
-  ) : (
-    <div style={style} className={`${BLOCK_BASE} ${classes}`}>
-      {content}
-    </div>
+  )
+}
+
+/**
+ * Resumen flotante de una reserva: cliente, día y horario, duración, estado
+ * y jugadores. Sin email, teléfono, notas ni precio. Portal con position:
+ * fixed, a la derecha del bloque (a la izquierda o debajo si no cabe). Se
+ * cierra con Escape, al hacer scroll o cambiar el tamaño y, fijada por
+ * toque, al tocar fuera.
+ */
+function ReservationSummaryCard({
+  summary,
+  onKeep,
+  onLeave,
+  onClose,
+  onOpenDetail,
+}: {
+  summary: OpenSummary
+  onKeep: () => void
+  onLeave: () => void
+  onClose: () => void
+  onOpenDetail?: () => void
+}) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const { reservation: r, anchor, via } = summary
+  const info = reservationSummary(r, dayLabelOf(r.session_date))
+  const pinned = via === 'pin'
+
+  useLayoutEffect(() => {
+    const card = cardRef.current
+    if (!card) return
+    const a = anchor.getBoundingClientRect()
+    const margin = 8
+    const w = card.offsetWidth
+    const h = card.offsetHeight
+    let left = a.right + margin
+    let top = a.top
+    if (left + w > window.innerWidth - margin) left = a.left - margin - w
+    if (left < margin) {
+      // Ni a la derecha ni a la izquierda (móvil, vista Día): debajo, o encima.
+      left = Math.min(Math.max(margin, a.left), window.innerWidth - margin - w)
+      top = a.bottom + 6 + h > window.innerHeight - margin ? a.top - 6 - h : a.bottom + 6
+    }
+    top = Math.min(Math.max(margin, top), window.innerHeight - margin - h)
+    setPos({ top, left })
+  }, [anchor, r.id])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (cardRef.current?.contains(target) || anchor.contains(target)) return
+      onClose()
+    }
+    const onMove = () => onClose()
+    document.addEventListener('keydown', onKey)
+    if (pinned) document.addEventListener('pointerdown', onPointer)
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
+  }, [anchor, pinned, onClose])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      // Con ratón/teclado es solo visual: el bloque ya lleva el mismo texto
+      // para lectores de pantalla. Fijada por toque tiene un botón real.
+      aria-hidden={pinned ? undefined : true}
+      role={pinned ? 'group' : undefined}
+      aria-label={pinned ? `Resumen de la reserva de ${info.client}` : undefined}
+      onPointerEnter={(event) => event.pointerType === 'mouse' && onKeep()}
+      onPointerLeave={(event) => event.pointerType === 'mouse' && !pinned && onLeave()}
+      style={{ position: 'fixed', top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+      className="z-40 w-64 max-w-[calc(100vw-16px)] rounded-xl bg-white p-3 text-left ring-1 ring-gray-200"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            r.kind === 'confirmed' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-800'
+          }`}
+        >
+          <StatusIcon kind={r.kind} />
+          {info.status}
+        </span>
+        {pinned && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar resumen"
+            className="-mr-1 -mt-1 h-8 w-8 shrink-0 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-900 flex items-center justify-center"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <p className="mt-2 text-sm font-semibold text-gray-900 break-words">{info.client}</p>
+      <p className="mt-0.5 text-sm tabular-nums text-gray-600">{info.when}</p>
+      <p className="mt-0.5 text-sm text-gray-600">
+        {info.duration}
+        {info.players && ` · ${info.players}`}
+      </p>
+      {pinned && onOpenDetail ? (
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="mt-3 h-10 w-full rounded-lg bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+        >
+          Ver detalle
+        </button>
+      ) : (
+        <p className="mt-2 text-xs text-gray-400">{via === 'focus' ? 'Intro para ver el detalle' : 'Clic para ver el detalle'}</p>
+      )}
+    </div>,
+    document.body
   )
 }
 
@@ -456,12 +1046,12 @@ function NavButton({ label, onClick, children }: { label: string; onClick: () =>
   )
 }
 
-function Legend({ mode }: { mode: 'view' | 'select' }) {
+function Legend({ mode, canCreate }: { mode: 'view' | 'select'; canCreate: boolean }) {
   const items = [
     { swatch: 'bg-amber-50 border border-amber-300', label: 'Pendiente de confirmar' },
     { swatch: 'bg-amber-50 border border-dashed border-amber-400', label: 'Propuesta enviada' },
     { swatch: 'bg-blue-600', label: 'Confirmada' },
-    { swatch: 'bg-blue-50/60 border border-dashed border-blue-300', label: mode === 'select' ? 'Libre (toca para elegir hora)' : 'Libre (toca para ver horas)' },
+    { swatch: 'bg-blue-50/60 border border-dashed border-blue-300', label: mode === 'select' ? 'Libre (toca para elegir hora)' : canCreate ? 'Libre (toca para crear una clase)' : 'Libre (toca para ver horas)' },
     { swatch: 'bg-gray-50 border border-gray-200', label: 'Sin abrir', hatched: true },
   ]
   return (
@@ -477,6 +1067,10 @@ function Legend({ mode }: { mode: 'view' | 'select' }) {
       ))}
     </ul>
   )
+}
+
+function pickOf(w: CalendarWindow, start: string, duration: number): SlotPick {
+  return { window_id: w.id, session_date: w.session_date, start_time: start, end_time: addMin(start, duration), duration_minutes: duration }
 }
 
 function addMin(time: string, minutes: number): string {

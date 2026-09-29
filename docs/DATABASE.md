@@ -51,18 +51,26 @@ No existen: `is_available`, `is_booked`, `price`.
 |---|---|---|
 | `id` | uuid | |
 | `trainer_id` | uuid | |
-| `availability_slot_id` | uuid | |
+| `availability_slot_id` | uuid NOT NULL | FK a `availability_slots(id)`: **ON DELETE CASCADE** en la base real hasta aplicar la 013, que la pasa a RESTRICT |
 | `client_name`, `client_email`, `client_phone` | text | el cliente vive en la propia fila |
 | `price` | numérico | lo calcula el servidor al crear (`lib/reservations/pricing.ts`): precio por sesión ya con descuento; 1 h 30 = precio de 1 h × 1,5 |
 | `start_time`, `end_time` | time | **migración 007**: rango real de la clase dentro de su ventana. NULL solo en reservas anteriores (se leen como ventana.start_time + 60 min) |
 | `duration_minutes` | smallint | **migración 007**: 60 o 90 |
+| `session_date` | date | **migración 008 (pendiente de aplicar)**: fecha de su ventana. La rellena el trigger `reservations_set_session_date` al crear y al cambiar `availability_slot_id`; la app no la escribe |
 | `status` | text | `pending_confirmation` (default tras la migración 003) · `reschedule_proposed` (004) · `confirmed` · `needs_reschedule` · `cancelled` · `completed`. Ver `migrations/003_…` y `004_…` |
 | `rescheduled_from_id` | uuid | **migración 004**: reserva original de una propuesta de nueva fecha |
 | `proposal_token` | text | **migración 004**: token del enlace público `/propuesta/[token]`; NULL al responder |
-| `notes` | text | aquí se guarda la preferencia de WhatsApp |
+| `notes` | text | notas internas del entrenador. Antes de la 010 el widget guardaba aquí "WhatsApp: si/no" (solo se lee en reservas antiguas) |
+| `package_session_id` | uuid | **migración 019 (pendiente de aplicar)**: crédito de paquete que respalda la reserva (la creada al agendar y sus propuestas, que lo heredan). FK a `package_sessions(id)` ON DELETE RESTRICT (un paquete con reservas no se borra: se cancela con `status = 'cancelled'`, y sus reservas conservan el crédito): los embeds `package_sessions → reservations` necesitan la pista `reservations!reservation_id` (sin ella, PGRST201). Índice único parcial `reservations_one_live_per_package_session`: como mucho una reserva viva por crédito (23505 → 409). Una reserva de paquete cancelada o sin pista no se reactiva (trigger `reservations_package_no_revive`, 23514 → 409) |
 | `created_at`, `updated_at` | timestamptz | |
 
-No existen: `client_id`, `session_date`, `session_time`, `class_type`,
+**Restricción `reservations_no_overlap` (migración 008, pendiente de aplicar):**
+dos reservas vivas (`reservationHoldsSlot`: todo menos `cancelled`,
+`canceled`, `needs_reschedule`) del mismo entrenador no pueden solaparse
+(rango `[inicio, fin)`). Postgres responde `23P01`; la app lo traduce a 409
+con `isOverlapError` (`lib/reservations/slots.ts`).
+
+No existen: `client_id`, `session_time`, `class_type`,
 `client_whatsapp_opt_in`, `total_price`, `discount_percent`.
 
 ## `clients`
@@ -107,12 +115,204 @@ Paquetes de 5/10 clases con el precio fijado al vender. `client_packages.duratio
 `package_sessions.reservation_id` enlaza cada sesión agendada con su fila
 real de `reservations`.
 
+**Funciones `schedule_package_session` y `unschedule_package_session`
+(migración 017, pendiente de aplicar):** agendar y desagendar una sesión son
+una sola transacción cada una. Las dos empiezan bloqueando la fila de
+`package_sessions` (`FOR UPDATE`). Agendar comprueba crédito libre y ventana
+(abierta, rango dentro, no pasada), crea la reserva con los datos y el precio
+del paquete y la enlaza. Desagendar comprueba que el crédito sigue enlazado a
+la reserva que vio la app, la cancela si está viva y devuelve el crédito.
+Solo las ejecuta `service_role`; las llama `lib/packages/schedule.ts`. No
+insertar, cancelar ni desenganchar la reserva de un paquete por otro camino.
+
+**Un crédito respalda como mucho una reserva viva (migraciones 018 + 019,
+pendientes de aplicar):** toda reserva nacida de un crédito lleva
+`reservations.package_session_id`, también las propuestas de otra fecha, y
+un índice único parcial impide dos vivas por crédito en cualquier camino.
+Proponer otra fecha es la función `propose_reschedule` (una transacción, para
+todas las reservas): la original pasa a `needs_reschedule`, la propuesta
+hereda el crédito y el crédito pasa a apuntar a ella. El crédito solo queda
+libre cuando no le queda ninguna reserva viva (propuesta rechazada o
+cancelada, o "sin pista" sin propuesta), y una reserva de paquete que ha
+dejado de estar viva no se reactiva al moverla: se agenda de nuevo desde el
+paquete. Antes de la 019, la 018 crea `package_credit_resolutions` y la
+vista `package_credit_backfill_report`. El conjunto a revisar es
+estructural, no depende de `notes` ni del email (que son editables): toda
+reserva sin evidencia de un entrenador con paquetes, creada entre su primer
+paquete y la 019. Las vivas se deciden a mano antes de la 019 (su crédito,
+o "no es de paquete"); las muertas quedan en cuarentena
+(`package_credit_quarantine`): no se pueden reactivar hasta clasificarlas con
+`classify_legacy_reservation`. Nunca se asigna un crédito por suposición; si
+hay varios candidatos, elegir exige evidencia externa (pago, conversación,
+agenda). Un paquete con reservas no se borra (FK RESTRICT): se cancela.
+
+**Aplicar la 019 (procedimiento obligatorio):** 017 y 018 aplicadas y
+decisiones hechas → **detener los escritores** (mantenimiento) → 019 →
+desplegar el código de R2 → reabrir → comprobar
+`select * from package_credit_integrity_check where bloquea` (vacío). La 019
+toma `LOCK TABLE ... IN EXCLUSIVE MODE` con `lock_timeout`: si hay
+escritores, aborta sin cambiar nada. Además, dos triggers dan el crédito a
+las reservas que cree el código antiguo durante la transición (enlace de la
+017 y propuestas de antes de R2), y esa vista marca lo que no deba existir.
+Detener los escritores sigue siendo obligatorio: cubre escritores que la
+migración no conoce. `decided_by`/`reason` de las decisiones son un registro
+de auditoría: la base solo comprueba que no estén vacíos, no que la
+evidencia sea cierta.
+
 ## `trainer_weekly_hours` y `trainer_availability_overrides` (migración 005)
 
 Plantilla semanal y excepciones por fecha. `lib/availability/generate.ts` las
 traduce a ventanas de `availability_slots` de las próximas 8 semanas. Sin
 cambios en la 007: la duración no vive aquí (`class_type` es otra dimensión y
 sigue hardcodeada a `private`).
+
+## `players` y `player_trainers` (migración 009)
+
+Cuenta global de jugador (Fase A1). Aplicada el 24/09/2026. Detalle del
+flujo: [`PLAYER_ACCOUNTS.md`](PLAYER_ACCOUNTS.md).
+
+`players` — una fila por usuario de `auth.users` que entra por `/cuenta`:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid | PK |
+| `auth_user_id` | uuid | NOT NULL, unique, FK a `auth.users(id)` on delete cascade |
+| `email` | text | NOT NULL. Copia del email de Auth; la app la resincroniza al entrar. No se edita desde el perfil |
+| `full_name` | text | 2–80 caracteres |
+| `phone` | text | 8–30 caracteres (la app exige 10+ dígitos, como el formulario de reserva) |
+| `whatsapp_opt_in` | bool | default false |
+| `onboarding_completed_at` | timestamptz | NULL = onboarding pendiente. CHECK: no puede estar puesto sin nombre y teléfono |
+| `created_at`, `updated_at` | timestamptz | |
+
+`player_trainers` — relación N:M jugador ↔ entrenador, unique `(player_id, trainer_id)`:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `player_id` | uuid | FK a `players` on delete cascade |
+| `trainer_id` | uuid | FK a `trainers` on delete cascade |
+| `status` | text | `active` · `archived` (se archiva, no se borra) |
+| `source` | text | `self_signup` (entró desde la página del entrenador) · `booking` (futuro) · `trainer_added` (futuro) |
+| `created_at`, `updated_at` | timestamptz | |
+
+RLS activo en las dos, solo lectura: el jugador lee su fila y sus relaciones;
+el entrenador lee las relaciones con él. No hay políticas de escritura: todo
+pasa por el servidor con la service role key tras `requirePlayer()`.
+`reservations` **no** tiene todavía `player_id`.
+
+## Migración 010 — checkout A2 (aplicada el 25/09/2026)
+
+Columnas nuevas en `reservations` (sin backfill; las reservas anteriores
+quedan con `player_id` NULL, `client_message` NULL, `player_count` 1,
+`whatsapp_opt_in` NULL):
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `player_id` | uuid NULL | FK `players(id)` ON DELETE SET NULL. Solo desde la sesión (reserva pública con cuenta). Invitado, manual y paquete: NULL. Índice parcial `reservations_player_idx (player_id, created_at desc) where player_id is not null` |
+| `client_message` | text NULL | ≤ 500 (CHECK). Mensaje del cliente al entrenador. **No** son las notas internas (`notes`) |
+| `player_count` | smallint NOT NULL default 1 | 1..4 (CHECK). Personas en esa clase privada; no es `max_capacity`. Mismo valor en todas las filas de un checkout |
+| `whatsapp_opt_in` | boolean NULL | Avisos operativos. Toda reserva nueva lo escribe true/false; NULL = reserva antigua (se lee "WhatsApp: si/no" de `notes`) |
+
+`trainer_session_prices` — precio VIGENTE por entrenador:
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `trainer_id` | uuid | FK `trainers` ON DELETE CASCADE |
+| `duration_minutes` | smallint | 60 o 90 |
+| `player_count` | smallint | 1..4 |
+| `price_rm` | numeric(10,2) | > 0 y ≤ 100 000 |
+| `created_at`, `updated_at` | timestamptz | |
+
+PK `(trainer_id, duration_minutes, player_count)`. Precargada para los
+entrenadores existentes con 60 min → 300/300/350/350 y 90 min →
+450/450/525/525. **Un entrenador nuevo no tiene filas**: hasta que las
+configure (Perfil → Public pricing) la reserva devuelve 409. Lo cobrado es
+el snapshot de `reservations.price`; cambiar la tabla no toca reservas hechas.
+
+Seguridad (010): RLS activo sin políticas en las dos tablas, y anon /
+authenticated **sin** INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ni
+TRIGGER (solo conservan SELECT, que sin política no devuelve filas). Toda
+escritura va por el servidor con la service role.
+
+## Migración 011 — esquema compatible desde cero (pendiente de aplicar)
+
+Lleva una base creada con `migrations/001` → 010 a la forma desplegada, con
+pasos condicionales (sobre lo desplegado no cambia nada): `class_types` + FK
+en lugar del CHECK de `class_type` de la 001, unique `(trainer_id,
+session_date, start_time, end_time)` en lugar del que incluía `class_type`,
+`client_name`/`client_email`/`client_phone`/`price` en `reservations`,
+`client_id`/`session_time`/`class_type` (de la 001) sin NOT NULL y
+`reservations.availability_slot_id` NOT NULL. No toca la 008.
+
+## Migración 012 — clase puntual atómica (pendiente de aplicar; requiere la 011)
+
+Función `public.create_one_off_reservation(p_trainer_id, p_session_date,
+p_start_time, p_end_time, p_duration_minutes, p_client_name, p_client_email,
+p_client_phone, p_notes, p_price, p_status)` → `(reservation_id, window_id,
+window_reused)`. En una transacción y con `pg_advisory_xact_lock` por
+entrenador + fecha: crea (o reutiliza, solo si es manual y `blocked`) la
+ventana exacta `private`/`blocked`/`generated_by_pattern = false` y la
+reserva dentro. Sin tablas ni columnas nuevas. Solo `service_role`. Errores:
+23P01 (`reservations_no_overlap`), `one_off_window_conflict`, 22023
+`one_off_invalid_*`. La usa `lib/reservations/one-off.ts`; probadas las dos
+en `scripts/verify-one-off-db.sh`.
+
+## Migración 013 — ventana con reservas no se puede borrar (pendiente de aplicar)
+
+`reservations_availability_slot_id_fkey` era **ON DELETE CASCADE** en la base
+real (confirmado el 26/09/2026): borrar una ventana borraba sus reservas. La
+013 la cambia a **ON DELETE RESTRICT** sin tocar filas. Los que borran
+ventanas (generador y purga) solo piden borrar ventanas sin reservas y
+manejan el 23503 conservando la ventana (`lib/availability/delete-windows.ts`).
+
+## Migración 014 — sincronizar ventanas en una transacción (pendiente de aplicar; requiere la 013)
+
+Función `public.apply_window_plan(p_trainer_id, p_plan jsonb)` → jsonb
+`{ created, removed, kept, closed, shrink_blocked, reopened, missing }`. Aplica
+el plan del generador semanal (insert / delete / update_end / close / reopen)
+en una transacción, con cerrojo por entrenador y las ventanas bloqueadas,
+revalidando: una ventana a borrar con reservas se cierra; un acortamiento que
+dejaría fuera una reserva viva cierra la ventana. Si algo falla, no cambia
+nada. Solo `service_role`. La usa `lib/availability/generate.ts`.
+
+## Migración 015 — reservas siempre dentro de su ventana (pendiente de aplicar)
+
+Triggers `reservations_within_window` (reservations: INSERT/UPDATE de
+ventana, horas o estado; bloquea la ventana FOR SHARE) y
+`availability_slots_keep_reservations_inside` (UPDATE de inicio/fin). Una
+reserva viva nunca queda fuera del rango de su ventana. Error 23514 con
+`reservations_within_window` en el mensaje → la app responde 409.
+
+## Migración 016 — revisión del horario (pendiente de aplicar; requiere la 014)
+
+`trainers.availability_revision` (bigint, 0), subida por triggers en
+`trainer_weekly_hours` y `trainer_availability_overrides`.
+`apply_window_plan(p_trainer_id, p_plan, p_revision bigint)` rechaza con
+`window_plan_stale` un plan calculado con otra revisión; la versión de dos
+argumentos de la 014 se elimina.
+
+## Migración 020 — administradores (pendiente de aplicar)
+
+`public.admins`: `auth_user_id` uuid PK (FK `auth.users(id)` ON DELETE
+CASCADE), `granted_by` text NOT NULL (no vacío), `note` text, `granted_at`
+timestamptz. Una fila = permiso de administrador para `/admin` y `/api/admin`
+(lo lee `lib/auth/current-admin.ts` con la service role). RLS activo sin
+políticas y sin GRANT para anon/authenticated. Se concede y retira a mano en
+el SQL Editor (ver la cabecera de la migración); ninguna ruta escribe aquí.
+
+## Migración 021 — reserva idempotente y límite de peticiones (pendiente de aplicar)
+
+`public.booking_requests`: PK (`scope` text, `idempotency_key` uuid),
+`request_hash` text, `response` jsonb (ids y precios; sin contacto),
+`reservation_ids` uuid[], `created_at`. Una fila por intento de reserva que
+se completó (retención 7 días). `public.rate_limit_counters`: PK (`bucket`
+text, `window_start` timestamptz), `hits` int.
+
+Funciones: `create_booking_request(scope, key, hash, rows jsonb, response
+jsonb)` → `created | replayed | key_reused` (clave + reservas + respuesta en
+una transacción) y `rate_limit_consume(buckets text[], limits int[],
+window_seconds int)` → `allowed, bucket, retry_after`. Las dos tablas con RLS
+sin políticas y sin GRANT para anon/authenticated; las funciones solo para
+service_role. Requiere 008 y 010. Detalle: `docs/estado-integracion.md`.
 
 ## `email_logs` y `whatsapp_logs`
 

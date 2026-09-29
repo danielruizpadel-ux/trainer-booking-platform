@@ -43,6 +43,26 @@ export function shortTime(time: string): string {
   return time.slice(0, 5)
 }
 
+/** Clave comparable de fecha/hora actual en Asia/Kuala_Lumpur. */
+export function malaysiaNowKey(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now)
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
+}
+
+/** Evita seleccionar una clase que ya empezó en la zona del producto. */
+export function isPastMalaysiaSession(date: string, time: string, now = new Date()): boolean {
+  return `${date} ${shortTime(time)}` < malaysiaNowKey(now)
+}
+
 /** "Miércoles 2 sept, 10:00" */
 export function formatSessionLabel(date: string, time: string): string {
   const d = parseDateStr(date)

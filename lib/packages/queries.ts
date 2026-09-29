@@ -20,11 +20,16 @@ const PACKAGE_COLUMNS =
   'id, trainer_id, client_name, client_email, client_phone, sessions_total, price_per_session_normal, ' +
   'discount_percent, price_per_session_discounted, price_total, duration_minutes, status, notes, created_at, updated_at'
 
+// `reservations!reservation_id`: desde la 019 hay dos relaciones entre
+// package_sessions y reservations (package_sessions.reservation_id y
+// reservations.package_session_id). La pista elige la primera, la reserva
+// enlazada al crédito; sin ella PostgREST responde PGRST201. Funciona igual
+// antes y después de la migración (scripts/verify-package-credit-postgrest.sh).
 export async function listTrainerPackages(trainerId: string): Promise<ClientPackageSummary[]> {
   const supabase = getSupabaseServerClient()
   const { data, error } = await supabase
     .from('client_packages')
-    .select(`${PACKAGE_COLUMNS}, package_sessions ( status, reservations ( status ) )`)
+    .select(`${PACKAGE_COLUMNS}, package_sessions ( status, reservations!reservation_id ( status ) )`)
     .eq('trainer_id', trainerId)
     .order('created_at', { ascending: false })
   if (error) throw new Error(`No se pudieron cargar los paquetes: ${error.message}`)
@@ -46,7 +51,7 @@ export async function getPackageDetail(trainerId: string, packageId: string): Pr
     .from('client_packages')
     .select(
       `${PACKAGE_COLUMNS}, package_sessions ( id, session_number, status, reservation_id, ` +
-        'reservations ( id, status, price, client_name, client_email, client_phone, notes, created_at, start_time, end_time, duration_minutes, ' +
+        'reservations!reservation_id ( id, status, price, client_name, client_email, client_phone, notes, created_at, start_time, end_time, duration_minutes, player_count, client_message, whatsapp_opt_in, ' +
         'availability_slots ( id, session_date, start_time, end_time, class_type ) ) )'
     )
     .eq('id', packageId)

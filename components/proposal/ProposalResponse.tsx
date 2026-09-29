@@ -37,7 +37,7 @@ export function ProposalResponse({ token, trainerSlug }: ProposalResponseProps) 
         </h2>
         <p className="mt-1.5 text-sm text-gray-600">
           {state.accepted
-            ? 'Te confirmamos por email en cuanto reservemos la pista.'
+            ? 'Tu entrenador te confirmará la clase en cuanto reserve la pista.'
             : 'Elige la hora que prefieras desde la web y te la confirmamos.'}
         </p>
         {!state.accepted && trainerSlug && (

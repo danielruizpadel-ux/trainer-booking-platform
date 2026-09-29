@@ -20,10 +20,10 @@ interface ReservationsViewProps {
 }
 
 const VIEWS: Array<{ id: View; label: string; icon: React.ReactNode }> = [
-  { id: 'table', label: 'Tabla', icon: <path d="M3 6h18M3 12h18M3 18h18" /> },
+  { id: 'table', label: 'Table', icon: <path d="M3 6h18M3 12h18M3 18h18" /> },
   {
     id: 'packages',
-    label: 'Paquetes',
+    label: 'Packages',
     icon: (
       <>
         <path d="m3 7 9-4 9 4v10l-9 4-9-4Z" />
@@ -42,7 +42,7 @@ export function ReservationsView({ reservations, packages, durations, packagesEr
   const [view, setView] = useState<View>('table')
 
   const switcher = (
-    <div role="group" aria-label="Vista" className="inline-flex rounded-xl bg-gray-100 p-1">
+    <div role="group" aria-label="View" className="inline-flex rounded-xl bg-gray-100 p-1">
       {VIEWS.map((option) => (
         <button
           key={option.id}
@@ -76,17 +76,17 @@ export function ReservationsView({ reservations, packages, durations, packagesEr
         {toolbar}
         {packagesError ? (
           <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 text-center">
-            <h2 className="text-base font-semibold text-gray-900">No se pudieron cargar los paquetes</h2>
+            <h2 className="text-base font-semibold text-gray-900">Packages could not be loaded</h2>
             <p className="mt-1.5 text-sm text-gray-600">
-              Si es la primera vez, falta aplicar <code className="text-gray-900">migrations/006_class_packages.sql</code> en Supabase.
+              If this is the first time, <code className="text-gray-900">migrations/006_class_packages.sql</code> still needs to be applied in Supabase.
             </p>
             <p className="mt-2 text-xs text-gray-400">{packagesError}</p>
           </div>
         ) : packages.length === 0 ? (
           <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 sm:p-12 text-center">
-            <h2 className="text-base font-semibold text-gray-900">Todavía no has vendido ningún paquete</h2>
+            <h2 className="text-base font-semibold text-gray-900">You haven&apos;t sold any packages yet</h2>
             <p className="mt-1.5 text-sm text-gray-600">
-              Con "Vender paquete" registras el bono y después vas agendando cada clase sobre tu disponibilidad.
+              Use "Sell package" to record it, then schedule each class on your availability.
             </p>
           </div>
         ) : (
@@ -101,9 +101,9 @@ export function ReservationsView({ reservations, packages, durations, packagesEr
       <div className="flex flex-col gap-4">
         {toolbar}
         <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 sm:p-12 text-center">
-          <h2 className="text-base font-semibold text-gray-900">Todavía no hay reservas</h2>
+          <h2 className="text-base font-semibold text-gray-900">No bookings yet</h2>
           <p className="mt-1.5 text-sm text-gray-600">
-            Cuando un cliente reserve desde tu página pública aparecerá aquí.
+            When a client books from your public page, it will show up here.
           </p>
         </div>
       </div>

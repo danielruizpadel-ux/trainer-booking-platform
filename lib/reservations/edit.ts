@@ -2,7 +2,20 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { reservationHoldsSlot } from '@/lib/availability/slot-status'
 import { notifyReservationCancelled, notifyReservationMoved } from '@/lib/notifications/notify'
 import { RESERVATION_STATUS, isRescheduleProposed } from './status'
-import { loadOwnedOpenWindow, lookupStatus, refreshWindowStatus } from './slots'
+import {
+  CREDIT_TAKEN_MESSAGE,
+  LEGACY_UNCLASSIFIED_MESSAGE,
+  OVERLAP_MESSAGE,
+  PACKAGE_REVIVE_MESSAGE,
+  isCreditTakenError,
+  isLegacyUnclassifiedError,
+  isPackageReviveError,
+  isSlotConflictError,
+  loadOwnedOpenWindow,
+  lookupStatus,
+  refreshWindowStatus,
+} from './slots'
+import { isPastMalaysiaSession } from '@/lib/dateUtils'
 
 /**
  * Edición directa desde el panel (Parte 3): el entrenador ya ha hablado con
@@ -29,10 +42,15 @@ export interface EditableReservation {
   start_time: string | null
   end_time: string | null
   duration_minutes: number | null
+  /** Migración 010: lo usan las notificaciones (null = reserva antigua) */
+  whatsapp_opt_in?: boolean | null
 }
 
+// whatsapp_opt_in (migración 010) va aquí porque de esta fila salen las
+// notificaciones de mover / cancelar / confirmar. No es editable: parseDetails
+// no lo acepta (ni player_id, client_message ni player_count).
 export const SELECT_FOR_EDIT =
-  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes'
+  'id, trainer_id, availability_slot_id, status, client_name, client_email, client_phone, notes, price, start_time, end_time, duration_minutes, whatsapp_opt_in'
 
 export type EditResult = { ok: true } | { ok: false; status: number; message: string }
 
@@ -105,6 +123,9 @@ export async function moveReservation(
     ignoreReservationId: reservation.id,
   })
   if (!lookup.ok) return { ok: false, status: lookupStatus(lookup.code), message: lookup.message }
+  if (isPastMalaysiaSession(lookup.window.session_date, lookup.range.start_time)) {
+    return { ok: false, status: 400, message: 'No se puede mover una reserva al pasado' }
+  }
 
   const sameRange =
     slotId === reservation.availability_slot_id &&
@@ -125,6 +146,15 @@ export async function moveReservation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', reservation.id)
+  if (isSlotConflictError(error)) return { ok: false, status: 409, message: OVERLAP_MESSAGE }
+  // Mover una reserva que no ocupaba hueco la revive (pending_confirmation).
+  // En una reserva de paquete no se permite (migración 019): el crédito se
+  // vuelve a usar agendando desde el paquete. El 23505 del índice queda como
+  // red por si una reserva de paquete llegara a revivir por otro camino.
+  if (isPackageReviveError(error)) return { ok: false, status: 409, message: PACKAGE_REVIVE_MESSAGE }
+  // Reserva anterior a la 019 en cuarentena (podría haber sido de un paquete).
+  if (isLegacyUnclassifiedError(error)) return { ok: false, status: 409, message: LEGACY_UNCLASSIFIED_MESSAGE }
+  if (isCreditTakenError(error)) return { ok: false, status: 409, message: CREDIT_TAKEN_MESSAGE }
   if (error) return { ok: false, status: 500, message: error.message }
 
   await refreshWindowStatus(supabase, reservation.availability_slot_id)
@@ -152,6 +182,17 @@ export async function cancelReservation(reservation: EditableReservation): Promi
   const { error } = await supabase.from('reservations').update(updates).eq('id', reservation.id)
   if (error) return { ok: false, status: 500, message: error.message }
 
+  await afterReservationCancelled(reservation, wasHolding)
+  return { ok: true }
+}
+
+/**
+ * Lo que va DESPUÉS de cancelar (ya escrito): recalcular la ventana si la
+ * reserva ocupaba hueco y avisar al cliente. También lo usa
+ * unschedulePackageSession tras la transacción de unschedule_package_session.
+ */
+export async function afterReservationCancelled(reservation: EditableReservation, wasHolding: boolean): Promise<void> {
+  const supabase = getSupabaseServerClient()
   if (wasHolding) await refreshWindowStatus(supabase, reservation.availability_slot_id)
 
   const { data: slot } = await supabase
@@ -164,5 +205,4 @@ export async function cancelReservation(reservation: EditableReservation): Promi
     session_date: slot?.session_date,
     start_time: reservation.start_time ?? slot?.start_time,
   })
-  return { ok: true }
 }

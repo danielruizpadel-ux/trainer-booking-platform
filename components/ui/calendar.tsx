@@ -161,7 +161,7 @@ const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(
                 className={cn(
                   'flex h-8 w-8 items-center justify-center rounded text-sm',
                   selected
-                    ? 'bg-cyan-600 text-white font-semibold'
+                    ? 'bg-blue-600 text-white font-semibold'
                     : 'hover:bg-accent',
                   disabled && 'cursor-not-allowed opacity-50'
                 )}

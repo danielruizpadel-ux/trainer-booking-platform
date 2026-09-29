@@ -11,9 +11,9 @@ interface PackagesTableProps {
 }
 
 const STATUS_LABEL: Record<ClientPackageSummary['status'], { label: string; tone: string }> = {
-  active: { label: 'Activo', tone: 'bg-blue-50 text-blue-700' },
-  completed: { label: 'Completado', tone: 'bg-emerald-50 text-emerald-700' },
-  cancelled: { label: 'Cancelado', tone: 'bg-gray-100 text-gray-600' },
+  active: { label: 'Active', tone: 'bg-blue-50 text-blue-700' },
+  completed: { label: 'Completed', tone: 'bg-emerald-50 text-emerald-700' },
+  cancelled: { label: 'Cancelled', tone: 'bg-gray-100 text-gray-600' },
 }
 
 /** Una fila por paquete; clic abre el detalle con sus sesiones. */
@@ -27,12 +27,12 @@ export function PackagesTable({ packages }: PackagesTableProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50/50 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                <th scope="col" className="px-4 py-3 font-semibold">Cliente</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Paquete</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Sesiones</th>
-                <th scope="col" className="px-4 py-3 font-semibold text-right hidden sm:table-cell">Precio</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Estado</th>
-                <th scope="col" className="px-4 py-3 font-semibold text-right"><span className="sr-only">Abrir</span></th>
+                <th scope="col" className="px-4 py-3 font-semibold">Client</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Package</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Sessions</th>
+                <th scope="col" className="px-4 py-3 font-semibold text-right hidden sm:table-cell">Price</th>
+                <th scope="col" className="px-4 py-3 font-semibold">Status</th>
+                <th scope="col" className="px-4 py-3 font-semibold text-right"><span className="sr-only">Open</span></th>
               </tr>
             </thead>
             <tbody>
@@ -50,14 +50,14 @@ export function PackagesTable({ packages }: PackagesTableProps) {
                       <p className="text-gray-500 truncate max-w-[14rem]" title={p.client_email}>{p.client_email}</p>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-gray-900">
-                      {p.sessions_total} clases · {durationLabel(p.duration_minutes ?? 60)}
+                      {p.sessions_total} classes · {durationLabel(p.duration_minutes ?? 60)}
                       {p.discount_percent > 0 && <span className="text-emerald-600"> · −{p.discount_percent} %</span>}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="tabular-nums text-gray-900">{p.sessions_scheduled}/{p.sessions_total}</span>
-                      <span className="text-gray-500"> agendadas</span>
+                      <span className="text-gray-500"> scheduled</span>
                       {pending > 0 && p.status === 'active' && (
-                        <span className="block text-xs text-gray-400">{pending} por agendar</span>
+                        <span className="block text-xs text-gray-400">{pending} to schedule</span>
                       )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-right font-semibold text-gray-900 tabular-nums hidden sm:table-cell">
@@ -77,7 +77,7 @@ export function PackagesTable({ packages }: PackagesTableProps) {
                         }}
                         className="h-9 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors whitespace-nowrap"
                       >
-                        Ver detalle
+                        View details
                       </button>
                     </td>
                   </tr>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { WeeklyRange } from '@/lib/availability/weekly'
 import { Toggle } from './Toggle'
+import { UNKNOWN_SAVE_MESSAGE, callApi } from './api'
 
 const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const DEFAULT_START = '09:00'
@@ -114,7 +115,7 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
       // 1) borrar lo que ya no está
       for (const original of weekly) {
         if (!draftIds.has(original.id)) {
-          await call(`/api/dashboard/availability/schedule/range/${original.id}`, { method: 'DELETE' })
+          await call(`/api/dashboard/availability/schedule/range/${original.id}`, { method: 'DELETE' }, SAVED_EVEN_IF_NOT_SYNCED)
         }
       }
 
@@ -131,7 +132,7 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
               end_time: range.end_time,
               class_type: range.class_type,
             }),
-          })
+          }, SAVED_EVEN_IF_NOT_SYNCED)
         }
       }
 
@@ -144,7 +145,7 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ start_time: range.start_time, end_time: range.end_time }),
-          })
+          }, SAVED_EVEN_IF_NOT_SYNCED)
         }
       }
 
@@ -160,11 +161,13 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled: draftEnabled }),
-          })
+          }, SAVED_EVEN_IF_NOT_SYNCED)
         }
       }
 
-      // 5) un regenerado final para tener el resumen de qué cambió de verdad
+      // 5) un regenerado final para tener el resumen de qué cambió de verdad.
+      //    Si falla, el horario está guardado pero la disponibilidad publicada
+      //    NO ha cambiado (la sincronización es atómica): se dice así, no "Guardado".
       const generateResult = await call('/api/dashboard/availability/generate', { method: 'POST' })
       const { created, removed, keptOccupied, closed, reopened } =
         generateResult.summary ?? { created: 0, removed: 0, keptOccupied: 0, closed: 0, reopened: 0 }
@@ -180,6 +183,22 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
       setDirty(false)
       onSaved()
     } catch (err) {
+      if (err instanceof SyncFailedError) {
+        // El horario sí se guardó (todos los pasos anteriores fueron bien):
+        // se recarga, pero sin mensaje de éxito y diciendo qué NO pasó (o que
+        // no se sabe, si se perdió la respuesta de la sincronización).
+        setDirty(false)
+        onSaved()
+        setError(err.outcome === 'unknown' ? err.message : SAVED_NOT_PUBLISHED)
+        return
+      }
+      if (err instanceof UnknownOutcomeError) {
+        // No se sabe qué pasos llegaron a guardarse: se recarga lo que hay.
+        setDirty(false)
+        onSaved()
+        setError(UNKNOWN_SAVE_MESSAGE)
+        return
+      }
       setError(err instanceof Error ? err.message : 'No se pudo guardar')
     } finally {
       setSaving(false)
@@ -295,9 +314,36 @@ export function WeeklySchedule({ weekly, loading, onSaved }: WeeklyScheduleProps
   )
 }
 
-async function call(url: string, init?: RequestInit) {
-  const response = await fetch(url, init)
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar el cambio')
-  return data
+/** El cambio se guardó pero los huecos no se sincronizaron (code 'sync_failed', ver lib/availability/sync-response.ts). */
+class SyncFailedError extends Error {
+  constructor(message: string, readonly outcome: 'not_applied' | 'unknown') {
+    super(message)
+  }
+}
+
+/** Se perdió la respuesta: no se sabe si ese paso se guardó. */
+class UnknownOutcomeError extends Error {}
+
+/**
+ * Pasos del guardado que escriben el horario: si solo falla la
+ * sincronización (el cambio SÍ se guardó), se sigue con el resto; el paso
+ * final (generate) vuelve a sincronizarlo todo y es el que decide qué se dice.
+ */
+const SAVED_EVEN_IF_NOT_SYNCED = { tolerateSyncFailure: true }
+
+const SAVED_NOT_PUBLISHED =
+  'Tu horario se ha guardado, pero tu disponibilidad publicada NO se ha actualizado: sigue exactamente como antes. Vuelve a intentarlo con «Sincronizar huecos».'
+
+async function call(url: string, init?: RequestInit, options: { tolerateSyncFailure?: boolean } = {}) {
+  const result = await callApi(url, init, 'No se pudo guardar el cambio')
+  if (result.kind === 'unknown') throw new UnknownOutcomeError(UNKNOWN_SAVE_MESSAGE)
+  if (result.kind === 'failed') {
+    const data = result.data
+    if (data.code === 'sync_failed') {
+      if (options.tolerateSyncFailure && data.saved) return data as { summary?: undefined }
+      throw new SyncFailedError(result.message, data.outcome === 'unknown' ? 'unknown' : 'not_applied')
+    }
+    throw new Error(result.message)
+  }
+  return result.data as { summary?: { created: number; removed: number; keptOccupied: number; closed: number; reopened: number } }
 }

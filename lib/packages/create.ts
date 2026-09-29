@@ -2,6 +2,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/client'
 import { parseDetails, type ReservationDetailsInput } from '@/lib/reservations/edit'
 import { isPackageSize, packagePriceQuote } from './pricing'
 import { getTrainerDurations } from '@/lib/availability/trainer-durations'
+import { requireBasePrice } from '@/lib/reservations/trainer-prices'
 
 /**
  * Venta de un paquete: fila en client_packages con el precio como foto fija
@@ -37,7 +38,16 @@ export async function createClientPackage(trainerId: string, input: CreatePackag
   if (!offered.includes(duration as 60 | 90)) {
     return { ok: false, status: 400, message: 'Esa duración no está entre las que ofreces' }
   }
-  const quote = packagePriceQuote(size, duration)
+  // Precio de 1 jugador de esa duración en la tabla del entrenador.
+  const base = await requireBasePrice(supabase, trainerId, duration, 1)
+  if (!base.ok) {
+    return {
+      ok: false,
+      status: base.status,
+      message: base.status === 409 ? `No tienes precio para una clase de ${duration} min (1 jugador). Configúralo en Perfil → Public pricing.` : base.message,
+    }
+  }
+  const quote = packagePriceQuote(size, base.price, duration)
 
   const { data: pkg, error: pkgError } = await supabase
     .from('client_packages')
