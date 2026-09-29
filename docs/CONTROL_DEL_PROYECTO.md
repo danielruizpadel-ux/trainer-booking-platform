@@ -2,6 +2,34 @@
 
 Este es el **punto de entrada para Dani y los agentes**, cualquiera que sea la carpeta del proyecto que esté abierta. Fecha de creación: 28/09/2026. Las referencias a ramas, PR y versiones cambian: comprobarlas al comenzar cada sesión.
 
+## Cómo vamos a trabajar (guía para Dani)
+
+| Paso | Lo que ves tú | Lo que queda guardado |
+| --- | --- | --- |
+| **1. Investigar** | Pantalla actual, dos referencias útiles y el problema concreto. | Enlace, fecha, captura y qué se observó o no se pudo comprobar. |
+| **2. Decidir** | Una propuesta visual y un ejemplo real; eliges o corriges. | Una tarjeta con resultado esperado y, si es una regla duradera, `DECISIONS.md`. |
+| **3. Construir** | La tarea pasa a «En desarrollo». | Rama propia desde `develop`, código y capturas de cada iteración. |
+| **4. Enseñar y revisar** | Pruebas el cambio en escritorio y móvil; dices qué ajustar. | Antes/después, casos de error, pruebas, revisión independiente y PR. |
+| **5. Integrar** | La tarjeta pasa a «Hecha» cuando la versión común funciona. | PR incorporado a `develop`, documento dueño y enlaces desde la tarjeta. |
+| **6. Publicar** | Se decide por separado cuándo usarlo con clientes. | Checklist de seguridad y despliegue; «Hecha» no significa publicada. |
+
+**Tú controlas las decisiones y el resultado visible.** Puedes cambiar de idea en cualquier paso: el agente actualiza la misma tarjeta, captura la nueva versión y anota por qué cambió. No se crean tareas duplicadas por cada iteración.
+
+### Investigar una funcionalidad propia o de la competencia
+
+La pregunta de investigación debe ser concreta (por ejemplo: «¿cuántos pasos hay desde elegir hora hasta recibir confirmación?»). Primero se recorre **nuestra web** y se registra la versión/ramal, escritorio y móvil, qué ocurrió realmente y dónde hay fricción. Después se revisan hasta dos referencias comparables: URL, fecha, pasos observados y captura o enlace. Se distinguen hechos, inferencias y aspectos inaccesibles (login, pago, disponibilidad). Si hay afirmaciones sobre precios, condiciones o funciones actuales, verificar la fuente actual antes de decidir. Nunca copiar una pantalla ni prometer funciones solo por una imagen.
+
+El resultado cabe en una tarjeta: **problema → evidencia → propuesta de recorrido → decisión de Dani → prueba visible**. Para dinero, cancelaciones, permisos o datos de clientes, mostrar un ejemplo real y esperar la decisión antes de programar esas reglas. Si la investigación no requiere código, no crear una rama de producto solo para simular actividad.
+
+### Responsables y prueba de cierre
+
+- **Dani:** prioridad, reglas del negocio, elección de diseño y aceptación viendo la pantalla.
+- **Agente implementador:** comprueba carpeta/rama/cambios locales; trabaja aislado desde la base vigente; mantiene tarjeta, código, pruebas y capturas juntos.
+- **Agente revisor:** revisa el diff y los recorridos que cambian estado. Claude implementa y Codex revisa cuando ambos están disponibles; si Claude no está disponible, Codex puede implementar y se registra expresamente si falta revisión independiente. La herramienta no cuenta como revisor por sí sola.
+- **Antes de marcar «Hecha»:** criterios acordados visibles, PR incorporado a `develop`, recorrido probado allí, evidencias accesibles desde otra copia y ningún pendiente bloqueante oculto. Para cambios de producto, `main` y la web publicada siguen siendo pasos separados.
+
+La tarjeta Markdown y las capturas versionadas son la memoria compartida; Nimbalyst es la vista visual. Una copia abierta en el Mac **solo recibe cambios al actualizar su rama**. El detalle de Nimbalyst puede mostrar la ruta del archivo: ábrelo para ver las imágenes y enlaces; selecciona «All» para incluir las tareas hechas.
+
 ## El mapa en una pantalla
 
 | Lugar | Qué contiene | Cuándo se actualiza |
@@ -44,7 +72,7 @@ Antes de confirmar imágenes, ocultar datos reales de clientes, claves, correos 
 
 Dani confirmó en una copia limpia de `develop` que la tarjeta de Mauri se recupera desde GitHub, se ve al seleccionar el filtro «All» y que, tras ponerla al inicio de `nimbalyst-local/tracker/tarjetas.md`, se muestra la vista previa de la captura. El detalle de la tarjeta muestra la ruta del Markdown: para consultar imágenes, enlaces y decisiones hay que **abrir ese archivo** en el editor. El cambio de estado de la tarjeta también quedó escrito en Markdown en la prueba anterior; cada copia local debe actualizar su rama para recibirlo.
 
-**Regla práctica:** una tarjeta visual empieza con resultado, enlace antes/después y una vista previa relativa a un archivo versionado en `docs/evidencias/`. Abrir el archivo desde la tarjeta; en el tablero seleccionar «All» para incluir tareas hechas. Confirmar que la captura existe en la misma rama que el Markdown, y comprobar la vista tras abrir la copia del proyecto. Sigue pendiente probar una decisión nueva escrita en la tarjeta y recuperada en otra copia.
+**Regla práctica:** una tarjeta visual empieza con resultado, enlace antes/después y una vista previa relativa a un archivo versionado en `docs/evidencias/`. Abrir el archivo desde la tarjeta; en el tablero seleccionar «All» para incluir tareas hechas. Confirmar que la captura existe en la misma rama que el Markdown, y comprobar la vista tras abrir la copia del proyecto. El 29/09 Dani actualizó una copia limpia de `develop` por fast forward hasta `f031b25` y confirmó que la nota «Confirmado por Dani el 29/09» apareció en la misma tarjeta. Así quedó comprobado que una nota nueva versionada llega a otra copia tras actualizarla. No se ha probado edición simultánea de dos copias ni sincronización automática.
 
 ## Rutina sin perder conocimiento entre carpetas
 
@@ -65,10 +93,9 @@ En la prueba de la reserva de Mauri, el chat de Nimbalyst estaba abierto en el c
 
 La revisión del PR #5 detectó un caso que no mostraban las capturas iniciales: al cambiar de semana con las flechas, la cabecera puede mostrar fechas nuevas mientras el día enfocado y las horas pertenecen a la semana anterior. **Regla del protocolo:** además de comparar antes/después en escritorio y móvil, recorrer las transiciones que cambian estado (flechas, minicalendario, duración, selección de varias clases y regreso). La evidencia debe decir qué se comprobó y qué quedó pendiente. Un error encontrado vuelve a la misma rama de tarea y se revisa de nuevo en el mismo PR antes de integrar.
 
-## Estado de implantación
+## Estado de implantación (29/09/2026)
 
-- `develop` ya existe, sin despliegue ni cambios en `main` por crearlo.
-- Este PR de documentación reúne el tablero Markdown y su configuración con el protocolo para que ambos se acepten juntos en `main`. El [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2) fue la prueba aislada: un clon nuevo mostró INP.2 y sus etiquetas; todas las columnas y los assets aún necesitan prueba.
-- [PR #5](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/5) incorporó la reserva fácil de Mauri a `develop` (merge `6d179340`, 29/09). Se probó la navegación semanal en el Mac; la reserva real sigue sin probarse.
-- [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) conecta `develop` con `main`; no implica aceptación ni publicación.
-- El centro de control y el tablero están en `main` ([PR #4](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/4), `424828f`) y en `develop` ([PR #6](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/6), `3771c24`). Las ramas se conectan mediante un merge revisado. Dani confirmó que el repositorio no está conectado a una publicación automática; esta confirmación no sustituye la checklist de `docs/ANTES_DE_PUBLICAR.md` para futuros despliegues. El producto integrado en `develop` sigue separado del `main` actual hasta revisar el PR #3.
+- El tablero, el protocolo y la vista previa de Mauri están versionados en `main` y `develop`. Dani confirmó en una copia limpia de `develop` que la nota nueva se recupera al actualizar la rama. La prueba «Proceso · H0» se cierra; Nimbalyst sirve como tablero y editor visual para este flujo, con la limitación de que las copias no se actualizan solas.
+- La reserva fácil de Mauri del [PR #5](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/5) está en `develop`; la captura y el resumen están enlazados desde su tarjeta. No se envió una reserva real ni se publicó.
+- El [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) propone reunir el trabajo de `develop` en `main`. Su estado se comprueba antes de cualquier integración o publicación.
+- La siguiente tarea del tablero investiga el recorrido completo de reserva de Mauri y dos referencias, antes de decidir reglas de cobro, cancelación o confirmación.
