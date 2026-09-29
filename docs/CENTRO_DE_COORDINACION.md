@@ -14,6 +14,17 @@ Abre una sesión de agente en Nimbalyst llamada **Centro del proyecto**. Puede l
 >
 > Usa una rama por tarea desde `develop` verificado. No muevas trabajo local ajeno ni confirmes archivos fuera del alcance. Al cerrar, actualiza la tarjeta, el documento dueño y las evidencias, y vuelve a dar las cuatro líneas de estado.
 
+## Registrar un hallazgo mientras se desarrolla
+
+En cualquier sesión de tarea, Dani puede decir **«/cerebro registra: [lo que he visto]»** cuando el activador esté instalado. El agente de esa sesión debe:
+
+1. Identificar carpeta, rama y tarjeta activa; si no es inequívoca, pedir solo el ID de tarjeta. Distinguir un hecho observado de una sugerencia o una decisión pendiente de Dani.
+2. Guardar un apunte breve en la **misma tarjeta** y, si cambia una regla duradera, en el documento dueño. Para una pantalla, conservar una captura útil en `docs/evidencias/<id>/` y enlazarla; evitar datos privados.
+3. Mostrar a Dani qué se escribió y dónde. Confirmar solo esos archivos en la rama de la tarea y vincularlos al PR, después de revisar el diff. Un cambio local sin subir aún no es memoria disponible en otras copias.
+4. Cuando el Centro consulte el estado, revisar también PR abiertos; el hallazgo puede estar propuesto en una rama y todavía no integrado en `develop`. Si hay varias sesiones editando la misma tarjeta, coordinar la integración antes de sustituir el Markdown.
+
+**«/cerebro estado»** reconstruye el resumen desde tarjetas, documentos y PR. El activador es una mejora pendiente de implementación y prueba en Claude y Codex; estos comandos son la interfaz deseada, no una función ya verificada. Hasta entonces se puede pedir la misma acción en lenguaje natural en la sesión de trabajo.
+
 ## Pase breve entre sesiones
 
 **Tarjeta:** [ID y enlace] · **Base:** [rama y SHA] · **Objetivo:** [resultado que verá Dani]  
