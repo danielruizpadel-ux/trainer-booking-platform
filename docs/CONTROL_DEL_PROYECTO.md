@@ -93,10 +93,9 @@ En la prueba de la reserva de Mauri, el chat de Nimbalyst estaba abierto en el c
 
 La revisión del PR #5 detectó un caso que no mostraban las capturas iniciales: al cambiar de semana con las flechas, la cabecera puede mostrar fechas nuevas mientras el día enfocado y las horas pertenecen a la semana anterior. **Regla del protocolo:** además de comparar antes/después en escritorio y móvil, recorrer las transiciones que cambian estado (flechas, minicalendario, duración, selección de varias clases y regreso). La evidencia debe decir qué se comprobó y qué quedó pendiente. Un error encontrado vuelve a la misma rama de tarea y se revisa de nuevo en el mismo PR antes de integrar.
 
-## Estado de implantación
+## Estado de implantación (29/09/2026)
 
-- `develop` ya existe, sin despliegue ni cambios en `main` por crearlo.
-- Este PR de documentación reúne el tablero Markdown y su configuración con el protocolo para que ambos se acepten juntos en `main`. El [PR #2](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/2) fue la prueba aislada: un clon nuevo mostró INP.2 y sus etiquetas; todas las columnas y los assets aún necesitan prueba.
-- [PR #5](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/5) incorporó la reserva fácil de Mauri a `develop` (merge `6d179340`, 29/09). Se probó la navegación semanal en el Mac; la reserva real sigue sin probarse.
-- [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) conecta `develop` con `main`; no implica aceptación ni publicación.
-- El centro de control y el tablero están en `main` ([PR #4](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/4), `424828f`) y en `develop` ([PR #6](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/6), `3771c24`). Las ramas se conectan mediante un merge revisado. Dani confirmó que el repositorio no está conectado a una publicación automática; esta confirmación no sustituye la checklist de `docs/ANTES_DE_PUBLICAR.md` para futuros despliegues. El producto integrado en `develop` sigue separado del `main` actual hasta revisar el PR #3.
+- El tablero, el protocolo y la vista previa de Mauri están versionados en `main` y `develop`. Dani confirmó en una copia limpia de `develop` que la nota nueva se recupera al actualizar la rama. La prueba «Proceso · H0» se cierra; Nimbalyst sirve como tablero y editor visual para este flujo, con la limitación de que las copias no se actualizan solas.
+- La reserva fácil de Mauri del [PR #5](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/5) está en `develop`; la captura y el resumen están enlazados desde su tarjeta. No se envió una reserva real ni se publicó.
+- El [PR borrador #3](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/3) propone reunir el trabajo de `develop` en `main`. Su estado se comprueba antes de cualquier integración o publicación.
+- La siguiente tarea del tablero investiga el recorrido completo de reserva de Mauri y dos referencias, antes de decidir reglas de cobro, cancelación o confirmación.
