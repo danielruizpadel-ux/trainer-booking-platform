@@ -62,6 +62,12 @@ Para despliegue, verificar variables y permisos por entorno, ejecutar las migrac
 
 Mantener el comportamiento público tras contratos claros de HTTP/JSON (campos, estados, errores, autenticación y fechas). Si otra app o un servicio escrito en otro lenguaje consume la API, documentar y versionar el contrato antes de cambiarlo; OpenAPI es una opción cuando aparezca ese consumidor. La lógica de negocio y los permisos siguen comprobándose en el servidor y la base, no se duplican en cada cliente. No añadimos otro lenguaje ni una capa técnica por anticipación: preservamos los límites para poder hacerlo después.
 
+### Portabilidad de la aplicación completa
+
+La [tarea transversal #33](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/33) afecta a todas las líneas de producto, no solo a las páginas editables. Cada función nueva identifica sus dependencias de hosting, base de datos, autenticación, almacenamiento y servicios externos. Se separan, de forma incremental, las pantallas, las reglas de negocio y los accesos concretos a proveedores; los contratos y pruebas describen el comportamiento que debe mantenerse. El uso de Supabase o del hosting actual sigue siendo válido mientras responda a la necesidad: no se reescribe toda la aplicación por anticipación.
+
+Un cambio real de proveedor es una tarea propia: inventariar consultas, esquemas y migraciones, RLS, triggers y restricciones, usuarios/sesiones, imágenes, tareas programadas, variables y secretos; preparar exportación/restauración y correspondencia de identificadores; ensayar en staging disponibilidad, reserva, acceso, pagos y dashboard, incluidos errores y reintentos. Registrar copia de seguridad, orden del cambio, verificación y recuperación. Si no se ha ensayado ese traslado, describir la dependencia y el trabajo pendiente, sin garantizar que el cambio será inmediato o sin cortes.
+
 ## El mapa en una pantalla
 
 | Lugar | Qué contiene | Cuándo se actualiza |
