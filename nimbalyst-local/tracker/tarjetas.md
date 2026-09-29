@@ -2,14 +2,6 @@
 
 Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada cambio. En el tablero, selecciona **All** para incluir las tareas hechas.
 
-- Mauri · H2 — Implementar primera landing Editorial #tarjeta[id:tar_351Y7S6XX5FRTV9QR139AZBFHY status:para-revisar priority:high created:2026-09-29 tags:mauri,h2,ux linea:mauri hito:h2]
-  Resultado propuesto: hero más corto en grafito/marfil, agenda más arriba y contenido de ejemplo retirado en `/mauri`; pendiente de revisión, sin integrar ni publicar.
-  **Comparación:** [Antes escritorio](../../docs/evidencias/mauri-editorial/before-desktop.png) → [Después escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png) · [Antes móvil](../../docs/evidencias/mauri-editorial/before-mobile.png) → [Después móvil](../../docs/evidencias/mauri-editorial/after-mobile.png).
-  ![Mauri Editorial en escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png)
-  - [Issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31) · [PR #35 abierto hacia develop](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/35) · [Evidencia, pruebas y pendiente de login](../../docs/evidencias/mauri-editorial/RESUMEN.md) · [Decisión duradera](../../DECISIONS.md).
-  - Base: `origin/develop` `7899eb96c05b4f6842b2a27b15bdf29ea04d43f6`. Rama aislada: `feature/mauri-editorial-pr1-20260929`. Implementador: Codex; revisión independiente pendiente.
-  - Alcance: interfaz de landing. API, autenticación, reglas de reserva, SQL y despliegue sin cambios. El login nuevo de cabecera queda fuera porque pierde la hora al navegar.
-
 - Proceso · H0 — Probar el Centro de coordinación #tarjeta[id:tar_01M3R1C2D3E4F5G6H7J8K9M0NP status:lista priority:high created:2026-09-29 tags:proceso,h0,agentes linea:proceso hito:h0]
   Resultado esperado: Dani pregunta por el estado en una sesión «Centro del proyecto», elige una tarjeta y recibe un único siguiente paso; otro agente puede retomar la misma tarea sin perder contexto.
   - [Guion del Centro](../../docs/CENTRO_DE_COORDINACION.md) · [Protocolo común](../../docs/CONTROL_DEL_PROYECTO.md).
@@ -25,8 +17,13 @@ Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada ca
   - Definir contrato de API para consumidores externos cuando exista uno; documentar cambios incompatibles. Verificar la checklist de seguridad antes de cualquier deploy.
   - [Dos puertas y compatibilidad](../../docs/CONTROL_DEL_PROYECTO.md) · [Checklist de publicación](../../docs/ANTES_DE_PUBLICAR.md).
 
-- Mauri · H2 — Analizar la reserva del jugador en /mauri #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:en-desarrollo priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
+- Mauri · H2 — Analizar la reserva del jugador en /mauri #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:para-revisar priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
   Resultado esperado: entender y mejorar el recorrido del jugador al pedir una clase con Mauri, desde elegir hora hasta la solicitud recibida.
+  - **Primera entrega visual parcial, pendiente de aceptación de Dani:** [issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31) · [PR #35 abierto hacia develop](https://github.com/danielruizpadel-ux/trainer-booking-platform/pull/35) · [comparación y pruebas](../../docs/evidencias/mauri-editorial/RESUMEN.md). El hero es más corto, la agenda empieza antes y se retiró contenido de ejemplo; esto todavía no es la landing Editorial completa ni un diseño aceptado.
+  **Capturas Editorial:** [Antes escritorio](../../docs/evidencias/mauri-editorial/before-desktop.png) → [Después escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png) · [Antes móvil](../../docs/evidencias/mauri-editorial/before-mobile.png) → [Página completa revisada](../../docs/evidencias/mauri-editorial/revision-mobile-full.png) · [Hora elegida y resumen compacto](../../docs/evidencias/mauri-editorial/revision-mobile-selected.png) · [Detalle del resumen](../../docs/evidencias/mauri-editorial/revision-mobile-summary.png).
+  ![Primera base visual Editorial de Mauri, pendiente de aceptación](../../docs/evidencias/mauri-editorial/after-desktop.png)
+  - El acceso nuevo a login queda fuera: al navegar desde una hora seleccionada se pierde la selección. Club, sponsors, paquetes, precios y bio verificados siguen pendientes de datos y alcance propios. PR #34 también modifica el archivo de tarjetas; revisar la integración sin borrar este contexto.
+  - Revisión móvil del PR #35: al elegir 09:00 aparece un resumen compacto con enlace al detalle; la hora y ese resumen se ven juntos en 390×844. El panel completo conserva su lugar y desaparece la barra al entrar en pantalla. No se ha enviado una reserva ni se ha aceptado todavía la composición completa.
   - **Pantalla de esta tarea:** sección de reserva de `/mauri` (selector semanal y checkout) en escritorio y móvil. Primero investigamos; cada cambio concreto de diseño o acceso se define y revisa antes de implementarlo.
   - **Tareas separadas:** el resto de la landing de Mauri, el dashboard del entrenador (confirmar pista, cobro y gestión) y el panel de admin. Si una corrección necesita API o base de datos, se delimita como cambio propio con sus pruebas.
   **Capturas del recorrido local:** [Revisión en escritorio](../../docs/evidencias/mauri-reserva-recorrido/escritorio-revision.png) · [Formulario sin cuenta en móvil](../../docs/evidencias/mauri-reserva-recorrido/movil-sin-cuenta.png) · [Contexto y límites](../../docs/evidencias/mauri-reserva-recorrido/RESUMEN.md).

@@ -1,0 +1,47 @@
+{
+  "compact": {
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "scrollY": 420
+    },
+    "selected": {
+      "top": 540,
+      "bottom": 584,
+      "documentTop": 960
+    },
+    "summary": {
+      "top": 897,
+      "bottom": 925,
+      "documentTop": 1317
+    },
+    "shortcut": {
+      "top": 772,
+      "bottom": 832,
+      "documentTop": 1192
+    },
+    "shortcutText": "TU RESERVA · 1 CLASE\n\n2 oct · 09:00\n\nVer resumen",
+    "pageHeight": 2407,
+    "photoLoaded": true
+  },
+  "detail": {
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "scrollY": 1277
+    },
+    "selected": {
+      "top": -317,
+      "bottom": -273,
+      "documentTop": 960
+    },
+    "summary": {
+      "top": 40,
+      "bottom": 68,
+      "documentTop": 1317
+    },
+    "shortcut": null,
+    "pageHeight": 2407,
+    "photoLoaded": true
+  }
+}

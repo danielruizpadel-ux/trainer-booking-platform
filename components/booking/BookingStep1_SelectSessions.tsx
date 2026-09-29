@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import EasyWeekSelector from './EasyWeekSelector'
 import BookingSummaryCard from './BookingSummaryCard'
 import { DurationPicker } from '@/components/dashboard/reservations/DurationPicker'
@@ -42,10 +42,21 @@ export default function BookingStep1_SelectSessions({
     () => (prices ? quoteBooking(prices, selectedSessions.length, duration, 1) : null),
     [prices, selectedSessions, duration]
   )
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const [summaryVisible, setSummaryVisible] = useState(false)
+
+  useEffect(() => {
+    const summary = summaryRef.current
+    if (!summary) return
+    const observer = new IntersectionObserver(([entry]) => setSummaryVisible(entry.isIntersecting))
+    observer.observe(summary)
+    return () => observer.disconnect()
+  }, [])
 
   const handleRemove = (date: string, time: string) => {
     onSessionChange(selectedSessions.filter((s) => !(s.date === date && s.time === time)))
   }
+  const lastSelected = selectedSessions[selectedSessions.length - 1]
 
   return (
     <section className="py-10 sm:py-14 px-4 sm:px-6 lg:px-8 bg-gray-50/50">
@@ -77,17 +88,42 @@ export default function BookingStep1_SelectSessions({
             durationMinutes={duration}
           />
 
-          {/* Panel lateral */}
-          <BookingSummaryCard
-            sessions={selectedSessions}
-            total={quote?.total ?? null}
-            discount={quote?.discountPercent ?? 0}
-            pricePerSession={quote?.pricePerSession ?? null}
-            durationMinutes={duration}
-            onRemove={handleRemove}
-            onConfirm={() => selectedSessions.length > 0 && onConfirm(selectedSessions)}
-          />
+          {/* En móvil, el enlace compacto mantiene visible la selección mientras
+              el resumen completo sigue inmediatamente después del calendario. */}
+          <div ref={summaryRef} id="resumen-mauri" className="scroll-mt-4 lg:sticky lg:top-6">
+            <BookingSummaryCard
+              sessions={selectedSessions}
+              total={quote?.total ?? null}
+              discount={quote?.discountPercent ?? 0}
+              pricePerSession={quote?.pricePerSession ?? null}
+              durationMinutes={duration}
+              onRemove={handleRemove}
+              onConfirm={() => selectedSessions.length > 0 && onConfirm(selectedSessions)}
+            />
+          </div>
         </div>
+        {lastSelected && !summaryVisible && (
+          <div
+            className="fixed inset-x-3 z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-[#252824] px-4 py-3 text-[#f8f5ed] ring-1 ring-[#f8f5ed]/30 lg:hidden"
+            style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}
+            role="status"
+          >
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#d8d1bf]">
+                Tu reserva · {selectedSessions.length} {selectedSessions.length === 1 ? 'clase' : 'clases'}
+              </p>
+              <p className="truncate text-sm font-medium">
+                {new Date(`${lastSelected.date}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · {lastSelected.time.slice(0, 5)}
+              </p>
+            </div>
+            <a
+              href="#resumen-mauri"
+              className="shrink-0 rounded-full bg-[#f8f5ed] px-4 py-2 text-xs font-semibold text-[#252824] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f8f5ed]"
+            >
+              Ver resumen
+            </a>
+          </div>
+        )}
       </div>
     </section>
   )
