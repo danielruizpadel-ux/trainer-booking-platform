@@ -7,6 +7,7 @@ Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada ca
   - [Guion del Centro](../../docs/CENTRO_DE_COORDINACION.md) · [Protocolo común](../../docs/CONTROL_DEL_PROYECTO.md).
   - Prueba: abrir una sesión nueva en Nimbalyst desde `develop` actualizado; leer tablero y PR, dar cuatro líneas de estado y preparar un pase sobre una tarjeta existente.
   - Probar un relevo Claude ↔ Codex cuando ambos estén disponibles y el caso en que uno agota créditos. Comprobar qué envío entre sesiones permite realmente Nimbalyst; hasta entonces usar el pase listo para pegar.
+  - Próxima mejora pedida por Dani: invocar `/cerebro` desde una sesión de Claude o Codex en Nimbalyst para cargar el centro de control y seguir conversando allí. Probar el comando en ambos proveedores; si sus formatos difieren, mantener un único guion fuente en `docs/CENTRO_DE_COORDINACION.md` y dos activadores pequeños. El comando consulta el estado vigente y la tarjeta; no presupone que traslade el historial de otra sesión ni que envíe mensajes a otro agente automáticamente.
   - Cierre: Dani confirma que entiende el estado y encuentra el resultado en otra copia actualizada. Registrar límite o fricción observados sin inventar automatización.
 
 - Proceso · H0 — Blindar integración y preparación de hosting #tarjeta[id:tar_01M3Q8C5D2F9AX7RB6T1V0E4ZG status:idea priority:high created:2026-09-29 tags:proceso,h0,calidad linea:proceso hito:h0]
