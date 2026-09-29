@@ -17,6 +17,12 @@ Empieza por `docs/CONTROL_DEL_PROYECTO.md`. Lee `CLAUDE.md` antes de modificar c
 - Antes de cerrar, revisa diff, comprueba los casos relevantes, captura el resultado visible y enlaza commit/PR. Si hay imágenes de producto, verifica que están versionadas. No marques Hecha hasta integrar en la base declarada y comprobarla allí.
 - Un commit, backup o PR no es despliegue. Para publicar, aplica la checklist de `docs/ANTES_DE_PUBLICAR.md` y verifica el entorno real. No subas `.env.local` ni secretos.
 
+## Centro y pases entre agentes
+
+La sesión **Centro del proyecto** usa `docs/CENTRO_DE_COORDINACION.md` para dar a Dani el estado resumido y preparar encargos. Cada tarea conserva su contexto en la misma tarjeta, el PR y el documento dueño; un chat separado no es fuente única de verdad. Antes de pasar una tarea a Claude o Codex, entregar ID, base/SHA, objetivo visible, decisión, alcance, pruebas y pendientes. Registrar qué agente implementó y quién revisó realmente.
+
+Si uno agota créditos, el disponible continúa sin simular trabajo ni revisión del otro. Para reservas, pagos, acceso, datos o despliegue, una revisión independiente pendiente impide integrar; se puede avanzar con investigación y cambios aislados. El orquestador V1 no ofrece sustitución automática y no debe confundirse con esta coordinación.
+
 ## Integración, datos y compatibilidad
 
 - Antes de implementar, señalar si la tarea cambia interfaz, contrato de API, autenticación, datos, migraciones o despliegue. Una tarea no se considera aislada si afecta a otra de esas capas.
