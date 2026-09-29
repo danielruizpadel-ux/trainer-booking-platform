@@ -31,6 +31,13 @@ Si uno agota créditos, el disponible continúa sin simular trabajo ni revisión
 - Antes del merge, enumerar resultados de build, tipos y pruebas relevantes, así como fallos previos; no afirmar que CI protege la rama si no hay workflow y regla requerida configurados. Pedir revisión independiente para cambios de alto impacto.
 - Para otras aplicaciones o lenguajes, mantener contratos HTTP/JSON documentados y estables; no cambiar campos o estados públicos sin plan de compatibilidad. Para publicar, seguir además `docs/ANTES_DE_PUBLICAR.md` y comprobar el entorno real. El merge y el despliegue son decisiones distintas.
 
+## Portabilidad de todo el proyecto
+
+- La regla se aplica a web, API, reservas, cuentas, pagos, dashboard, datos, archivos y despliegue. En cada PR indica qué proveedor o servicio se usa, qué capas afecta y qué comportamiento debe seguir funcionando si cambia el proveedor. Consulta la [tarea transversal #33](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/33).
+- Coloca acceso a base de datos, autenticación, almacenamiento y servicios externos detrás de módulos del servidor con contratos claros; evita nuevas llamadas directas al proveedor desde componentes de pantalla. Adapta gradualmente el código existente cuando se toque esa zona, sin prometer una sustitución automática.
+- Conserva IDs, estados, fechas y reglas de negocio en contratos y pruebas de los recorridos afectados. Una migración real de base también debe trasladar usuarios, permisos, medios, restricciones, funciones y datos; una migración de hosting debe comprobar variables, tareas, rutas, secretos y almacenamiento.
+- Antes de cambiar proveedor, inventaría dependencias, ensaya exportación/restauración y los recorridos críticos en staging, prepara copia de seguridad y recuperación, y compara resultados. No declares «portable» una función solo por cambiar una variable de entorno. La migración requiere un plan y pruebas propios.
+
 ## Comunicación con Dani
 
 Empieza cada sesión con cuatro líneas: **integrado**, **en revisión**, **necesita decisión**, **siguiente paso**. Evita instrucciones de Git si puede tomar la decisión mirando una pantalla, una tarjeta o un diagrama. Tras una corrección de Dani, actualiza la tarjeta y la decisión duradera antes de continuar.
