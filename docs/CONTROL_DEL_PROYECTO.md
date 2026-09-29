@@ -30,6 +30,26 @@ El resultado cabe en una tarjeta: **problema → evidencia → propuesta de reco
 
 La tarjeta Markdown y las capturas versionadas son la memoria compartida; Nimbalyst es la vista visual. Una copia abierta en el Mac **solo recibe cambios al actualizar su rama**. El detalle de Nimbalyst puede mostrar la ruta del archivo: ábrelo para ver las imágenes y enlaces; selecciona «All» para incluir las tareas hechas.
 
+## Un proyecto, dos puertas de seguridad
+
+La web, su API y Supabase son **un mismo producto** aunque se trabajen en carpetas y ramas distintas. No prometemos que nunca se rompa: en cada entrega demostramos qué se ha comprobado y qué riesgo queda.
+
+### Puerta 1 · Incorporar cambios a `develop`
+
+El agente responsable indica base y SHA, archivos tocados, impacto en pantalla, API, datos y permisos. El PR incluye comprobaciones relevantes y una revisión distinta del implementador cuando afecte reservas, cobros, autenticación o migraciones. Si un check global ya falla antes de la tarea, anota los errores de base y demuestra que el cambio no añade otros; no llama «verde» a un check fallido. La tarea solo pasa a «Hecha» al integrarse y probarse en `develop`.
+
+**Estado real al 29/09:** existen scripts y pruebas, pero no se encontró un workflow en `.github/workflows/`; las verificaciones no están impuestas por CI. La tarea de proceso del tablero debe inventariar qué comandos corren sin secretos ni base real, corregir fallos previos y después activar checks de PR y protección de ramas. Hasta entonces, cada PR enumera explícitamente las pruebas manuales y sus límites.
+
+### Puerta 2 · Publicar web y cambios de base de datos
+
+Publicar requiere una revisión separada del [checklist de publicación](ANTES_DE_PUBLICAR.md) y del entorno destino. Antes de ejecutar SQL se compara el esquema e historial **de la base concreta** con las migraciones; no se deduce por el número de archivos que estén aplicadas. Cada cambio de datos declara: qué filas afecta, copia de seguridad, prueba en entorno aislado o staging, orden de aplicación, compatibilidad entre versión antigua y nueva de la web, comprobación posterior y plan de recuperación. Preferir añadir y migrar primero; cambiar el código después; quitar columnas o comportamientos antiguos en otra entrega. Si una migración no es reversible, documentar cómo corregir hacia adelante y recuperar datos. Nunca aplicar SQL o usar claves reales por inferencia.
+
+Para despliegue, verificar variables y permisos por entorno, ejecutar las migraciones en el orden probado, desplegar el commit exacto, recorrer login, disponibilidad, solicitud y panel con datos de prueba, y tener previsto volver al código anterior **solo si ese código sigue siendo compatible con la base ya migrada**. Un merge en `main` no sustituye estas comprobaciones ni implica autorización para publicar.
+
+### Compatibilidad futura
+
+Mantener el comportamiento público tras contratos claros de HTTP/JSON (campos, estados, errores, autenticación y fechas). Si otra app o un servicio escrito en otro lenguaje consume la API, documentar y versionar el contrato antes de cambiarlo; OpenAPI es una opción cuando aparezca ese consumidor. La lógica de negocio y los permisos siguen comprobándose en el servidor y la base, no se duplican en cada cliente. No añadimos otro lenguaje ni una capa técnica por anticipación: preservamos los límites para poder hacerlo después.
+
 ## El mapa en una pantalla
 
 | Lugar | Qué contiene | Cuándo se actualiza |
