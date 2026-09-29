@@ -17,6 +17,14 @@ Empieza por `docs/CONTROL_DEL_PROYECTO.md`. Lee `CLAUDE.md` antes de modificar c
 - Antes de cerrar, revisa diff, comprueba los casos relevantes, captura el resultado visible y enlaza commit/PR. Si hay imágenes de producto, verifica que están versionadas. No marques Hecha hasta integrar en la base declarada y comprobarla allí.
 - Un commit, backup o PR no es despliegue. Para publicar, aplica la checklist de `docs/ANTES_DE_PUBLICAR.md` y verifica el entorno real. No subas `.env.local` ni secretos.
 
+## Integración, datos y compatibilidad
+
+- Antes de implementar, señalar si la tarea cambia interfaz, contrato de API, autenticación, datos, migraciones o despliegue. Una tarea no se considera aislada si afecta a otra de esas capas.
+- Para reservas, cobros, permisos o base de datos: revisar conjuntamente navegador → API → reglas de negocio → SQL, incluidos errores, reintentos y la versión anterior. No probar escrituras contra la base real por comodidad.
+- Si hay migración, verificar esquema e historial del entorno destino y documentar orden, prueba aislada, copia de seguridad, compatibilidad de despliegue y recuperación. No asumir que los archivos de `migrations/` reflejan lo aplicado. Evitar cambios destructivos de esquema en el mismo paso que cambia el código.
+- Antes del merge, enumerar resultados de build, tipos y pruebas relevantes, así como fallos previos; no afirmar que CI protege la rama si no hay workflow y regla requerida configurados. Pedir revisión independiente para cambios de alto impacto.
+- Para otras aplicaciones o lenguajes, mantener contratos HTTP/JSON documentados y estables; no cambiar campos o estados públicos sin plan de compatibilidad. Para publicar, seguir además `docs/ANTES_DE_PUBLICAR.md` y comprobar el entorno real. El merge y el despliegue son decisiones distintas.
+
 ## Comunicación con Dani
 
 Empieza cada sesión con cuatro líneas: **integrado**, **en revisión**, **necesita decisión**, **siguiente paso**. Evita instrucciones de Git si puede tomar la decisión mirando una pantalla, una tarjeta o un diagrama. Tras una corrección de Dani, actualiza la tarjeta y la decisión duradera antes de continuar.
