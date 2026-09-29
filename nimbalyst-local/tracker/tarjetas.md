@@ -9,8 +9,10 @@ Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada ca
   - Definir contrato de API para consumidores externos cuando exista uno; documentar cambios incompatibles. Verificar la checklist de seguridad antes de cualquier deploy.
   - [Dos puertas y compatibilidad](../../docs/CONTROL_DEL_PROYECTO.md) · [Checklist de publicación](../../docs/ANTES_DE_PUBLICAR.md).
 
-- Mauri · H2 — Investigar la reserva completa #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:en-desarrollo priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
-  Resultado esperado: saber qué ve el jugador desde elegir hora hasta recibir confirmación, y qué necesita Mauri para gestionarla.
+- Mauri · H2 — Analizar la reserva del jugador en /mauri #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:en-desarrollo priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
+  Resultado esperado: entender y mejorar el recorrido del jugador al pedir una clase con Mauri, desde elegir hora hasta la solicitud recibida.
+  - **Pantalla de esta tarea:** sección de reserva de `/mauri` (selector semanal y checkout) en escritorio y móvil. Primero investigamos; cada cambio concreto de diseño o acceso se define y revisa antes de implementarlo.
+  - **Tareas separadas:** el resto de la landing de Mauri, el dashboard del entrenador (confirmar pista, cobro y gestión) y el panel de admin. Si una corrección necesita API o base de datos, se delimita como cambio propio con sus pruebas.
   **Capturas del recorrido local:** [Revisión en escritorio](../../docs/evidencias/mauri-reserva-recorrido/escritorio-revision.png) · [Formulario sin cuenta en móvil](../../docs/evidencias/mauri-reserva-recorrido/movil-sin-cuenta.png) · [Contexto y límites](../../docs/evidencias/mauri-reserva-recorrido/RESUMEN.md).
   ![Revisión de la reserva de Mauri en escritorio, antes de confirmar](../../docs/evidencias/mauri-reserva-recorrido/escritorio-revision.png)
   - Lectura del código en `develop` (29/09): selección de sesiones → checkout con datos de jugador o invitado → POST de solicitud → pantalla «Booking request received», pendiente de que Mauri confirme la pista. [BookingFlow](../../components/booking/BookingFlow.tsx) · [Checkout](../../components/booking/checkout/BookingCheckout.tsx).
