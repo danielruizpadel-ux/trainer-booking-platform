@@ -1,0 +1,37 @@
+{
+  "title": "Mauricio Martin | Reserva tu sesión de pádel",
+  "url": "http://localhost:3011/mauri",
+  "height": 1849,
+  "sections": [
+    {
+      "id": "",
+      "text": "THE PADEL DOCTOR\nRESERVAR\n\nENTRENAMIENTO PRIVADO DE PÁDEL\n\nM",
+      "y": 0,
+      "h": 594
+    },
+    {
+      "id": "booking-section",
+      "text": "Selecciona tus clases\n\nElige los días y las horas que mejor ",
+      "y": 594,
+      "h": 785
+    },
+    {
+      "id": "",
+      "text": "Selecciona tus clases\n\nElige los días y las horas que mejor ",
+      "y": 611,
+      "h": 707
+    },
+    {
+      "id": "",
+      "text": "LA SESIÓN\n\nPádel, a tu ritmo.\n\nEscoge una duración y una hor",
+      "y": 1379,
+      "h": 350
+    }
+  ],
+  "images": [
+    {
+      "src": "http://localhost:3011/_next/image?url=%2Ftrainers%2Fmauri%2Fhero.jpg&w=828&q=75",
+      "loaded": true
+    }
+  ]
+}

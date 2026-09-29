@@ -2,6 +2,14 @@
 
 Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada cambio. En el tablero, selecciona **All** para incluir las tareas hechas.
 
+- Mauri · H2 — Implementar primera landing Editorial #tarjeta[id:tar_351Y7S6XX5FRTV9QR139AZBFHY status:para-revisar priority:high created:2026-09-29 tags:mauri,h2,ux linea:mauri hito:h2]
+  Resultado propuesto: hero más corto en grafito/marfil, agenda más arriba y contenido de ejemplo retirado en `/mauri`; pendiente de revisión, sin integrar ni publicar.
+  **Comparación:** [Antes escritorio](../../docs/evidencias/mauri-editorial/before-desktop.png) → [Después escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png) · [Antes móvil](../../docs/evidencias/mauri-editorial/before-mobile.png) → [Después móvil](../../docs/evidencias/mauri-editorial/after-mobile.png).
+  ![Mauri Editorial en escritorio](../../docs/evidencias/mauri-editorial/after-desktop.png)
+  - [Issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31) · [Evidencia, pruebas y pendiente de login](../../docs/evidencias/mauri-editorial/RESUMEN.md) · [Decisión duradera](../../DECISIONS.md).
+  - Base: `origin/develop` `7899eb96c05b4f6842b2a27b15bdf29ea04d43f6`. Rama aislada: `feature/mauri-editorial-pr1-20260929`. Implementador: Codex; revisión independiente pendiente.
+  - Alcance: interfaz de landing. API, autenticación, reglas de reserva, SQL y despliegue sin cambios. El login nuevo de cabecera queda fuera porque pierde la hora al navegar.
+
 - Proceso · H0 — Probar el Centro de coordinación #tarjeta[id:tar_01M3R1C2D3E4F5G6H7J8K9M0NP status:lista priority:high created:2026-09-29 tags:proceso,h0,agentes linea:proceso hito:h0]
   Resultado esperado: Dani pregunta por el estado en una sesión «Centro del proyecto», elige una tarjeta y recibe un único siguiente paso; otro agente puede retomar la misma tarea sin perder contexto.
   - [Guion del Centro](../../docs/CENTRO_DE_COORDINACION.md) · [Protocolo común](../../docs/CONTROL_DEL_PROYECTO.md).

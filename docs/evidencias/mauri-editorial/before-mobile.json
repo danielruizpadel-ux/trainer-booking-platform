@@ -1,0 +1,49 @@
+{
+  "title": "Mauricio Martin - The Padel Doctor | Reserva tu sesión",
+  "url": "http://localhost:3011/mauri",
+  "height": 5378,
+  "sections": [
+    {
+      "id": "",
+      "text": "Mauricio Martin\n\nThe Padel Doctor - Técnica Clínica & Mental",
+      "y": 0,
+      "h": 844
+    },
+    {
+      "id": "booking-section",
+      "text": "Selecciona tus clases\n\nElige los días y las horas que mejor ",
+      "y": 844,
+      "h": 1228
+    },
+    {
+      "id": "",
+      "text": "Selecciona tus clases\n\nElige los días y las horas que mejor ",
+      "y": 869,
+      "h": 1130
+    },
+    {
+      "id": "",
+      "text": "Mi enfoque\n\nTres pilares para transformar tu juego\n\nTécnica ",
+      "y": 2072,
+      "h": 969
+    },
+    {
+      "id": "programas",
+      "text": "Programas y masterclasses\n\nAcelera tu progreso con entrenami",
+      "y": 3041,
+      "h": 1338
+    },
+    {
+      "id": "",
+      "text": "¿Listo para mejorar tu juego?\n\nNo esperes más. Reserva tu se",
+      "y": 4379,
+      "h": 441
+    }
+  ],
+  "images": [
+    {
+      "src": "http://localhost:3011/_next/image?url=%2Ftrainers%2Fmauri%2Fhero.jpg&w=640&q=75",
+      "loaded": true
+    }
+  ]
+}

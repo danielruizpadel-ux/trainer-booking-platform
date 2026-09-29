@@ -134,9 +134,9 @@ export default function BookingSection({
   return (
     <section
       id="booking-section"
-      className="scroll-mt-20 bg-blue-100 border-y border-blue-200"
+      className="scroll-mt-4 border-y border-[#d9d4c8] bg-[#eeeae1]"
     >
-      <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
+      <div aria-hidden className="h-2 bg-[#f8f5ed]/50 sm:h-4" />
       <BookingFlow
         trainerId={trainerId}
         trainerName={trainerName}
@@ -150,7 +150,7 @@ export default function BookingSection({
       />
       {entryHref && account.status !== 'loading' ? (
         // Acceso a la cuenta de jugador. <a> y no <Link>: sin prefetch de /cuenta/entrar.
-        <div className="bg-gray-50/50 px-4 pt-2 pb-6 sm:pb-10 text-center">
+        <div className="bg-[#f8f5ed]/50 px-4 pt-2 pb-6 text-center sm:pb-8">
           <p className="text-sm text-gray-500">
             {bookingPlayer ? (
               <>
@@ -191,7 +191,7 @@ export default function BookingSection({
           </p>
         </div>
       ) : (
-        <div aria-hidden className="h-6 sm:h-10 bg-gray-50/50" />
+        <div aria-hidden className="h-6 bg-[#f8f5ed]/50 sm:h-8" />
       )}
     </section>
   )

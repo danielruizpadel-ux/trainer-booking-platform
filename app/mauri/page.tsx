@@ -6,18 +6,15 @@
 import { notFound } from 'next/navigation'
 import { getTrainerBySlug } from '@/lib/services/trainers-data.service'
 import PremiumHero from '@/components/mauri/PremiumHero'
-import SpecialtiesSection from '@/components/mauri/SpecialtiesSection'
-import CoursesSection from '@/components/mauri/CoursesSection'
 import BookingSection from '@/components/mauri/BookingSection'
 import { normalizeDurations } from '@/lib/availability/durations'
-import CtaSection from '@/components/mauri/CtaSection'
 import FooterSection from '@/components/mauri/FooterSection'
 
 export async function generateMetadata() {
   return {
-    title: 'Mauricio Martin - The Padel Doctor | Reserva tu sesión',
+    title: 'Mauricio Martin | Reserva tu sesión de pádel',
     description:
-      'Técnica Clínica • Estrategia Competitiva • Mentalidad Ganadora. Reserva tu sesión con Mauricio Martin, especialista en transformar jugadores.',
+      'Consulta la disponibilidad semanal y solicita una sesión privada de pádel con Mauricio Martin.',
   }
 }
 
@@ -36,9 +33,6 @@ export default async function MauriPage() {
     <div className="w-full">
       <PremiumHero
         name={trainer.name}
-        tagline="The Padel Doctor - Técnica Clínica & Mentalidad Ganadora"
-        rating={trainer.rating || 4.9}
-        reviews={trainer.total_reviews || 156}
         imageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
       />
 
@@ -53,20 +47,30 @@ export default async function MauriPage() {
         trainerPhone={trainer.phone}
       />
 
-      <SpecialtiesSection />
+      <section className="bg-[#f8f5ed] px-4 py-14 text-[#252824] sm:px-6 sm:py-20 lg:px-8">
+        <div className="mx-auto grid max-w-6xl gap-8 border-t border-[#c8c4b7] pt-9 md:grid-cols-[1fr_1.2fr] md:gap-16">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#66675f]">
+            La sesión
+          </p>
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Pádel, a tu ritmo.
+            </h2>
+            <p className="mt-4 max-w-xl leading-relaxed text-[#5e6059]">
+              Escoge una duración y una hora disponible en el calendario. Verás
+              los detalles antes de enviar tu solicitud.
+            </p>
+            <a
+              href="#reserva"
+              className="mt-6 inline-block border-b border-[#252824] pb-1 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#252824]"
+            >
+              Volver a la agenda ↗
+            </a>
+          </div>
+        </div>
+      </section>
 
-      <CoursesSection />
-
-      {/* Reseñas: opción A del sistema de diseño — sección retirada. Para la opción B, importa y añade <ReviewsSection /> aquí. */}
-
-      <CtaSection />
-
-      <FooterSection
-        email={trainer.email || 'mauri@padeldoctor.com'}
-        phone={trainer.phone || '+1234567890'}
-        whatsapp={trainer.phone?.replace(/[^\d]/g, '') || '1234567890'}
-        instagram="@mauridoctor"
-      />
+      <FooterSection />
     </div>
   )
 }

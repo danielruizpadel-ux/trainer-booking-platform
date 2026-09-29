@@ -46,3 +46,10 @@ The repository and documented decisions remain authoritative.
 Prefer small, understandable changes over large rewrites.
 
 Every meaningful change should be reviewable through Git.
+
+## Decision 008 — Primera landing Editorial de Mauri
+**Status:** Active · 29/09/2026 · [issue #31](https://github.com/danielruizpadel-ux/trainer-booking-platform/issues/31)
+
+Dani eligió grafito y marfil, un hero más corto y la agenda semanal visible antes. La primera entrega muestra la foto ya versionada y conserva el calendario y el checkout existentes. Se retiran de la vista las reseñas de respaldo, masterclasses, acciones sin destino y contactos de ejemplo. No se publican clubes, sponsors ni paquetes sin datos aprobados. La única cifra de precio visible procede del precio público vigente del entrenador que ya consulta el flujo de reserva; no se añade texto libre ni un importe fijo.
+
+El acceso nuevo a login en la cabecera queda pendiente: la navegación directa a `/cuenta/entrar?trainer=mauri` después de elegir una hora borra la selección al volver. La entrada desde el checkout ya tiene un mecanismo de borrador propio; un acceso de cabecera necesita conservar el mismo estado y comprobarlo antes de integrarse. Esta decisión visual no autoriza publicar, cambiar reservas ni cobrar.
