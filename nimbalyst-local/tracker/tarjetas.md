@@ -2,6 +2,13 @@
 
 Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada cambio. En el tablero, selecciona **All** para incluir las tareas hechas.
 
+- Proceso · H0 — Blindar integración y preparación de hosting #tarjeta[id:tar_01M3Q8C5D2F9AX7RB6T1V0E4ZG status:idea priority:high created:2026-09-29 tags:proceso,h0,calidad linea:proceso hito:h0]
+  Resultado esperado: cada PR enseña qué pasó en sus comprobaciones; antes de publicar sabemos qué esquema, permisos y código están en cada entorno.
+  - Inventariar checks existentes y fallos previos; configurar CI de PR solo con comprobaciones reproducibles. Activar reglas de rama después de comprobar que los checks funcionan.
+  - Comparar historial real de Supabase con migraciones y preparar una prueba aislada/staging, copia de seguridad, orden de aplicación y recuperación. No ejecutar SQL en producción en esta tarea.
+  - Definir contrato de API para consumidores externos cuando exista uno; documentar cambios incompatibles. Verificar la checklist de seguridad antes de cualquier deploy.
+  - [Dos puertas y compatibilidad](../../docs/CONTROL_DEL_PROYECTO.md) · [Checklist de publicación](../../docs/ANTES_DE_PUBLICAR.md).
+
 - Mauri · H2 — Investigar la reserva completa #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:idea priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
   Resultado esperado: saber qué ve el jugador desde elegir hora hasta recibir confirmación, y qué necesita Mauri para gestionarla.
   - Primero recorrer nuestra versión de `develop` en escritorio y móvil, sin efectuar un cobro ni enviar una reserva real. Señalar pasos confusos, mensajes y límites de la prueba.
