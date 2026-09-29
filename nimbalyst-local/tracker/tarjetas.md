@@ -2,6 +2,13 @@
 
 Abre este archivo en Nimbalyst para ver las capturas y las decisiones de cada cambio. En el tablero, selecciona **All** para incluir las tareas hechas.
 
+- Proceso · H0 — Blindar integración y preparación de hosting #tarjeta[id:tar_01M3Q8C5D2F9AX7RB6T1V0E4ZG status:idea priority:high created:2026-09-29 tags:proceso,h0,calidad linea:proceso hito:h0]
+  Resultado esperado: cada PR enseña qué pasó en sus comprobaciones; antes de publicar sabemos qué esquema, permisos y código están en cada entorno.
+  - Inventariar checks existentes y fallos previos; configurar CI de PR solo con comprobaciones reproducibles. Activar reglas de rama después de comprobar que los checks funcionan.
+  - Comparar historial real de Supabase con migraciones y preparar una prueba aislada/staging, copia de seguridad, orden de aplicación y recuperación. No ejecutar SQL en producción en esta tarea.
+  - Definir contrato de API para consumidores externos cuando exista uno; documentar cambios incompatibles. Verificar la checklist de seguridad antes de cualquier deploy.
+  - [Dos puertas y compatibilidad](../../docs/CONTROL_DEL_PROYECTO.md) · [Checklist de publicación](../../docs/ANTES_DE_PUBLICAR.md).
+
 - Mauri · H2 — Investigar la reserva completa #tarjeta[id:tar_01M3Q7D4K2F9AX6RB5T8V0C1ZE status:en-desarrollo priority:high created:2026-09-29 tags:mauri,h2,investigacion linea:mauri hito:h2]
   Resultado esperado: saber qué ve el jugador desde elegir hora hasta recibir confirmación, y qué necesita Mauri para gestionarla.
   - Lectura del código en `develop` (29/09, aún sin prueba visual local): selección de sesiones → checkout con datos de jugador o invitado → POST de solicitud → pantalla «Booking request received», pendiente de que Mauri confirme la pista. [BookingFlow](../../components/booking/BookingFlow.tsx) · [Checkout](../../components/booking/checkout/BookingCheckout.tsx).
