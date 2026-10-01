@@ -110,6 +110,13 @@ El dashboard resuelve el entrenador con la service role key desde
 
 ## `client_packages` y `package_sessions` (migración 006)
 
+**Estado de venta (01/10/2026):** el dashboard conserva la consulta y agenda de
+paquetes históricos, pero `POST /api/dashboard/packages` está suspendido (503)
+y el botón de venta oculto. La cotización actual de `lib/packages/pricing.ts`
+hereda el descuento multihora de la reserva pública; no es una tarifa comercial
+independiente. No reactivar la escritura hasta definir precio, cobro y reglas
+de uso. Véase `.nimbalyst/trackers/paquetes-reales.md`.
+
 Paquetes de 5/10 clases con el precio fijado al vender. `client_packages.duration_minutes`
 (**migración 007**): 60 o 90, la misma para todas las sesiones del paquete.
 `package_sessions.reservation_id` enlaza cada sesión agendada con su fila

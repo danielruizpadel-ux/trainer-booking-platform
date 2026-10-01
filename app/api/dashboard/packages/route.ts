@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireTrainer } from '@/lib/auth/current-trainer'
 import { listTrainerPackages } from '@/lib/packages/queries'
-import { createClientPackage, type CreatePackageInput } from '@/lib/packages/create'
 
 /**
  * GET  /api/dashboard/packages          paquetes del entrenador de la sesión
- * POST /api/dashboard/packages          { client_name, client_email, client_phone?, notes?, sessions_total: 5 | 10 }
+ * POST /api/dashboard/packages          venta suspendida hasta separar el precio
+ *                                       del descuento multihora y registrar el cobro
  */
 export async function GET() {
   try {
@@ -18,17 +18,14 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const trainer = await requireTrainer()
     if (trainer instanceof Response) return trainer
-    const body = (await request.json().catch(() => null)) as CreatePackageInput | null
-    if (!body || typeof body !== 'object') {
-      return NextResponse.json({ success: false, error: 'Body inválido' }, { status: 400 })
-    }
-    const result = await createClientPackage(trainer.id, body)
-    if (!result.ok) return NextResponse.json({ success: false, error: result.message }, { status: result.status })
-    return NextResponse.json({ success: true, id: result.id })
+    return NextResponse.json(
+      { success: false, error: 'La venta de paquetes todavía no está disponible. Los paquetes existentes se pueden consultar y gestionar.' },
+      { status: 503 }
+    )
   } catch (error) {
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
   }

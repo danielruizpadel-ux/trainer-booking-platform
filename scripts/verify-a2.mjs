@@ -331,6 +331,22 @@ test('entrada: draft inválido se descarta; sin entrenador no hay draft; nunca r
 
 // ─── Manual y paquetes ──────────────────────────────────────────────────────
 
+test('venta de paquetes suspendida: POST autenticado no crea filas y sin sesión responde 401', async () => {
+  const { POST } = load('app/api/dashboard/packages/route.ts')
+  resetDb()
+  trainerSession = { id: T }
+  const paused = await POST()
+  assert.equal(paused.status, 503)
+  assert.equal((await paused.json()).success, false)
+  assert.equal(db.inserts.length, 0)
+
+  trainerSession = null
+  const unauthenticated = await POST()
+  assert.equal(unauthenticated.status, 401)
+  assert.equal(db.inserts.length, 0)
+  trainerSession = { id: T }
+})
+
 test('reserva manual: precio de 1 jugador del entrenador; player_id NULL, 1 jugador, WhatsApp false, sin mensaje', async () => {
   const { createManualReservation } = load('lib/reservations/manual.ts')
   for (const [duration, price] of [[60, 300], [90, 450]]) {

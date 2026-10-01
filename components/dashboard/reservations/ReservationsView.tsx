@@ -6,7 +6,6 @@ import type { ClientPackageSummary } from '@/lib/packages/status'
 import { ReservationsTable } from './ReservationsTable'
 import { NewReservationButton } from './NewReservationButton'
 import { PackagesTable } from '@/components/dashboard/packages/PackagesTable'
-import { NewPackageButton } from '@/components/dashboard/packages/NewPackageButton'
 
 type View = 'table' | 'packages'
 
@@ -35,8 +34,8 @@ const VIEWS: Array<{ id: View; label: string; icon: React.ReactNode }> = [
 
 /**
  * Tabla (pestañas + buscador) o Paquetes de clases, con un selector de vista
- * y el botón de acción que le corresponde ("Nueva reserva" o "Vender
- * paquete"). El calendario vive en Resumen (HomeCalendarSection).
+ * con acción de nueva reserva en Tabla. La venta de paquetes permanece
+ * suspendida; el historial y las sesiones existentes siguen accesibles.
  */
 export function ReservationsView({ reservations, packages, durations, packagesError = null }: ReservationsViewProps) {
   const [view, setView] = useState<View>('table')
@@ -62,11 +61,10 @@ export function ReservationsView({ reservations, packages, durations, packagesEr
     </div>
   )
 
-  // El botón de acción cambia con la vista: reserva suelta o venta de paquete.
   const toolbar = (
     <div className="flex flex-wrap items-center gap-3 mb-1">
       {switcher}
-      {view === 'packages' ? <NewPackageButton durations={durations} /> : <NewReservationButton durations={durations} />}
+      {view === 'table' && <NewReservationButton durations={durations} />}
     </div>
   )
 
@@ -86,7 +84,7 @@ export function ReservationsView({ reservations, packages, durations, packagesEr
           <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-8 sm:p-12 text-center">
             <h2 className="text-base font-semibold text-gray-900">You haven&apos;t sold any packages yet</h2>
             <p className="mt-1.5 text-sm text-gray-600">
-              Use "Sell package" to record it, then schedule each class on your availability.
+              Package sales are being prepared. Existing packages will appear here.
             </p>
           </div>
         ) : (
