@@ -1,9 +1,9 @@
 # Mauri · H3 — Paquetes reales de 5/10 clases
 
-**Estado:** para revisar (preparación; compra pendiente)  
-**Tipo:** `tarjeta` en `./tarjeta.yaml`  
-**Base:** `origin/develop` @ `7899eb96c05b4f6842b2a27b15bdf29ea04d43f6`  
-**Rama:** `feature/paquetes-reales-20261001`  
+**Estado:** para revisar (preparación; compra pendiente)
+**Tipo:** `tarjeta` en `./tarjeta.yaml`
+**Base:** `origin/develop` @ `7899eb96c05b4f6842b2a27b15bdf29ea04d43f6`
+**Rama:** `feature/paquetes-reales-20261001`
 **Implementa:** Codex, por límite de Claude. **Revisión independiente:** pendiente.
 
 ## Objetivo visible
@@ -21,7 +21,7 @@ Un jugador con cuenta podrá contratar un paquete de 5 o 10 clases, agendar algu
 
 Si la clase de 60 minutos de Mauri cuesta RM300, el código actual calcula RM1.350 por 5 clases. Falta decidir si el paquete de 5 tiene un precio propio configurable, si ese RM1.350 se acepta explícitamente, o si se mantiene sin venta. La elección cambia el dinero cobrado al jugador y debe quedar registrada antes de activar la compra.
 
-**Decisiones ya documentadas para el prototipo interno:** tamaño 5/10, entrenador fijo y devolución del crédito si el entrenador desagenda una sesión (plan del 20/09).  
+**Decisiones ya documentadas para el prototipo interno:** tamaño 5/10, entrenador fijo y devolución del crédito si el entrenador desagenda una sesión (plan del 20/09).
 **Pendientes para venta real:** precio de 5 y 10 por duración/jugadores; confirmación de vigencia y corrección de la primera clase; cancelación temprana/tardía y no presentación; reembolso parcial o total; transferibilidad; momento exacto de consumo/liberación de crédito; mecanismo de cobro, recibo y reintento. El plan maestro apunta a seis meses desde la primera clase y pago completo el primer día, pero estas reglas aún requieren implementación y pruebas.
 
 ## Alcance de esta rama y capas
