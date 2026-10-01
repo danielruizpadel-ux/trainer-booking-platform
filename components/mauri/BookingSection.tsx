@@ -5,6 +5,7 @@ import BookingFlow from '@/components/booking/BookingFlow'
 import type { BookingAccount, BookingPlayer } from '@/lib/players/booking-contact'
 import { browserDraftStorage, discardDraft, peekDraft, updateDraftSelection, type BookingDraft } from '@/lib/booking/draft'
 import { isDraftId } from '@/lib/players/entry'
+import { publishLiveSelection } from '@/lib/booking/live-selection'
 
 interface BookingSectionProps {
   trainerId: string
@@ -17,6 +18,12 @@ interface BookingSectionProps {
   trainerPrice?: number
   trainerEmail?: string
   trainerPhone?: string
+  /**
+   * `editorial`: landing de Mauri (B v2). El acceso a la cuenta va en la
+   * cabecera (MauriHeader), que conserva la selección; aquí solo quedan los
+   * avisos de cuenta (error o perfil incompleto).
+   */
+  variant?: 'default' | 'editorial'
 }
 
 type AccountState =
@@ -33,7 +40,9 @@ export default function BookingSection({
   trainerSlug,
   trainerImageUrl = null,
   classDurations = [60],
+  variant = 'default',
 }: BookingSectionProps) {
+  const editorial = variant === 'editorial'
   // Cuenta de jugador: con sesión y perfil completo, la reserva usa esos
   // datos y no pide el formulario; con sesión y perfil incompleto, primero se
   // completa el perfil. Si la comprobación falla, se avisa y se puede
@@ -110,6 +119,7 @@ export default function BookingSection({
   }, [])
 
   const bookingPlayer = account.status === 'authenticated' ? account.player : null
+
   const entryHref = trainerSlug ? `/cuenta/entrar?trainer=${encodeURIComponent(trainerSlug)}` : null
   const completeProfileHref = trainerSlug
     ? `/cuenta/bienvenida?trainer=${encodeURIComponent(trainerSlug)}`
@@ -123,6 +133,31 @@ export default function BookingSection({
           ? { kind: 'player', player: account.player }
           : { kind: 'incomplete', completeProfileHref }
         : { kind: 'anonymous' }
+
+  if (editorial) {
+    return (
+      <section id="booking-section" className="scroll-mt-16 border-b border-mauri-rule bg-mauri-paper">
+        <BookingFlow
+          trainerId={trainerId}
+          trainerName={trainerName}
+          trainerSlug={trainerSlug}
+          trainerImageUrl={trainerImageUrl}
+          classDurations={classDurations}
+          account={bookingAccount}
+          restoredDraft={restoredDraft}
+          onSelectionChange={handleSelectionChange}
+          onBooked={handleBooked}
+          onLiveSelection={publishLiveSelection}
+          variant="editorial"
+        />
+        {account.status === 'error' && (
+          <p role="status" className="mx-auto max-w-6xl px-4 pb-10 text-sm text-mauri-muted sm:px-6 lg:px-8">
+            No hemos podido comprobar tu cuenta de jugador. Recarga la página para reservar con ella, o reserva sin cuenta.
+          </p>
+        )}
+      </section>
+    )
+  }
 
   // El encabezado y el fondo interiores los aporta BookingStep1 / el checkout,
   // así evitamos títulos y paddings duplicados. Aquí solo ponemos la banda de

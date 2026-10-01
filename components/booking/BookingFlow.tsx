@@ -42,6 +42,15 @@ interface BookingFlowProps {
   onSelectionChange?: (selection: { sessions: Session[]; duration: number; playerCount: number }) => void
   /** La reserva se creó (201): el borrador ya no debe restaurarse. */
   onBooked?: () => void
+  /**
+   * Selección en vivo (sesiones, duración, jugadores) en CADA cambio, también
+   * sin borrador. Solo datos no personales; la usa la cabecera de /mauri para
+   * que "Entrar" guarde el borrador y no pierda las horas. No cambia nada del
+   * flujo ni de `onSelectionChange`.
+   */
+  onLiveSelection?: (selection: { sessions: Session[]; duration: number; playerCount: number }) => void
+  /** Apariencia del paso de selección (`editorial`: landing de Mauri, B v2). */
+  variant?: 'default' | 'editorial'
 }
 
 export default function BookingFlow({
@@ -54,6 +63,8 @@ export default function BookingFlow({
   restoredDraft = null,
   onSelectionChange,
   onBooked,
+  onLiveSelection,
+  variant = 'default',
 }: BookingFlowProps) {
   const [step, setStep] = useState<'selection' | 'contact'>('selection')
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
@@ -70,6 +81,8 @@ export default function BookingFlow({
   // misma en los reintentos, nueva si cambia la petición.
   const attemptKeyRef = useRef<AttemptKey | null>(null)
   onSelectionChangeRef.current = onSelectionChange
+  const onLiveSelectionRef = useRef(onLiveSelection)
+  onLiveSelectionRef.current = onLiveSelection
 
   // Tabla de precios vigente del entrenador: solo vista previa.
   useEffect(() => {
@@ -145,6 +158,10 @@ export default function BookingFlow({
     onSelectionChangeRef.current?.({ sessions: selectedSessions, duration, playerCount })
   }, [restoreDone, selectedSessions, duration, playerCount])
 
+  useEffect(() => {
+    onLiveSelectionRef.current?.({ sessions: selectedSessions, duration, playerCount })
+  }, [selectedSessions, duration, playerCount])
+
   const handleConfirmSessions = (sessions: Session[]) => {
     setSelectedSessions(sessions)
     setNotice(null)
@@ -207,6 +224,7 @@ export default function BookingFlow({
           selectedSessions={selectedSessions}
           onSessionChange={setSelectedSessions}
           onConfirm={handleConfirmSessions}
+          variant={variant}
         />
       )}
 

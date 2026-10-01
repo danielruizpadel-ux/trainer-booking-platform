@@ -1,20 +1,57 @@
 /**
  * Mauricio Martin — The Padel Doctor
- * Landing page + booking flow
+ * Landing + reserva. Diseño: propuesta B v2 aprobada por Dani (DECISIONS 009).
+ *
+ * Solo se pinta lo que tiene datos aprobados y funciona hoy. Quedan FUERA de
+ * la página hasta tener contenido autorizado (issue #31 / #32):
+ *   - cinta y bloque de sponsors (no hay logos autorizados);
+ *   - club en la cabecera del calendario (no confirmado);
+ *   - "Sobre Mauri": bio, credenciales y redes (la bio de la base viene de un seed sin verificar);
+ *   - paquetes de 5/10 clases (aún no se pueden contratar desde la web).
+ * Detalle: docs/evidencias/mauri-b-v2-web/RESUMEN.md.
  */
 
 import { notFound } from 'next/navigation'
+import { Barlow_Condensed, Newsreader } from 'next/font/google'
 import { getTrainerBySlug } from '@/lib/services/trainers-data.service'
+import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { loadTrainerPrices } from '@/lib/reservations/trainer-prices'
+import type { SessionPriceRow } from '@/lib/reservations/pricing'
+import MauriHeader from '@/components/mauri/MauriHeader'
 import PremiumHero from '@/components/mauri/PremiumHero'
 import BookingSection from '@/components/mauri/BookingSection'
+import OfferSection from '@/components/mauri/OfferSection'
 import { normalizeDurations } from '@/lib/availability/durations'
 import FooterSection from '@/components/mauri/FooterSection'
+
+const display = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+  variable: '--font-mauri-display',
+  display: 'swap',
+})
+const serif = Newsreader({
+  subsets: ['latin'],
+  style: ['normal', 'italic'],
+  variable: '--font-mauri-serif',
+  display: 'swap',
+})
 
 export async function generateMetadata() {
   return {
     title: 'Mauricio Martin | Reserva tu sesión de pádel',
     description:
       'Consulta la disponibilidad semanal y solicita una sesión privada de pádel con Mauricio Martin.',
+  }
+}
+
+/** Precios vigentes del entrenador, solo lectura. Si fallan, la oferta se queda sin cifra (no se inventa). */
+async function readPrices(trainerId: string): Promise<SessionPriceRow[] | null> {
+  try {
+    const loaded = await loadTrainerPrices(getSupabaseServerClient(), trainerId)
+    return loaded.ok ? loaded.rows : null
+  } catch {
+    return null
   }
 }
 
@@ -28,49 +65,32 @@ export default async function MauriPage() {
   // Use the trainer slug (works with updated availability API)
   // Falls back to trainer.id if available
   const trainerId = trainer.id || 'mauri'
+  const classDurations = normalizeDurations(trainer.class_durations)
+  const imageUrl = trainer.image_url || '/trainers/mauri/hero.jpg'
+  const prices = trainer.id ? await readPrices(trainer.id) : null
+  const firstName = trainer.name.trim().split(/\s+/)[0]
 
   return (
-    <div className="w-full">
-      <PremiumHero
-        name={trainer.name}
-        imageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
-      />
+    <div className={`${display.variable} ${serif.variable} w-full bg-mauri-paper`}>
+      <MauriHeader trainerSlug={trainer.slug} />
 
-      {/* La reserva va lo primero al bajar del hero: es la accion principal. */}
+      <PremiumHero name={trainer.name} imageUrl={imageUrl} classDurations={classDurations} />
+
+      {/* La reserva va lo primero al bajar del hero: es la acción principal. */}
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
         trainerSlug={trainer.slug}
-        trainerImageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
-        classDurations={normalizeDurations(trainer.class_durations)}
+        trainerImageUrl={imageUrl}
+        classDurations={classDurations}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
+        variant="editorial"
       />
 
-      <section className="bg-[#f8f5ed] px-4 py-14 text-[#252824] sm:px-6 sm:py-20 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-8 border-t border-[#c8c4b7] pt-9 md:grid-cols-[1fr_1.2fr] md:gap-16">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#66675f]">
-            La sesión
-          </p>
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Pádel, a tu ritmo.
-            </h2>
-            <p className="mt-4 max-w-xl leading-relaxed text-[#5e6059]">
-              Escoge una duración y una hora disponible en el calendario. Verás
-              los detalles antes de enviar tu solicitud.
-            </p>
-            <a
-              href="#reserva"
-              className="mt-6 inline-block border-b border-[#252824] pb-1 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#252824]"
-            >
-              Volver a la agenda ↗
-            </a>
-          </div>
-        </div>
-      </section>
+      <OfferSection trainerFirstName={firstName} classDurations={classDurations} prices={prices} />
 
-      <FooterSection />
+      <FooterSection trainerName={trainer.name} />
     </div>
   )
 }
