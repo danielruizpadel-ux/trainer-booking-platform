@@ -12,8 +12,8 @@ Un jugador con cuenta podrá contratar un paquete de 5 o 10 clases, agendar algu
 
 ## Comprobado en la base
 
-- Ya existen `client_packages`, `package_sessions`, las rutas de dashboard y las funciones SQL de agenda. La venta actual desde el dashboard crea paquete y créditos sin registrar pago, usa `calculateBookingPrice(5/10)` y hereda el 10 % / 15 % del checkout multihora.
-- `POST /api/dashboard/packages` es la única ruta HTTP que llama a `createClientPackage`; el entrenador sale de `requireTrainer()`. `schedule_package_session` y `unschedule_package_session` conservan la gestión de créditos existentes. No hay ruta de compra desde la cuenta ni pasarela integrada para packs.
+- Ya existen `client_packages`, `package_sessions`, las rutas de dashboard y las funciones SQL de agenda. Antes del PR #36, la venta desde el dashboard creaba paquete y créditos sin registrar pago, usaba `calculateBookingPrice(5/10)` y heredaba el 10 % / 15 % del checkout multihora.
+- La única ruta HTTP de creación era `POST /api/dashboard/packages`; ahora exige `requireTrainer()` y devuelve 503 sin escritura. Se retiraron `createClientPackage`, la cotización heredada y el diálogo de venta que habían quedado sin uso. `schedule_package_session` y `unschedule_package_session` conservan la gestión de créditos existentes. No hay ruta de compra desde la cuenta ni pasarela integrada para packs.
 - El plan maestro recoge como dirección del piloto cuenta obligatoria, pago completo del pack el primer día, seis meses desde la primera clase impartida y cancelación inicial de 24 h configurable. No hay contrato completo de cobro, expiración, reembolso y corrección implementado para paquetes.
 - `docs/PLAN_PAQUETES_Y_CALENDARIO.md` dice primero que no hay precio nuevo y hereda el descuento multihora; esa afirmación describe el prototipo interno, no valida el precio comercial del paquete real. `docs/BOOKING_FLOW.md` también describe inserciones directas antiguas; la reserva pública vigente usa RPC `create_booking_request` e idempotencia.
 
@@ -28,6 +28,7 @@ Si la clase de 60 minutos de Mauri cuesta RM300, el código actual calcula RM1.3
 
 - **Interfaz:** oculta el botón de venta; mantiene la consulta y agenda de paquetes existentes.
 - **API:** `POST /api/dashboard/packages` exige sesión y devuelve 503 sin escribir; `GET` y rutas de sesión conservan su contrato.
+- **Reglas de venta:** se retiran el cálculo y la creación internos que heredaban el descuento multihora. Los descuentos de varias sesiones de la reserva pública no cambian.
 - **Autenticación, datos, migraciones y despliegue:** sin cambio. No se aplica SQL ni se escribe en la BD real.
 - **Compatibilidad:** una versión anterior con el botón visible recibirá 503 al enviar; no creará un paquete a medias. No se activa la compra desde cuenta.
 
@@ -37,9 +38,23 @@ Cerrar las decisiones y documentar ejemplos de cancelación y pago. Diseñar un 
 
 **No marcar Hecha:** no hay compra real, revisión independiente, integración en `develop` ni comprobación en entorno publicado.
 
+## Recorrido y compatibilidad comprobados
+
+| Capa | Estado tras este PR | Error o reintento |
+| --- | --- | --- |
+| Navegador | Reservas muestra paquetes anteriores y permite abrir sus sesiones; no muestra acción de venta. | Una pestaña con la versión anterior aún podría enviar el formulario. |
+| API | `POST /api/dashboard/packages` comprueba sesión y responde 503 sin leer el body ni escribir. `GET` y `PATCH` de sesiones siguen disponibles. | Sin sesión, 401. Repetir el POST no crea paquetes; la versión anterior recibe el mismo 503. |
+| Regla | Se retiró la creación que tomaba el 10 % / 15 % del descuento multihora. La gestión histórica sigue en `lib/packages/schedule.ts`. | El agendado existente delega la exclusión de créditos a la RPC; un crédito ocupado da 409. Una respuesta perdida requiere consultar el estado antes de reintentar. |
+| SQL | Sin migración nueva. `client_packages` y `package_sessions` conservan sus registros; las funciones de agenda de 017/019 no cambian. | El esquema e historial del entorno real no se inspeccionaron en esta tarea. No se ejecutó ninguna escritura SQL. |
+
+No hay libro de cobros de paquetes en este recorrido. No llamar «pagado» a un paquete solo por existir en `client_packages`.
+
 ## Comprobaciones en esta rama (01/10/2026)
 
-- `node scripts/verify-a2.mjs`: 26/26, incluido POST suspendido (503 sin escrituras, 401 sin sesión).
+- `node scripts/verify-a2.mjs`: 25/25 tras retirar la prueba del flujo antiguo de venta; incluye POST suspendido (503 sin escrituras, 401 sin sesión).
+- `node scripts/verify-package-credit-r2.mjs`: 19/19 sobre propuesta, crédito ocupado y reserva histórica; no sustituye una prueba de base aislada.
 - `npm run type-check`: falla con 11 errores previos en `app/api/admin/setup-mauri/route.ts`, `components/trainer/AvailabilityCalendar.tsx`, `components/trainer/BookingSection.tsx` y `components/trainer/calendar/TimePickerDropdown.tsx`; ninguno corresponde al diff de esta rama.
 - `npm run build`: compilación completada; falla al llegar al mismo chequeo de tipos.
 - `git diff --check`: limpio. No se ejecutó escritura SQL ni prueba contra la base real. La evidencia visible en navegador requiere cuenta y entorno de prueba; no se capturó una pantalla con datos de clientes.
+
+**Instrucción provisional recibida:** Dani está consultando precios y condiciones. Continuar solo con investigación, documentación y base segura; mantener la compra/venta nueva desactivada. Esta instrucción no aprueba una tarifa ni reglas de cobro.

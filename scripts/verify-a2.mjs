@@ -335,9 +335,14 @@ test('venta de paquetes suspendida: POST autenticado no crea filas y sin sesión
   const { POST } = load('app/api/dashboard/packages/route.ts')
   resetDb()
   trainerSession = { id: T }
-  const paused = await POST()
+  const oldClientRequest = new Request('http://localhost/api/dashboard/packages', {
+    method: 'POST',
+    body: JSON.stringify({ sessions_total: 5, duration_minutes: 60, client_name: 'Ana', client_email: 'ana@example.com' }),
+  })
+  const paused = await POST(oldClientRequest)
   assert.equal(paused.status, 503)
   assert.equal((await paused.json()).success, false)
+  assert.equal((await POST(oldClientRequest)).status, 503, 'reintento de la versión anterior tampoco crea un paquete')
   assert.equal(db.inserts.length, 0)
 
   trainerSession = null
@@ -368,32 +373,15 @@ test('reserva manual: precio de 1 jugador del entrenador; player_id NULL, 1 juga
   }
 })
 
-test('reserva manual / paquete sin precio de 1 jugador → 409 claro, sin insert', async () => {
+test('reserva manual sin precio de 1 jugador → 409 claro, sin insert', async () => {
   const { createManualReservation } = load('lib/reservations/manual.ts')
-  const { createClientPackage } = load('lib/packages/create.ts')
   resetDb()
   db.prices = DANI_PRICES.filter((p) => !(p.player_count === 1 && p.duration_minutes === 60))
   const manual = await createManualReservation(T, { slot_id: W, start_time: '10:00', duration_minutes: 60, client_name: 'Ana', client_email: 'ana@example.com' })
   assert.equal(manual.ok, false)
   assert.equal(manual.status, 409)
   assert.match(manual.message, /Perfil → Public pricing/)
-  const pkg = await createClientPackage(T, { sessions_total: 5, duration_minutes: 60, client_name: 'Ana', client_email: 'ana@example.com' })
-  assert.equal(pkg.ok, false)
-  assert.equal(pkg.status, 409)
   assert.equal(db.inserts.length, 0)
-})
-
-test('paquete: precio de 1 jugador del entrenador con el descuento de siempre', async () => {
-  const { createClientPackage } = load('lib/packages/create.ts')
-  resetDb()
-  db.prices = grid({ '90/1': 480 })
-  const result = await createClientPackage(T, { sessions_total: 10, duration_minutes: 90, client_name: 'Ana', client_email: 'ana@example.com' })
-  assert.equal(result.ok, true)
-  const { row } = db.inserts.find((i) => i.table === 'client_packages')
-  assert.equal(row.price_per_session_normal, 480)
-  assert.equal(row.discount_percent, 15)
-  assert.equal(row.price_per_session_discounted, 408)
-  assert.equal(row.price_total, 4080)
 })
 
 // Desde R1/R2 los inserts de reserva de paquete y de propuesta viven en SQL
