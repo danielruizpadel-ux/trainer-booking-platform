@@ -1,0 +1,22 @@
+PASS escritorio sin desbordamiento horizontal
+PASS escritorio «Entrar» visible en la cabecera
+PASS escritorio hora elegida marcada (09:00)
+PASS escritorio enlace sin JS = entrada normal (/cuenta/entrar?trainer=mauri)
+PASS escritorio «Entrar» lleva &draft= (/cuenta/entrar?trainer=mauri&draft=0493490e-d3b1-4d11-9ada-bc7301e72224)
+PASS escritorio borrador guardado sin datos personales ([{"date":"2026-10-02","time":"09:00"}])
+PASS escritorio vuelta con ?draft= recupera la hora en el checkout (09:00)
+PASS escritorio sin escrituras a la API
+PASS escritorio sin errores JS
+PASS escritorio con sesión: cabecera muestra la cuenta y oculta «Entrar»
+PASS movil sin desbordamiento horizontal
+PASS movil «Entrar» visible en la cabecera
+PASS movil hora elegida marcada (09:00)
+PASS movil enlace sin JS = entrada normal (/cuenta/entrar?trainer=mauri)
+PASS movil «Entrar» lleva &draft= (/cuenta/entrar?trainer=mauri&draft=d0046b9c-4156-47f8-831f-83db2a5cd70b)
+PASS movil borrador guardado sin datos personales ([{"date":"2026-10-02","time":"09:00"}])
+PASS movil vuelta con ?draft= recupera la hora en el checkout (09:00)
+PASS movil sin escrituras a la API
+PASS movil sin errores JS
+PASS movil con sesión: cabecera muestra la cuenta y oculta «Entrar»
+PASS reduce: oferta visible antes de llegar y hero sin animación ({"offerOpacity":"1","h1Anim":"none"})
+PASS movimiento: oferta oculta fuera de pantalla, visible al llegar; hero anima ({"offerOpacity":"0","h1Anim":"mauri-rise","after":"1"})
