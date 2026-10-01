@@ -77,3 +77,5 @@ Métricas: [antes](metricas-antes.json) · [después](metricas-despues.json). La
 | `git diff --check` · greps de `CLAUDE.md` (sombras, `border-l-4`, emojis) | Limpios |
 
 Revisión independiente: **pendiente** (Codex). Sin merge ni deploy.
+
+**Revalidación sobre el head `c51bcea` (01/10):** repetidas todas las pruebas (167/167 en los 10 scripts), el recorrido en navegador (22/22) y las capturas «después» en escritorio y móvil con 0, 1 y 3 horas: sin desbordamiento; calendario y resumen con el mismo borde inferior en escritorio (1419/1419 px con 0 y 1 hora, 1453/1453 con 3). Solo cambian unos bytes en dos PNG regenerados (mismas dimensiones y contenido) y los identificadores aleatorios de borrador del recorrido. `type-check`, `build` y `lint` dan los mismos fallos previos descritos arriba; `git diff --check` limpio.
