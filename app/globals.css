@@ -19,3 +19,27 @@
     font-family: var(--font-display);
   }
 }
+
+/* Entrada de sección de la landing de Mauri (components/mauri/Reveal.tsx).
+   Solo con movimiento permitido; con prefers-reduced-motion no se oculta ni anima. */
+@media (prefers-reduced-motion: no-preference) {
+  .mauri-preview-ribbon {
+    animation: mauri-ribbon 14s ease-in-out infinite alternate;
+  }
+  @keyframes mauri-ribbon {
+    to { transform: translateX(-24px); }
+  }
+  [data-reveal] {
+    transition: opacity 0.6s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  [data-reveal='pending'] {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

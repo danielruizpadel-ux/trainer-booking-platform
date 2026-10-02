@@ -40,6 +40,8 @@ interface EasyWeekSelectorProps {
   selectedSessions: Session[]
   onSessionChange: (sessions: Session[]) => void
   durationMinutes: number
+  /** `editorial`: landing de Mauri (B v2). Misma navegación y reglas; solo cambia la presentación. */
+  variant?: 'default' | 'editorial'
 }
 
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -49,7 +51,9 @@ export default function EasyWeekSelector({
   selectedSessions,
   onSessionChange,
   durationMinutes,
+  variant = 'default',
 }: EasyWeekSelectorProps) {
+  const ed = variant === 'editorial'
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -229,8 +233,10 @@ export default function EasyWeekSelector({
     return `${left} – ${right}`
   }
 
-  const arrowBtn =
-    'h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed'
+  const arrowBtn = ed
+    ? 'h-10 w-10 flex items-center justify-center rounded-md bg-white text-mauri-graphite ring-1 ring-inset ring-mauri-rule-2 hover:bg-mauri-graphite hover:text-mauri-paper hover:ring-mauri-graphite transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal disabled:text-[#C4BFB3] disabled:ring-mauri-rule disabled:hover:bg-white disabled:cursor-not-allowed'
+    : 'h-9 w-9 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed'
+  const todayStr = toDateStr(today)
 
   // No permitir retroceder a semanas totalmente en el pasado.
   const prevWeekAllowed = (() => {
@@ -240,20 +246,20 @@ export default function EasyWeekSelector({
   })()
 
   return (
-    <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 p-5 sm:p-6">
-      {/* Cabecera de la semana */}
-      <div className="flex items-center justify-between gap-2 pb-4 mb-4 border-b border-gray-100">
+    <div className={ed ? 'h-full rounded-lg bg-white p-4 ring-1 ring-mauri-rule sm:p-6' : 'bg-white rounded-2xl ring-1 ring-gray-200/70 p-5 sm:p-6'}>
+      {/* Cabecera de la semana. Editorial: fecha a la izquierda y flechas juntas a la derecha. */}
+      <div className={ed ? 'flex items-center justify-between gap-3 pb-4 mb-4 border-b border-mauri-rule' : 'flex items-center justify-between gap-2 pb-4 mb-4 border-b border-gray-100'}>
         <button
           onClick={() => goToWeek(-1)}
           disabled={!prevWeekAllowed}
-          className={arrowBtn}
+          className={`${arrowBtn} ${ed ? 'order-2 ml-auto' : ''}`}
           aria-label="Semana anterior"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <div className="relative">
+        <div className={ed ? 'relative order-1' : 'relative'}>
           <button
             ref={miniTriggerRef}
             type="button"
@@ -262,10 +268,14 @@ export default function EasyWeekSelector({
             aria-expanded={showMiniCalendar}
             aria-label="Elegir fecha"
             title="Elegir fecha"
-            className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-base font-semibold text-gray-900 capitalize hover:bg-gray-100 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className={
+              ed
+                ? 'inline-flex items-center gap-2 rounded-md py-1 font-mauri-display text-xl font-bold uppercase tracking-[0.03em] text-mauri-graphite whitespace-nowrap tabular-nums transition-colors hover:text-mauri-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal sm:text-2xl'
+                : 'inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-base font-semibold text-gray-900 capitalize hover:bg-gray-100 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+            }
           >
             {weekLabel()}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg className={ed ? 'text-mauri-teal' : undefined} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
@@ -276,7 +286,7 @@ export default function EasyWeekSelector({
               y tiene su mismo ancho, así el overlay (left-0 dentro del ancla)
               queda centrado con la fecha y el icono. Su propio ajuste horizontal
               lo mantiene dentro de la pantalla en móvil. */}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 w-[min(19rem,calc(100vw-2rem))]">
+          <div className={ed ? 'absolute top-full left-0 w-[min(19rem,calc(100vw-2rem))]' : 'absolute top-full left-1/2 -translate-x-1/2 w-[min(19rem,calc(100vw-2rem))]'}>
             <MiniCalendarOverlay
               isOpen={showMiniCalendar}
               onClose={() => setShowMiniCalendar(false)}
@@ -292,7 +302,7 @@ export default function EasyWeekSelector({
         </div>
         <button
           onClick={() => goToWeek(1)}
-          className={arrowBtn}
+          className={`${arrowBtn} ${ed ? 'order-3' : ''}`}
           aria-label="Semana siguiente"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -303,7 +313,7 @@ export default function EasyWeekSelector({
 
       {isLoading ? (
         <div className="py-16 text-center">
-          <div className="inline-block h-8 w-8 rounded-full border-2 border-gray-200 border-t-blue-600 animate-spin" />
+          <div className={`inline-block h-8 w-8 rounded-full border-2 border-gray-200 animate-spin ${ed ? 'border-t-mauri-teal' : 'border-t-blue-600'}`} />
           <p className="mt-3 text-sm text-gray-500">Cargando disponibilidad…</p>
         </div>
       ) : error ? (
@@ -314,7 +324,7 @@ export default function EasyWeekSelector({
       ) : (
         <>
           {/* Semana compacta: 7 días siempre a la vista */}
-          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+          <div className={ed ? 'grid grid-cols-7 gap-1 sm:gap-1.5' : 'grid grid-cols-7 gap-1.5 sm:gap-2'}>
             {weekDays.map((date, index) => {
               const dateStr = toDateStr(date)
               const free = freeByDate[dateStr] || 0
@@ -322,6 +332,54 @@ export default function EasyWeekSelector({
               const isSelected = selectedDay === dateStr
               const isToday = isSameDay(date, today)
               const chosen = sessionCountByDate[dateStr] || 0
+
+              if (ed) {
+                const isPast = dateStr < todayStr
+                const longName = date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' })
+                return (
+                  <button
+                    key={dateStr}
+                    onClick={() => hasAvailability && setSelectedDay(dateStr)}
+                    disabled={!hasAvailability}
+                    aria-pressed={isSelected}
+                    aria-label={`${longName}${isPast ? '' : hasAvailability ? `, ${free} horas libres` : ', sin horas'}${chosen ? `, ${chosen} elegida${chosen > 1 ? 's' : ''}` : ''}`}
+                    className={[
+                      'relative grid h-[74px] grid-rows-[22px_28px_1fr] justify-items-center rounded-md transition-colors duration-150 sm:h-[82px] sm:grid-rows-[26px_30px_1fr]',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal focus-visible:ring-offset-1',
+                      isSelected
+                        ? 'bg-mauri-graphite text-mauri-paper'
+                        : hasAvailability
+                        ? 'bg-mauri-paper text-mauri-graphite ring-1 ring-inset ring-mauri-rule hover:ring-mauri-teal'
+                        : 'cursor-not-allowed bg-transparent text-[#C2BDB1] ring-1 ring-inset ring-[#EDE8DE]',
+                      !isSelected && isToday && hasAvailability ? 'ring-mauri-teal/70' : '',
+                    ].join(' ')}
+                  >
+                    <span aria-hidden className={`self-end text-[9.5px] font-semibold uppercase tracking-[0.1em] sm:text-[10.5px] sm:tracking-[0.14em] ${isSelected ? 'text-mauri-muted-d' : hasAvailability ? 'text-mauri-muted' : 'text-[#CFCABF]'}`}>
+                      {DAY_NAMES[index]}
+                    </span>
+                    <span aria-hidden className="self-center font-mauri-display text-2xl font-bold leading-none tabular-nums sm:text-[28px]">
+                      {date.getDate()}
+                    </span>
+                    <span aria-hidden className={`self-center text-[10px] font-semibold tabular-nums ${isSelected ? 'text-mauri-teal-light' : hasAvailability ? 'text-mauri-teal' : 'text-[#B8B3A8]'}`}>
+                      {isPast ? '' : hasAvailability ? (
+                        <>
+                          <span className="sm:hidden">{free}</span>
+                          <span className="hidden sm:inline">{free} libres</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="sm:hidden">—</span>
+                          <span className="hidden sm:inline">Sin horas</span>
+                        </>
+                      )}
+                    </span>
+                    {chosen > 0 && (
+                      <span aria-hidden className={`absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-mauri-teal-light' : 'bg-mauri-teal'}`} />
+                    )}
+                    {isSelected && <span aria-hidden className="absolute inset-x-2 bottom-0 h-[3px] rounded-t bg-mauri-teal-light" />}
+                  </button>
+                )
+              }
 
               return (
                 <button
@@ -363,11 +421,11 @@ export default function EasyWeekSelector({
             {selectedDay ? (
               <>
                 <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="text-base font-semibold text-gray-900 capitalize">
+                  <h3 className={ed ? 'font-mauri-serif text-xl text-mauri-graphite first-letter:uppercase' : 'text-base font-semibold text-gray-900 capitalize'}>
                     {parseDateStr(selectedDay).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
                   </h3>
                   {daySlots.length > 0 && (
-                    <span className="text-sm text-gray-500 whitespace-nowrap">
+                    <span className={ed ? 'text-sm whitespace-nowrap tabular-nums text-mauri-muted' : 'text-sm text-gray-500 whitespace-nowrap'}>
                       {daySlots.length} hora{daySlots.length > 1 ? 's' : ''}
                     </span>
                   )}
@@ -379,7 +437,11 @@ export default function EasyWeekSelector({
                     {nextAvailableAfterSelected && (
                       <button
                         onClick={() => goToDay(nextAvailableAfterSelected)}
-                        className="mt-3 inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className={
+                          ed
+                            ? 'mt-3 inline-flex items-center gap-1.5 h-10 px-4 rounded-md bg-mauri-teal text-white text-sm font-semibold hover:bg-mauri-teal-ink active:scale-[0.98] transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal focus-visible:ring-offset-2'
+                            : 'mt-3 inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2'
+                        }
                       >
                         Ir al próximo día con horas
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -387,6 +449,49 @@ export default function EasyWeekSelector({
                         </svg>
                       </button>
                     )}
+                  </div>
+                ) : ed ? (
+                  // key: al cambiar de día o duración la rejilla entra con un fundido breve (solo si se permite movimiento).
+                  <div key={`${selectedDay}:${classMinutes}`} className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 motion-safe:animate-mauri-fade">
+                    {(['Mañana', 'Tarde'] as const).map((period) => {
+                      const group = daySlots.filter((slot) => (period === 'Mañana' ? slot.start_time < '13:00' : slot.start_time >= '13:00'))
+                      if (group.length === 0) return null
+                      return [
+                        <p key={period} className="col-span-full mt-2 flex items-center gap-3 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-mauri-muted first:mt-0 after:h-px after:flex-1 after:bg-mauri-rule">
+                          {period}
+                        </p>,
+                        ...group.map((slot) => {
+                          const isSelected = selectedTimesForDay(selectedDay).has(slot.start_time)
+                          const blocked = !isSelected && blockedBySelection(selectedDay, slot.start_time)
+                          const isAvailable = slot.current_bookings < slot.max_capacity && !blocked
+                          return (
+                            <button
+                              key={`${slot.id}:${slot.start_time}`}
+                              onClick={() => isAvailable && toggleTime(selectedDay, slot.start_time)}
+                              disabled={!isAvailable}
+                              aria-pressed={isSelected}
+                              title={blocked ? 'Se solapa con otra clase que ya has elegido' : undefined}
+                              className={[
+                                'inline-flex h-11 items-center justify-center gap-1.5 rounded-full text-[15px] tabular-nums transition-colors duration-150 active:scale-[0.98]',
+                                'focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal focus-visible:ring-offset-2',
+                                isSelected
+                                  ? 'bg-mauri-teal font-semibold text-white motion-safe:animate-mauri-pop'
+                                  : isAvailable
+                                  ? 'bg-white font-medium text-mauri-graphite ring-1 ring-inset ring-mauri-rule-2 hover:bg-mauri-teal-tint hover:ring-mauri-teal'
+                                  : 'cursor-not-allowed bg-transparent font-medium text-[#B8B3A8] line-through ring-1 ring-inset ring-[#ECE7DD]',
+                              ].join(' ')}
+                            >
+                              {isSelected && (
+                                <svg aria-hidden width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M5 12l5 5 9-10" />
+                                </svg>
+                              )}
+                              {shortTime(slot.start_time)}
+                            </button>
+                          )
+                        }),
+                      ]
+                    })}
                   </div>
                 ) : (
                   <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -422,7 +527,11 @@ export default function EasyWeekSelector({
                 {daySlots.length > 0 && nextAvailableAfterSelected && (
                   <button
                     onClick={() => goToDay(nextAvailableAfterSelected)}
-                    className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className={
+                      ed
+                        ? 'mt-5 inline-flex items-center gap-1.5 border-b-[1.5px] border-mauri-teal pb-1 font-mauri-display text-sm font-bold uppercase tracking-[0.1em] text-mauri-graphite hover:text-mauri-teal focus:outline-none focus-visible:ring-2 focus-visible:ring-mauri-teal'
+                        : 'mt-4 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+                    }
                   >
                     Ver el próximo día con horas
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -435,6 +544,8 @@ export default function EasyWeekSelector({
               <div className="py-8 text-center text-sm text-gray-500">
                 {availableDates.length === 0
                   ? 'No hay horas disponibles próximamente.'
+                  : ed
+                  ? 'Toca un día con horas libres para verlas.'
                   : 'Toca un día con punto verde para ver sus horas.'}
               </div>
             )}

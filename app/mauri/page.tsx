@@ -1,27 +1,63 @@
 /**
  * Mauricio Martin — The Padel Doctor
- * Landing page + booking flow
+ * Landing + reserva. Diseño: propuesta B v2 aprobada por Dani (DECISIONS 009).
+ *
+ * Solo se pinta lo que tiene datos aprobados y funciona hoy. Quedan FUERA de
+ * la página hasta tener contenido autorizado (issue #31 / #32):
+ *   - cinta y bloque de sponsors (no hay logos autorizados);
+ *   - club en la cabecera del calendario (no confirmado);
+ *   - "Sobre Mauri": bio, credenciales y redes (la bio de la base viene de un seed sin verificar);
+ *   - paquetes de 5/10 clases (aún no se pueden contratar desde la web).
+ * Detalle: docs/evidencias/mauri-b-v2-web/RESUMEN.md.
  */
 
 import { notFound } from 'next/navigation'
+import { Barlow_Condensed, Newsreader } from 'next/font/google'
 import { getTrainerBySlug } from '@/lib/services/trainers-data.service'
+import { getSupabaseServerClient } from '@/lib/supabase/client'
+import { loadTrainerPrices } from '@/lib/reservations/trainer-prices'
+import type { SessionPriceRow } from '@/lib/reservations/pricing'
+import MauriHeader from '@/components/mauri/MauriHeader'
 import PremiumHero from '@/components/mauri/PremiumHero'
-import SpecialtiesSection from '@/components/mauri/SpecialtiesSection'
-import CoursesSection from '@/components/mauri/CoursesSection'
 import BookingSection from '@/components/mauri/BookingSection'
+import OfferSection from '@/components/mauri/OfferSection'
 import { normalizeDurations } from '@/lib/availability/durations'
-import CtaSection from '@/components/mauri/CtaSection'
 import FooterSection from '@/components/mauri/FooterSection'
+import PreviewSections from '@/components/mauri/PreviewSections'
+
+const display = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+  variable: '--font-mauri-display',
+  display: 'swap',
+})
+const serif = Newsreader({
+  subsets: ['latin'],
+  style: ['normal', 'italic'],
+  variable: '--font-mauri-serif',
+  display: 'swap',
+})
 
 export async function generateMetadata() {
   return {
-    title: 'Mauricio Martin - The Padel Doctor | Reserva tu sesión',
+    title: 'Mauricio Martin | Reserva tu sesión de pádel',
     description:
-      'Técnica Clínica • Estrategia Competitiva • Mentalidad Ganadora. Reserva tu sesión con Mauricio Martin, especialista en transformar jugadores.',
+      'Consulta la disponibilidad semanal y solicita una sesión privada de pádel con Mauricio Martin.',
   }
 }
 
-export default async function MauriPage() {
+/** Precios vigentes del entrenador, solo lectura. Si fallan, la oferta se queda sin cifra (no se inventa). */
+async function readPrices(trainerId: string): Promise<SessionPriceRow[] | null> {
+  try {
+    const loaded = await loadTrainerPrices(getSupabaseServerClient(), trainerId)
+    return loaded.ok ? loaded.rows : null
+  } catch {
+    return null
+  }
+}
+
+export default async function MauriPage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
+  const preview = process.env.NODE_ENV !== 'production' && (await searchParams).preview === '1'
   const trainer = await getTrainerBySlug('mauri')
 
   if (!trainer) {
@@ -31,42 +67,37 @@ export default async function MauriPage() {
   // Use the trainer slug (works with updated availability API)
   // Falls back to trainer.id if available
   const trainerId = trainer.id || 'mauri'
+  const classDurations = normalizeDurations(trainer.class_durations)
+  const imageUrl = trainer.image_url || '/trainers/mauri/hero.jpg'
+  const prices = trainer.id ? await readPrices(trainer.id) : null
+  const firstName = trainer.name.trim().split(/\s+/)[0]
 
   return (
-    <div className="w-full">
-      <PremiumHero
-        name={trainer.name}
-        tagline="The Padel Doctor - Técnica Clínica & Mentalidad Ganadora"
-        rating={trainer.rating || 4.9}
-        reviews={trainer.total_reviews || 156}
-        imageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
-      />
+    <div className={`${display.variable} ${serif.variable} w-full bg-[#E7EFF0]`}>
+      <MauriHeader trainerSlug={trainer.slug} />
 
-      {/* La reserva va lo primero al bajar del hero: es la accion principal. */}
+      <PremiumHero name={trainer.name} imageUrl={imageUrl} classDurations={classDurations} />
+      {preview && <PreviewSections placement="ribbon" />}
+
+      {/* La reserva va lo primero al bajar del hero: es la acción principal. */}
       <BookingSection
         trainerId={trainerId}
         trainerName={trainer.name}
         trainerSlug={trainer.slug}
-        trainerImageUrl={trainer.image_url || '/trainers/mauri/hero.jpg'}
-        classDurations={normalizeDurations(trainer.class_durations)}
+        trainerImageUrl={imageUrl}
+        classDurations={classDurations}
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
+        variant="editorial"
+        preview={preview}
       />
 
-      <SpecialtiesSection />
+      <OfferSection trainerFirstName={firstName} classDurations={classDurations} prices={prices} />
+      {preview && <PreviewSections placement="packages" />}
+      {preview && <PreviewSections placement="partners" />}
+      {preview && <PreviewSections placement="about" imageUrl={imageUrl} />}
 
-      <CoursesSection />
-
-      {/* Reseñas: opción A del sistema de diseño — sección retirada. Para la opción B, importa y añade <ReviewsSection /> aquí. */}
-
-      <CtaSection />
-
-      <FooterSection
-        email={trainer.email || 'mauri@padeldoctor.com'}
-        phone={trainer.phone || '+1234567890'}
-        whatsapp={trainer.phone?.replace(/[^\d]/g, '') || '1234567890'}
-        instagram="@mauridoctor"
-      />
+      <FooterSection trainerName={trainer.name} />
     </div>
   )
 }
