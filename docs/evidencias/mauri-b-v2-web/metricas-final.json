@@ -1,0 +1,128 @@
+{
+  "escritorio-0h": {
+    "docHeight": 2516,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 851,
+      "bottom": 1419,
+      "height": 568
+    },
+    "summary": {
+      "top": 851,
+      "bottom": 1419,
+      "height": 568
+    },
+    "selected": [],
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ]
+  },
+  "escritorio-1h": {
+    "docHeight": 2516,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 851,
+      "bottom": 1419,
+      "height": 568
+    },
+    "summary": {
+      "top": 851,
+      "bottom": 1419,
+      "height": 568
+    },
+    "selected": [
+      "09:00"
+    ],
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ]
+  },
+  "escritorio-3h": {
+    "docHeight": 2550,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 851,
+      "bottom": 1453,
+      "height": 602
+    },
+    "summary": {
+      "top": 851,
+      "bottom": 1453,
+      "height": 602
+    },
+    "selected": [
+      "09:00",
+      "10:00",
+      "16:00"
+    ],
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ]
+  },
+  "escritorio-clics": {
+    "h1": "09:00",
+    "h2": "16:00",
+    "d2": false,
+    "h3": "10:00"
+  },
+  "movil-0h": {
+    "docHeight": 3589,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 907,
+      "bottom": 1555,
+      "height": 648
+    },
+    "summary": {
+      "top": 1571,
+      "bottom": 1949,
+      "height": 379
+    },
+    "selected": [],
+    "errors": []
+  },
+  "movil-1h": {
+    "docHeight": 3676,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 907,
+      "bottom": 1555,
+      "height": 648
+    },
+    "summary": {
+      "top": 1571,
+      "bottom": 2036,
+      "height": 466
+    },
+    "selected": [
+      "09:00"
+    ],
+    "errors": []
+  },
+  "movil-3h": {
+    "docHeight": 3804,
+    "horizontalOverflow": false,
+    "calendar": {
+      "top": 907,
+      "bottom": 1555,
+      "height": 648
+    },
+    "summary": {
+      "top": 1571,
+      "bottom": 2164,
+      "height": 594
+    },
+    "selected": [
+      "09:00",
+      "10:00",
+      "16:00"
+    ],
+    "errors": []
+  },
+  "movil-clics": {
+    "h1": "09:00",
+    "h2": "16:00",
+    "d2": false,
+    "h3": "10:00"
+  }
+}

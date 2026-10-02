@@ -51,6 +51,7 @@ interface BookingFlowProps {
   onLiveSelection?: (selection: { sessions: Session[]; duration: number; playerCount: number }) => void
   /** Apariencia del paso de selección (`editorial`: landing de Mauri, B v2). */
   variant?: 'default' | 'editorial'
+  preview?: boolean
 }
 
 export default function BookingFlow({
@@ -65,6 +66,7 @@ export default function BookingFlow({
   onBooked,
   onLiveSelection,
   variant = 'default',
+  preview = false,
 }: BookingFlowProps) {
   const [step, setStep] = useState<'selection' | 'contact'>('selection')
   const [selectedSessions, setSelectedSessions] = useState<Session[]>([])
@@ -225,6 +227,7 @@ export default function BookingFlow({
           onSessionChange={setSelectedSessions}
           onConfirm={handleConfirmSessions}
           variant={variant}
+          preview={preview}
         />
       )}
 
@@ -243,6 +246,7 @@ export default function BookingFlow({
           notice={notice}
           onBack={() => setStep('selection')}
           onSubmit={handleConfirmReservation}
+          variant={variant}
         />
       )}
     </div>

@@ -6,6 +6,8 @@ import { PLAYER_COUNTS, basePriceFor, formatRMEn, quoteBooking, type SessionPric
 import { CLIENT_MESSAGE_MAX, codePointLength, normalizeClientMessage } from '@/lib/reservations/client-message'
 import { formatDurationEn, formatSessionDateEn, formatSessionTimeEn } from '@/lib/booking/format-en'
 import { browserDraftStorage, createDraft, saveDraft } from '@/lib/booking/draft'
+import { UNCONFIRMED_BOOKING_MESSAGE } from '@/lib/reservations/idempotency-client'
+import { classifyBookingError, type BookingErrorKind } from '@/lib/booking/checkout-error'
 
 export interface CheckoutSession {
   date: string
@@ -48,9 +50,12 @@ interface BookingCheckoutProps {
   onBack: () => void
   /** Lanza CheckoutError si el servidor rechaza la reserva */
   onSubmit: (payload: CheckoutSubmit) => Promise<void>
+  variant?: 'default' | 'editorial'
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const formatSessionDateEs = (date: string) => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) }
+const formatDurationEs = (minutes: number) => minutes === 60 ? '1 h' : '1 h 30 min'
 const PHONE_RE = /^[\d\s\-+()]{10,}$/
 
 const card = 'bg-white rounded-2xl ring-1 ring-gray-200/70 p-5 sm:p-6'
@@ -82,12 +87,19 @@ export function BookingCheckout({
   notice,
   onBack,
   onSubmit,
+  variant = 'default',
 }: BookingCheckoutProps) {
+  const editorial = variant === 'editorial'
+  const tr = (es: string, en: string) => editorial ? es : en
+  const cardStyle = editorial ? 'rounded-lg bg-[#F7FAFA] p-5 ring-1 ring-[#B9CCD2] sm:p-6' : card
+  const eyebrowStyle = editorial ? 'font-mauri-display text-xs font-bold uppercase tracking-[0.15em] text-[#32677B]' : eyebrow
+  const buttonStyle = editorial ? 'h-14 w-full rounded-md bg-[#32677B] font-mauri-display text-lg font-bold uppercase tracking-wider text-white transition-colors hover:bg-[#20374D] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#32677B] disabled:cursor-not-allowed disabled:opacity-40' : primaryButton
+  const secondStyle = editorial ? 'h-12 w-full rounded-md border border-[#32677B] bg-transparent font-mauri-display font-bold uppercase tracking-wider text-[#20374D] hover:bg-[#D6E3E6]' : secondaryButton
   const [guest, setGuest] = useState<GuestDetails>({ name: '', email: '', phone: '', whatsapp: false })
   const [touched, setTouched] = useState<Partial<Record<keyof GuestDetails, boolean>>>({})
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<{ message: string; slotTaken: boolean } | null>(null)
+  const [error, setError] = useState<{ message: string; kind: BookingErrorKind } | null>(null)
   const [done, setDone] = useState<{ total: number } | null>(null)
 
   const player = account.kind === 'player' ? account.player : null
@@ -100,9 +112,9 @@ export function BookingCheckout({
   const messageTooLong = messageLength > CLIENT_MESSAGE_MAX
 
   const guestErrors = {
-    name: guest.name.trim().length < 3 ? 'Enter your full name' : null,
-    email: EMAIL_RE.test(guest.email.trim()) ? null : 'Enter a valid email',
-    phone: PHONE_RE.test(guest.phone.replace(/\s/g, '')) ? null : 'Enter a valid phone number (at least 10 digits)',
+    name: guest.name.trim().length < 3 ? tr('Escribe tu nombre completo', 'Enter your full name') : null,
+    email: EMAIL_RE.test(guest.email.trim()) ? null : tr('Escribe un email válido', 'Enter a valid email'),
+    phone: PHONE_RE.test(guest.phone.replace(/\s/g, '')) ? null : tr('Escribe un teléfono válido (al menos 10 dígitos)', 'Enter a valid phone number (at least 10 digits)'),
   }
   const guestValid = !guestErrors.name && !guestErrors.email && !guestErrors.phone
 
@@ -144,9 +156,21 @@ export function BookingCheckout({
       setDone({ total: quote.total })
     } catch (err) {
       const status = err instanceof CheckoutError ? err.status : 0
+      const original = err instanceof Error ? err.message : 'Something went wrong. Please try again.'
+      const kind = classifyBookingError(status, original)
       setError({
-        message: err instanceof Error ? err.message : 'Something went wrong. Please try again.',
-        slotTaken: status === 409 || status === 404,
+        message: editorial
+          ? original === UNCONFIRMED_BOOKING_MESSAGE
+            ? 'No hemos podido comprobar si se recibió tu solicitud. Revisa tus reservas; si vuelves a enviarla sin cambiar los datos, no se duplicará.'
+            : kind === 'slot'
+              ? 'Esta hora ya no está disponible. Elige otra.'
+              : kind === 'profile'
+                ? 'Completa tu perfil de jugador para solicitar con tu cuenta.'
+                : kind === 'price'
+                  ? 'No hay precio configurado para esta clase. Prueba otra duración o consulta con Mauri.'
+                  : 'No se pudo completar la solicitud. Revisa los datos e inténtalo de nuevo.'
+          : original,
+        kind,
       })
     } finally {
       setSubmitting(false)
@@ -163,12 +187,13 @@ export function BookingCheckout({
         playerCount={playerCount}
         total={done.total}
         guest={isGuest}
+        editorial={editorial}
       />
     )
   }
 
   return (
-    <section className="py-10 sm:py-14 px-4 sm:px-6 lg:px-8 bg-gray-50/50">
+    <section className={editorial ? "bg-[#E7EFF0] px-4 py-10 text-[#20374D] sm:px-6 sm:py-14 lg:px-8" : "py-10 sm:py-14 px-4 sm:px-6 lg:px-8 bg-gray-50/50"}>
       <form onSubmit={confirm} noValidate className="max-w-5xl mx-auto">
         <header className="mb-8">
           <button
@@ -177,10 +202,10 @@ export function BookingCheckout({
             className="h-9 -ml-3 px-3 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors inline-flex items-center gap-1.5"
           >
             <ChevronLeft />
-            Change sessions
+            {tr('Cambiar clases', 'Change sessions')}
           </button>
-          <h2 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Review your booking</h2>
-          <p className="mt-1.5 text-gray-500">Check the details and confirm. The coach confirms once the court is booked.</p>
+          <h2 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">{tr('Revisa tu solicitud', 'Review your booking')}</h2>
+          <p className="mt-1.5 text-gray-500">{tr('Comprueba los datos. Es una solicitud: Mauri confirma la clase cuando reserve la pista.', 'Check the details and confirm. The coach confirms once the court is booked.')}</p>
         </header>
 
         {notice && (
@@ -192,11 +217,11 @@ export function BookingCheckout({
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
           <div className="flex flex-col gap-6">
             {/* Coach + sessions */}
-            <div className={card}>
+            <div className={cardStyle}>
               <div className="flex items-center gap-4">
                 <CoachAvatar name={trainerName} imageUrl={trainerImageUrl} />
                 <div className="min-w-0">
-                  <p className={eyebrow}>Your coach</p>
+                  <p className={eyebrowStyle}>{tr('Tu entrenador', 'Your coach')}</p>
                   <p className="mt-1 text-lg font-semibold text-gray-900 truncate">{trainerName}</p>
                 </div>
               </div>
@@ -204,11 +229,11 @@ export function BookingCheckout({
                 {sessions.map((s) => (
                   <li key={`${s.date}-${s.time}`} className="py-3.5 flex items-center justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">{formatSessionDateEn(s.date)}</p>
-                      <p className="mt-0.5 text-sm text-gray-500 tabular-nums">{formatSessionTimeEn(s.time)}</p>
+                      <p className="text-sm font-semibold text-gray-900">{editorial ? formatSessionDateEs(s.date) : formatSessionDateEn(s.date)}</p>
+                      <p className="mt-0.5 text-sm text-gray-500 tabular-nums">{editorial ? s.time.slice(0, 5) : formatSessionTimeEn(s.time)}</p>
                     </div>
                     <span className="shrink-0 rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200">
-                      {formatDurationEn(duration)}
+                      {editorial ? formatDurationEs(duration) : formatDurationEn(duration)}
                     </span>
                   </li>
                 ))}
@@ -216,9 +241,9 @@ export function BookingCheckout({
             </div>
 
             {/* Number of players */}
-            <div className={card}>
-              <p className={eyebrow}>Number of players</p>
-              <div role="radiogroup" aria-label="Number of players" className="mt-4 grid grid-cols-4 gap-2 sm:gap-3">
+            <div className={cardStyle}>
+              <p className={eyebrowStyle}>{tr('Número de jugadores', 'Number of players')}</p>
+              <div role="radiogroup" aria-label={tr("Número de jugadores", "Number of players")} className="mt-4 grid grid-cols-4 gap-2 sm:gap-3">
                 {PLAYER_COUNTS.map((n) => {
                   const price = prices ? basePriceFor(prices, duration, n) : null
                   const selected = playerCount === n
@@ -232,36 +257,35 @@ export function BookingCheckout({
                       onClick={() => onPlayerCountChange(n)}
                       className={`rounded-xl py-3.5 px-2 flex flex-col items-center gap-1 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 disabled:cursor-not-allowed ${
                         selected
-                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'
+                          ? editorial ? 'bg-[#32677B] text-white' : 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'
                           : 'bg-white text-gray-900 ring-1 ring-inset ring-gray-200 hover:ring-blue-400 hover:bg-blue-50/60 active:scale-[0.98]'
                       }`}
                     >
                       <span className="text-xl font-bold tabular-nums">{n}</span>
                       <span className={`text-xs tabular-nums ${selected ? 'text-white/80' : 'text-gray-500'}`}>
-                        {price === null ? (prices ? 'N/A' : '…') : formatRMEn(price)}
+                        {price === null ? (prices ? tr('No disponible', 'N/A') : '…') : formatRMEn(price)}
                       </span>
                     </button>
                   )
                 })}
               </div>
-              <p className="mt-3 text-xs text-gray-400">Price per session for the whole group.</p>
+              <p className="mt-3 text-xs text-gray-400">{tr('Precio por clase para todo el grupo.', 'Price per session for the whole group.')}</p>
             </div>
 
             {/* Who is booking */}
-            <div className={card}>
-              {account.kind === 'player' && player && <BookingAs player={player} />}
-              {account.kind === 'loading' && <p className="text-sm text-gray-500">Checking your account…</p>}
+            <div className={cardStyle}>
+              {account.kind === 'player' && player && <BookingAs player={player} editorial={editorial} />}
+              {account.kind === 'loading' && <p className="text-sm text-gray-500">{tr('Comprobando tu cuenta…', 'Checking your account…')}</p>}
               {account.kind === 'incomplete' && (
                 <div className="flex flex-col gap-4">
                   <div>
-                    <p className={eyebrow}>Booking as</p>
+                    <p className={eyebrowStyle}>{tr('Reservas como', 'Booking as')}</p>
                     <p className="mt-2 text-sm text-gray-600">
-                      You&apos;re signed in, but your player profile isn&apos;t complete. Add your name and phone once and
-                      you&apos;ll come straight back here.
+                      {tr('Has entrado, pero falta completar tu perfil. Añade tu nombre y teléfono y volverás a esta solicitud.', "You're signed in, but your player profile isn't complete. Add your name and phone once and you'll come straight back here.")}
                     </p>
                   </div>
-                  <button type="button" onClick={() => goToAccount('/cuenta/bienvenida')} className={secondaryButton}>
-                    Complete my profile
+                  <button type="button" onClick={() => goToAccount('/cuenta/bienvenida')} className={secondStyle}>
+                    {tr('Completar perfil', 'Complete my profile')}
                   </button>
                 </div>
               )}
@@ -269,22 +293,22 @@ export function BookingCheckout({
                 <div className="flex flex-col gap-5">
                   {trainerSlug && (
                     <>
-                      <button type="button" onClick={() => goToAccount('/cuenta/entrar')} className={secondaryButton}>
-                        Continue with my account
+                      <button type="button" onClick={() => goToAccount('/cuenta/entrar')} className={secondStyle}>
+                        {tr('Entrar en mi cuenta', 'Continue with my account')}
                       </button>
                       <div className="flex items-center gap-3">
                         <div className="flex-1 border-t border-gray-100" />
-                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">or</span>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{tr("o", "or")}</span>
                         <div className="flex-1 border-t border-gray-100" />
                       </div>
                     </>
                   )}
                   <div>
-                    <p className={eyebrow}>Your details</p>
+                    <p className={eyebrowStyle}>{tr('Tus datos', 'Your details')}</p>
                     <div className="mt-4 flex flex-col gap-4">
                       <Field
                         id="guest-name"
-                        label="Name"
+                        label={tr("Nombre", "Name")}
                         autoComplete="name"
                         value={guest.name}
                         onChange={(v) => setGuest({ ...guest, name: v })}
@@ -294,7 +318,7 @@ export function BookingCheckout({
                       />
                       <Field
                         id="guest-email"
-                        label="Email"
+                        label={tr("Email", "Email")}
                         type="email"
                         autoComplete="email"
                         value={guest.email}
@@ -305,7 +329,7 @@ export function BookingCheckout({
                       />
                       <Field
                         id="guest-phone"
-                        label="Phone"
+                        label={tr("Teléfono", "Phone")}
                         type="tel"
                         autoComplete="tel"
                         value={guest.phone}
@@ -323,8 +347,8 @@ export function BookingCheckout({
                           className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span>
-                          <span className="block text-sm font-semibold text-gray-900">Your coach can contact you on WhatsApp</span>
-                          <span className="block text-xs text-gray-500">About the confirmation and changes to this booking only.</span>
+                          <span className="block text-sm font-semibold text-gray-900">{tr("Mauri puede contactarte por WhatsApp", "Your coach can contact you on WhatsApp")}</span>
+                          <span className="block text-xs text-gray-500">{tr("Solo para confirmar o cambiar esta solicitud.", "About the confirmation and changes to this booking only.")}</span>
                         </span>
                       </label>
                     </div>
@@ -334,9 +358,9 @@ export function BookingCheckout({
             </div>
 
             {/* Message to coach */}
-            <div className={card}>
-              <label htmlFor="coach-message" className={eyebrow}>
-                Message to coach <span className="normal-case tracking-normal font-medium">(optional)</span>
+            <div className={cardStyle}>
+              <label htmlFor="coach-message" className={eyebrowStyle}>
+                {tr('Mensaje a Mauri', 'Message to coach')} <span className="normal-case tracking-normal font-medium">{tr('(opcional)', '(optional)')}</span>
               </label>
               <textarea
                 id="coach-message"
@@ -344,7 +368,7 @@ export function BookingCheckout({
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 disabled={submitting || account.kind === 'incomplete' || account.kind === 'loading'}
-                placeholder="E.g. I'd like to work on my bandeja, or I'll arrive 5 minutes late."
+                placeholder={tr("Por ejemplo, quiero trabajar la bandeja.", "E.g. I'd like to work on my bandeja, or I'll arrive 5 minutes late.")}
                 aria-describedby="coach-message-count"
                 className={`mt-3 w-full rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 ring-1 ring-inset focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 resize-y ${
                   messageTooLong ? 'ring-red-300' : 'ring-gray-200'
@@ -358,46 +382,52 @@ export function BookingCheckout({
 
           {/* Order summary */}
           <aside className={`${card} lg:sticky lg:top-6`}>
-            <p className={eyebrow}>Order summary</p>
+            <p className={eyebrowStyle}>{tr('Resumen de la solicitud', 'Order summary')}</p>
             {quote ? (
               <div className="mt-4 flex flex-col gap-2.5 text-sm">
                 <div className="flex justify-between gap-3 text-gray-600">
                   <span>
-                    {sessions.length} {sessions.length === 1 ? 'session' : 'sessions'} × {formatRMEn(quote.pricePerSession)}
+                    {sessions.length} {sessions.length === 1 ? tr('clase', 'session') : tr('clases', 'sessions')} × {formatRMEn(quote.pricePerSession)}
                   </span>
                   <span className="tabular-nums">{formatRMEn(quote.subtotal)}</span>
                 </div>
                 <div className="flex justify-between gap-3 text-gray-600">
-                  <span>Players</span>
+                  <span>{tr('Jugadores', 'Players')}</span>
                   <span className="tabular-nums">{playerCount}</span>
                 </div>
                 {quote.discountPercent > 0 && (
                   <div className="flex justify-between gap-3 font-medium text-emerald-600">
-                    <span>Multi-session discount ({quote.discountPercent}%)</span>
+                    <span>{tr('Descuento por varias clases', 'Multi-session discount')} ({quote.discountPercent}%)</span>
                     <span className="tabular-nums">−{formatRMEn(Math.round((quote.subtotal - quote.total) * 100) / 100)}</span>
                   </div>
                 )}
                 <div className="mt-2 pt-4 border-t border-gray-100 flex items-baseline justify-between gap-3">
-                  <span className="text-base font-semibold text-gray-900">Total</span>
+                  <span className="text-base font-semibold text-gray-900">{tr('Total estimado', 'Total')}</span>
                   <span className="text-3xl font-bold text-gray-900 tabular-nums">{formatRMEn(quote.total)}</span>
                 </div>
               </div>
             ) : (
               <p className="mt-4 text-sm text-gray-500">
-                {pricesError ?? (prices ? "This coach hasn't set a price for this session yet." : 'Loading prices…')}
+                {pricesError ?? (prices ? tr('No hay precio configurado para esta clase.', "This coach hasn't set a price for this session yet.") : tr('Cargando precios…', 'Loading prices…'))}
               </p>
             )}
 
-            <button type="submit" disabled={!canConfirm} className={`mt-6 ${primaryButton}`}>
-              {submitting ? 'Confirming…' : 'Confirm booking'}
+            <p className={editorial ? "mt-5 border-t border-[#B9CCD2] pt-4 text-sm text-[#32677B]" : "hidden"}>La pista está incluida en el precio. Esta es una solicitud: Mauri confirmará la pista antes de que la reserva sea definitiva.</p>
+            <button type="submit" disabled={!canConfirm} className={`mt-6 ${buttonStyle}`}>
+              {submitting ? tr('Enviando solicitud…', 'Confirming…') : tr('Solicitar reserva', 'Confirm booking')}
             </button>
 
             {error && (
               <div role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3">
                 <p className="text-sm text-red-700">{error.message}</p>
-                {error.slotTaken && (
+                {error.kind === 'slot' && (
                   <button type="button" onClick={onBack} className="mt-2 text-sm font-semibold text-red-700 underline underline-offset-2">
-                    Choose another time
+                    {tr('Elegir otra hora', 'Choose another time')}
+                  </button>
+                )}
+                {error.kind === 'profile' && trainerSlug && (
+                  <button type="button" onClick={() => goToAccount('/cuenta/bienvenida')} className="mt-2 text-sm font-semibold text-red-700 underline underline-offset-2">
+                    {tr('Completar perfil', 'Complete profile')}
                   </button>
                 )}
               </div>
@@ -409,10 +439,11 @@ export function BookingCheckout({
   )
 }
 
-function BookingAs({ player }: { player: BookingPlayer }) {
+function BookingAs({ player, editorial }: { player: BookingPlayer; editorial: boolean }) {
+  const tr = (es: string, en: string) => editorial ? es : en
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Booking as</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{tr('Reservas como', 'Booking as')}</p>
       <p className="mt-3 text-base font-semibold text-gray-900">{player.full_name}</p>
       <p className="mt-1 text-sm text-gray-600 break-all">{player.email}</p>
       <p className="mt-0.5 text-sm text-gray-600 tabular-nums">{player.phone}</p>
@@ -424,7 +455,7 @@ function BookingAs({ player }: { player: BookingPlayer }) {
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             </span>
-            OK to contact on WhatsApp
+            {tr('Acepta contacto por WhatsApp', 'OK to contact on WhatsApp')}
           </>
         ) : (
           <>
@@ -433,7 +464,7 @@ function BookingAs({ player }: { player: BookingPlayer }) {
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
             </span>
-            No WhatsApp contact
+            {tr('Sin contacto por WhatsApp', 'No WhatsApp contact')}
           </>
         )}
       </p>
@@ -509,6 +540,7 @@ function CheckoutSuccess({
   playerCount,
   total,
   guest,
+  editorial,
 }: {
   trainerName: string
   trainerSlug?: string
@@ -517,47 +549,49 @@ function CheckoutSuccess({
   playerCount: number
   total: number
   guest: boolean
+  editorial: boolean
 }) {
+  const tr = (es: string, en: string) => editorial ? es : en
   return (
-    <section className="py-12 sm:py-16 px-4 sm:px-6 lg:px-8 bg-gray-50/50">
+    <section className={editorial ? 'bg-[#E7EFF0] px-4 py-12 text-[#20374D] sm:px-6 sm:py-16 lg:px-8' : 'py-12 sm:py-16 px-4 sm:px-6 lg:px-8 bg-gray-50/50'}>
       <div className="max-w-xl mx-auto flex flex-col gap-6">
-        <div className={`${card} text-center`}>
+        <div className={`${editorial ? 'rounded-lg bg-[#F7FAFA] p-6 ring-1 ring-[#B9CCD2]' : card} text-center`}>
           <div className="mx-auto h-12 w-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M20 6 9 17l-5-5" />
             </svg>
           </div>
-          <h2 className="mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Booking request received</h2>
+          <h2 className="mt-4 text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">{tr("Solicitud recibida", "Booking request received")}</h2>
           <p className="mt-1.5 text-gray-500">
-            {trainerName} will review your request and confirm once the court is booked. If it isn&apos;t available, you&apos;ll be asked to pick another time.
+            {editorial ? `Tu solicitud está pendiente. La clase solo quedará confirmada cuando ${trainerName} haya reservado la pista.` : `Your request is pending. The class is confirmed only after ${trainerName} books the court.`}
           </p>
           <ul className="mt-6 divide-y divide-gray-100 border-y border-gray-100 text-left">
             {sessions.map((s) => (
               <li key={`${s.date}-${s.time}`} className="py-3 flex justify-between gap-4 text-sm">
-                <span className="font-medium text-gray-900">{formatSessionDateEn(s.date)}</span>
+                <span className="font-medium text-gray-900">{editorial ? formatSessionDateEs(s.date) : formatSessionDateEn(s.date)}</span>
                 <span className="text-gray-500 tabular-nums">
-                  {formatSessionTimeEn(s.time)} · {formatDurationEn(duration)}
+                  {editorial ? s.time.slice(0, 5) : formatSessionTimeEn(s.time)} · {editorial ? formatDurationEs(duration) : formatDurationEn(duration)}
                 </span>
               </li>
             ))}
           </ul>
           <div className="mt-4 flex items-baseline justify-between text-sm">
             <span className="text-gray-500">
-              {playerCount} {playerCount === 1 ? 'player' : 'players'} · pending confirmation
+              {playerCount} {playerCount === 1 ? tr('jugador', 'player') : tr('jugadores', 'players')} · {tr('pendiente de confirmación', 'pending confirmation')}
             </span>
             <span className="text-xl font-bold text-gray-900 tabular-nums">{formatRMEn(total)}</span>
           </div>
         </div>
 
         {guest && trainerSlug && (
-          <div className={card}>
-            <p className="text-base font-semibold text-gray-900">Activate your player account</p>
-            <p className="mt-1 text-sm text-gray-500">Book faster next time with one account for all your coaches. No password needed.</p>
+          <div className={editorial ? 'rounded-lg bg-[#F7FAFA] p-6 ring-1 ring-[#B9CCD2]' : card}>
+            <p className="text-base font-semibold text-gray-900">{tr("Activa tu cuenta de jugador", "Activate your player account")}</p>
+            <p className="mt-1 text-sm text-gray-500">{tr("La próxima vez podrás reservar más rápido con tu cuenta.", "Book faster next time with one account for all your coaches. No password needed.")}</p>
             <a
               href={`/cuenta/entrar?trainer=${encodeURIComponent(trainerSlug)}`}
               className="mt-4 inline-flex h-11 px-5 items-center rounded-xl bg-white text-gray-900 text-sm font-semibold ring-1 ring-inset ring-gray-200 hover:ring-gray-300 hover:bg-gray-50 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
-              Activate account
+              {tr("Activar cuenta", "Activate account")}
             </a>
           </div>
         )}

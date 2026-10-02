@@ -24,6 +24,7 @@ interface BookingSectionProps {
    * avisos de cuenta (error o perfil incompleto).
    */
   variant?: 'default' | 'editorial'
+  preview?: boolean
 }
 
 type AccountState =
@@ -41,6 +42,7 @@ export default function BookingSection({
   trainerImageUrl = null,
   classDurations = [60],
   variant = 'default',
+  preview = false,
 }: BookingSectionProps) {
   const editorial = variant === 'editorial'
   // Cuenta de jugador: con sesión y perfil completo, la reserva usa esos
@@ -149,6 +151,7 @@ export default function BookingSection({
           onBooked={handleBooked}
           onLiveSelection={publishLiveSelection}
           variant="editorial"
+          preview={preview}
         />
         {account.status === 'error' && (
           <p role="status" className="mx-auto max-w-6xl px-4 pb-10 text-sm text-mauri-muted sm:px-6 lg:px-8">

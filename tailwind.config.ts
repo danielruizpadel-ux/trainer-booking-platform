@@ -14,7 +14,7 @@ export default {
           graphite: '#15191B',
           'graphite-2': '#1E2427',
           'graphite-line': '#2E3539',
-          paper: '#FAF7F1',
+          paper: '#E7EFF0',
           'paper-2': '#F2EEE6',
           rule: '#E3DDD1',
           'rule-2': '#D3CCBE',

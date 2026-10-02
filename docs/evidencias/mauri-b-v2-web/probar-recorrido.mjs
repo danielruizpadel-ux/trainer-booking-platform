@@ -47,11 +47,9 @@ for (const [vp, viewport] of Object.entries({ escritorio: { width: 1440, height:
     await page.goto(`${BASE}/mauri?draft=${draftId}#booking-section`, { waitUntil: 'networkidle' })
     const restored = await page
       .waitForFunction(
-        // El checkout (inglés) escribe la hora como «9:00 AM».
+        // La variante Mauri mantiene la hora elegida en formato español.
         (t) => {
-          const [h, m] = t.split(':').map(Number)
-          const ampm = `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
-          return document.body.innerText.includes(ampm) && /Review your booking/i.test(document.body.innerText)
+          return document.body.innerText.includes(t) && /Revisa tu solicitud/i.test(document.body.innerText)
         },
         chosen,
         { timeout: 20000 }
@@ -59,7 +57,7 @@ for (const [vp, viewport] of Object.entries({ escritorio: { width: 1440, height:
       .then(() => true)
       .catch(() => false)
     ok(`${vp} vuelta con ?draft= recupera la hora en el checkout`, restored, chosen)
-    await page.screenshot({ path: join(OUT, `despues-${vp}-vuelta-login.png`) })
+    await page.screenshot({ path: join(OUT, `continuacion-${vp}-vuelta-login.png`) })
     ok(`${vp} sin escrituras a la API`, writes.length === 0, writes.join(', '))
     ok(`${vp} sin errores JS`, errors.length === 0, errors.join(' | '))
     await ctx.close()
@@ -74,7 +72,7 @@ for (const [vp, viewport] of Object.entries({ escritorio: { width: 1440, height:
     await waitHours(page)
     const chip = page.locator('header a[href="/cuenta"]')
     ok(`${vp} con sesión: cabecera muestra la cuenta y oculta «Entrar»`, (await chip.isVisible()) && !(await page.locator('header a', { hasText: 'Entrar' }).count()))
-    await page.screenshot({ path: join(OUT, `despues-${vp}-con-sesion.png`) })
+    await page.screenshot({ path: join(OUT, `continuacion-${vp}-con-sesion.png`) })
     await ctx.close()
   }
   // 4) Sin sesión: captura de la cabecera con «Entrar».
@@ -83,7 +81,7 @@ for (const [vp, viewport] of Object.entries({ escritorio: { width: 1440, height:
     const page = await ctx.newPage()
     await page.goto(`${BASE}/mauri`, { waitUntil: 'networkidle' })
     await page.addStyleTag({ content: 'nextjs-portal{display:none!important}' })
-    await page.screenshot({ path: join(OUT, `despues-${vp}-sin-sesion.png`), clip: { x: 0, y: 0, width: viewport.width, height: 120 } })
+    await page.screenshot({ path: join(OUT, `continuacion-${vp}-sin-sesion.png`), clip: { x: 0, y: 0, width: viewport.width, height: 120 } })
     await ctx.close()
   }
 }

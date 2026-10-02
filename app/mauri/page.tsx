@@ -23,6 +23,7 @@ import BookingSection from '@/components/mauri/BookingSection'
 import OfferSection from '@/components/mauri/OfferSection'
 import { normalizeDurations } from '@/lib/availability/durations'
 import FooterSection from '@/components/mauri/FooterSection'
+import PreviewSections from '@/components/mauri/PreviewSections'
 
 const display = Barlow_Condensed({
   subsets: ['latin'],
@@ -55,7 +56,8 @@ async function readPrices(trainerId: string): Promise<SessionPriceRow[] | null> 
   }
 }
 
-export default async function MauriPage() {
+export default async function MauriPage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
+  const preview = process.env.NODE_ENV !== 'production' && (await searchParams).preview === '1'
   const trainer = await getTrainerBySlug('mauri')
 
   if (!trainer) {
@@ -71,10 +73,11 @@ export default async function MauriPage() {
   const firstName = trainer.name.trim().split(/\s+/)[0]
 
   return (
-    <div className={`${display.variable} ${serif.variable} w-full bg-mauri-paper`}>
+    <div className={`${display.variable} ${serif.variable} w-full bg-[#E7EFF0]`}>
       <MauriHeader trainerSlug={trainer.slug} />
 
       <PremiumHero name={trainer.name} imageUrl={imageUrl} classDurations={classDurations} />
+      {preview && <PreviewSections placement="ribbon" />}
 
       {/* La reserva va lo primero al bajar del hero: es la acción principal. */}
       <BookingSection
@@ -86,9 +89,13 @@ export default async function MauriPage() {
         trainerEmail={trainer.email}
         trainerPhone={trainer.phone}
         variant="editorial"
+        preview={preview}
       />
 
       <OfferSection trainerFirstName={firstName} classDurations={classDurations} prices={prices} />
+      {preview && <PreviewSections placement="packages" />}
+      {preview && <PreviewSections placement="partners" />}
+      {preview && <PreviewSections placement="about" imageUrl={imageUrl} />}
 
       <FooterSection trainerName={trainer.name} />
     </div>

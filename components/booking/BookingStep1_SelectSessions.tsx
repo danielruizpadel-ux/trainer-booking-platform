@@ -25,6 +25,7 @@ interface BookingStep1Props {
   prices: SessionPriceRow[] | null
   /** `editorial`: landing de Mauri (B v2). Misma lógica; solo cambia la presentación. */
   variant?: 'default' | 'editorial'
+  preview?: boolean
 }
 
 export default function BookingStep1_SelectSessions({
@@ -37,6 +38,7 @@ export default function BookingStep1_SelectSessions({
   onDurationChange,
   prices,
   variant = 'default',
+  preview = false,
 }: BookingStep1Props) {
   const editorial = variant === 'editorial'
   // Vista previa con el precio de 1 jugador del entrenador (misma regla que
@@ -84,6 +86,7 @@ export default function BookingStep1_SelectSessions({
               <p className="mt-3 max-w-xl font-mauri-serif text-lg leading-snug text-mauri-ink-2">
                 Una o varias horas, en uno o varios días. Todo queda en tu reserva antes de enviarla.
               </p>
+              {preview && <p className="mt-2 text-xs text-mauri-teal">Club / sede: <span className="rounded border border-dashed border-current px-2 py-0.5">Pendiente de confirmar</span></p>}
             </div>
             <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
               <EditorialDurationPicker durations={classDurations} value={duration} onChange={onDurationChange} />
