@@ -1,5 +1,15 @@
 # Plan: detalle en calendario + paquetes de clases (5/10 sesiones)
 
+> **Revisión del 01/10/2026:** este texto conserva el diseño y las decisiones
+> del prototipo interno de 20/09. La implementación histórica sí existe en
+> `develop`, pero la venta nueva se suspendió en el PR #36: el descuento
+> 5+/10+ de `calculateBookingPrice` corresponde a varias sesiones en un
+> checkout, y no constituye por sí solo un precio comercial aprobado de
+> paquete. El antiguo botón, formulario y cálculo de venta se retiraron.
+> La consulta y agenda de paquetes ya registrados se mantienen. Precio,
+> cobro y condiciones del paquete real siguen pendientes de decisión de Dani;
+> ver `.nimbalyst/trackers/paquetes-reales.md` y `docs/DATABASE.md`.
+
 **Creado**: 2026-09-20 · Pensado por Claude (Cowork) a partir de dos capturas
 de referencia de Daniel (app de gestión de academias) y del código real de
 este repo. **Nada de esto está implementado todavía** — es la especificación

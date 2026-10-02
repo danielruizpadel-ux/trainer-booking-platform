@@ -742,6 +742,12 @@ Antes de eso: verificar la Fase D en el navegador (ver "Sin verificar" arriba)
 
 ## Paquetes de clases + detalle en calendario (20/09/2026, prompt 14)
 
+**Nota vigente (01/10/2026):** este apartado documenta el prototipo interno
+del 20/09. La venta nueva de paquetes se suspendió en el PR #36 y se retiraron
+su botón, formulario y cálculo heredado del descuento multihora. La consulta
+y agenda de paquetes anteriores continúa. Véanse `docs/DATABASE.md` y
+`.nimbalyst/trackers/paquetes-reales.md` antes de reutilizar este flujo.
+
 Especificación: `docs/PLAN_PAQUETES_Y_CALENDARIO.md`. Implementado en el orden
 de su sección 3.
 
